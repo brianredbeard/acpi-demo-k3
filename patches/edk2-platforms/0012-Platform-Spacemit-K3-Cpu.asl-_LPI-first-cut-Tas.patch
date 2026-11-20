@@ -1,55 +1,58 @@
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH 12/12] Platform/Spacemit/K3: Cpu.asl _LPI first cut + \_SB platform _OSC (Task 9)
+Subject: [PATCH 12/12] Platform/Spacemit/K3: Cpu.asl _LPI (WFI + CPU_NR) + \_SB platform _OSC (Task 9)
 
-Platform/Spacemit/K3: Cpu.asl _LPI first cut + \_SB platform _OSC (Task 9)
+Platform/Spacemit/K3: Cpu.asl _LPI (WFI + CPU_NR) + \_SB platform _OSC (Task 9)
 
-Add _LPI to every ACPI0007 processor device: two non-retentive
-platform states per the FFH spec and the HSM suspend audit
-(task9-hsm-suspend-audit-2026-11-20.md):
+_LPI on every ACPI0007 processor device, structured for the kernel's
+index-0 semantics (__CPU_PM_CPU_IDLE_ENTER treats index 0 specially:
+cpu_do_idle(), NO SBI suspend entry - a state at index 0 never
+suspends):
 
-- CPU_NR: FFH address (1<<60)|0x90000000 = 0x1000000090000000,
-  min-residency 950us, wake 500us
-- CLUSTER_NR: FFH address (1<<60)|0x91000000 = 0x1000000091000000,
-  min-residency 2700us, wake 1100us
+- State 0 "WFI": explicit shallow state, FFH address 0, timer runs.
+  Occupies the index-0 special path so usage counts are honest.
+- State 1 "CPU_NR": FFH address (1<<60)|0x90000000 =
+  0x1000000090000000, min-residency 950us, wake 500us, Flags ENABLED
+  (bit 0 - flatten_lpi_states skips states without it), ArchFlags
+  bit 0 (local timer stops, per the DT idle-state's
+  local-timer-stop). The RISC-V FFH encoding keeps bits[59:32]
+  reserved zero - the param lives in the LOW 32 bits (the CPPC FFH
+  convention in this file).
 
-Every state package carries Flags bit 0 (ENABLED): flatten_lpi_states
-skips states without ACPI_LPI_STATE_FLAGS_ENABLED, so Flags=0 would
-flatten to zero states and the backend count>1 check would fail with
--ENODEV.
+CLUSTER_NR deliberately DEFERRED: cluster qualification requires
+validating the wake mechanism (tick broadcast under timer-stop, M2
+coordination with ESOS), not just boot success.
 
-The RISC-V FFH encoding is (1ULL<<60)|sbi_suspend_param with
-bits[59:32] reserved zero - the param lives in the LOW 32 bits (the
-CPPC FFH convention already in this file). Both states use the proven
-PMU vote + WFI + in-place-resume mechanism from k3_corepm.c; the
-kernel's RISC-V LPI backend requires >1 flattened state, so both are
-exposed. Package layout per ACPI 6.5 _LPI: {MinResidency,
-WakeLatency, Count, StatePkgs...} (iASL-validated; states are
-10-element packages with the FFH Register at index 6). Latencies are
-vendor DT values - measure before freezing. NOTE: the kernel's LPI
-naming starts at index 0 with the FIRST flattened state (no inserted
-safe/WFI state on this path): expect LPI-0=CPU_NR, LPI-1=CLUSTER_NR.
+Kernel companion note: 6.12 RISC-V has no
+arch_get_idle_state_flags override (weak default returns 0; only
+ARM64 maps CPUIDLE_CORE_CTXT to CPUIDLE_FLAG_TIMER_STOP) - a one-
+line kernel override mapping ArchFlags bit 0 is required for the
+timer-stop flag to take effect on this kernel. The AML is correct
+and forward-compatible with the upstream mapping.
 
-Add the \\_SB platform-wide _OSC (UUID 0811B06E-...) confirming
-PCLPI (0x80) ONLY: acpi_processor_get_lpi_info() gates _LPI parsing
-on osc_pc_lpi_support_confirmed, set exclusively by this handshake.
-The buffer is 2 DWORDs (u32 capbuf[2]: Query/Status, Support - NO
-Control DWORD; a CDW3 at offset 8 would raise AE_AML_BUFFER_LIMIT).
-The method handles both handshake passes. PR3/S3, GED, hotplug-OST
-not confirmed; unknown UUIDs fail. (PCI0's _OSC keeps CDW3:
+\_SB platform-wide _OSC (UUID 0811B06E-...) confirming PCLPI (0x80)
+ONLY: acpi_processor_get_lpi_info() gates _LPI parsing on
+osc_pc_lpi_support_confirmed, set exclusively by this handshake
+(root cause of the original silent no-cpuidle failure; proven live:
+'platform _OSC: OS control mask [00000080]'). The buffer is 2
+DWORDs (u32 capbuf[2]: Query/Status, Support - NO Control DWORD).
+Revision != 1 returns _OSC_REVISION_ERROR (0x08); unknown UUIDs
+return _OSC_UNRECOGNIZED_UUID (0x04, not the query bit). PR3/S3,
+GED, hotplug-OST not confirmed. (PCI0's _OSC keeps CDW3:
 pci_root.c passes capbuf[5].)
 
-Validation: full RELEASE build; built DSDT decompiles 8x _LPI with
-Flags=One, correct FFH addresses, and the \\_SB _OSC. Hardware gates
-closed so far (live evidence): _OSC presence (OS control mask
-[00000080]), buffer contract, FFH encoding rejection. Next cycle is
-the first with all four gates (presence, buffer, encoding, flags)
-correct.
+Latencies are vendor DT values - measure before freezing.
+
+Validation: full RELEASE build; built DSDT decompiles 8x (WFI,
+CPU_NR) with Flags=One, ArchFlags=One on CPU_NR, correct FFH
+addresses, zero CLUSTER_NR, and the \\_SB _OSC with revision/UUID
+error paths. Hardware gates closed live so far: _OSC presence,
+buffer contract. Encoding/flags/index fixes verified in AML only.
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-index 492b4792..7d304375 100644
+index 492b4792..9684cc82 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-@@ -1,106 +1,159 @@
+@@ -1,106 +1,172 @@
 -/** @file
 -  Differentiated System Description Table Fields (DSDT)
 -
@@ -173,22 +176,50 @@ index 492b4792..7d304375 100644
 + * backend (acpi_cpu_init_idle) requires MORE THAN ONE flattened state,
 + * so the CPU and CLUSTER non-retentive states are both exposed; both use
 + * the identical proven mechanism (PMU vote + WFI + in-place resume; the
-+ * cluster state additionally votes the cluster domain down). Latencies
++ * cluster state would additionally vote the cluster domain down;
++ * CLUSTER_NR is deferred pending cluster qualification). Latencies
 + * are the vendor DT values - replace with measured values before
-+ * freezing (audit requirement). local-timer-stop applies to both; tick
-+ * broadcast behavior must be verified on hardware (audit requirement).
++ * freezing (audit requirement). CPU_NR sets ArchFlags bit 0 (local
++ * timer stops) per the DT idle-state's local-timer-stop; the timer-stop
++ * wake mechanism must be validated on hardware, not assumed from boot
++ * success (audit requirement).
++ */
++/*
++ * _LPI layout note: the FIRST flattened state is index 0, and
++ * __CPU_PM_CPU_IDLE_ENTER treats index 0 specially: cpu_do_idle()
++ * (architectural WFI) WITHOUT calling the SBI suspend entry. A state
++ * placed at index 0 therefore never suspends - so an explicit shallow
++ * WFI state occupies index 0, and CPU_NR (the actual suspend state)
++ * is index 1. Cluster non-retentive is deliberately DEFERRED until
++ * the cluster state is qualified (audit requirement: validate wake
++ * mechanism, not just boot success).
 + */
 +#define LPI_STATES              \
 +  Name (_LPI, Package () {      \
 +    0,                          /* MinResidency (level-wide, unused) */ \
 +    0,                          /* WakeLatency (level-wide, unused) */ \
 +    2,                          /* Count of state packages */ \
-+    /* State 0: CPU non-retentive (sbi param 0x90000000) */ \
++    /* State 0: shallow WFI (index-0 special path: cpu_do_idle) */ \
++    Package () {                \
++      1,                        /* MinResidency (us) */ \
++      1,                        /* WakeLatency (us) */ \
++      1,                        /* Flags: BIT(0) enabled */ \
++      0,                        /* ArchFlags (WFI: timer runs) */ \
++      0,                        /* ResidencyCounterFreq */ \
++      0,                        /* EnabledParentState */ \
++      ResourceTemplate () {     \
++        Register (FFixedHW, 64, 0, 0, 4) \
++      },                        \
++      0,                        /* Residency Counter Address */ \
++      0,                        /* Usage Counter Address */ \
++      "WFI"                     /* Name */ \
++    },                          \
++    /* State 1: CPU non-retentive (sbi param 0x90000000) */ \
 +    Package () {                \
 +      950,                      /* MinResidency (us) */ \
 +      500,                      /* WakeLatency (us) */ \
 +      1,                        /* Flags: BIT(0) enabled */ \
-+      0,                        /* ArchFlags */ \
++      1,                        /* ArchFlags: BIT(0) = local timer stops */ \
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
 +      ResourceTemplate () {     \
@@ -197,21 +228,6 @@ index 492b4792..7d304375 100644
 +      0,                        /* Residency Counter Address */ \
 +      0,                        /* Usage Counter Address */ \
 +      "CPU_NR"                  /* Name */ \
-+    },                          \
-+    /* State 1: CLUSTER non-retentive (sbi param 0x91000000) */ \
-+    Package () {                \
-+      2700,                     /* MinResidency (us) */ \
-+      1100,                     /* WakeLatency (us) */ \
-+      1,                        /* Flags: BIT(0) enabled */ \
-+      0,                        /* ArchFlags */ \
-+      0,                        /* ResidencyCounterFreq */ \
-+      0,                        /* EnabledParentState */ \
-+      ResourceTemplate () {     \
-+        Register (FFixedHW, 64, 0, 0x1000000091000000, 4) \
-+      },                        \
-+      0,                        /* Residency Counter Address */ \
-+      0,                        /* Usage Counter Address */ \
-+      "CLUSTER_NR"              /* Name */ \
 +    }                           \
 +  })
 +
@@ -316,10 +332,10 @@ index 492b4792..7d304375 100644
 +  } // Device (CL01)
 +}
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
-index d97da1e5..e2ce5ca2 100644
+index d38b6c6c..c6be2a9b 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
-@@ -19,6 +19,45 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+@@ -19,6 +19,51 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
    include ("Cpu.asl")
  
    Scope (_SB) {
@@ -346,6 +362,13 @@ index d97da1e5..e2ce5ca2 100644
 +      CreateDWordField (Arg3, 0, CDW1)   /* Query/Status */
 +      CreateDWordField (Arg3, 4, CDW2)   /* Support */
 +
++      /* Revision must be 1 */
++      If (LNotEqual (Arg1, 1))
++      {
++        Or (CDW1, 0x08, CDW1)   /* _OSC_REVISION_ERROR */
++        Return (Arg3)
++      }
++
 +      /* Platform-wide capabilities UUID */
 +      If (LEqual (Arg0, ToUUID ("0811B06E-4A27-44F9-8D60-3CBBC22E7B48")))
 +      {
@@ -356,12 +379,11 @@ index d97da1e5..e2ce5ca2 100644
 +        Return (Arg3)
 +      }
 +
-+      /* Unknown UUID: unsupported */
-+      Store (1, CDW1)   /* _OSC_FAILURE */
++      /* Unknown UUID */
++      Or (CDW1, 0x04, CDW1)   /* _OSC_UNRECOGNIZED_UUID (0x04, NOT the query bit) */
 +      And (CDW2, 0, CDW2)
 +      Return (Arg3)
 +    }
-+
+ 
      Device (IC00)
      {
-       Name (_HID, "RSCV0002")

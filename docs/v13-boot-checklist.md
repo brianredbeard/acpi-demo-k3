@@ -27,14 +27,13 @@ ESOS/OpenSBI/FSBL/agent: unchanged from the qualified v11/v12 payloads.
    zba zbb zbc zbs zkt zvbb... svinval svnapot` (the 0011 fix; the v12 boot
    showed only the RHCT subset). Also `dmesg | grep -i 'riscv: base ISA'`.
 3. **_LPI / cpuidle** — the new milestone:
-   - `ls /sys/devices/system/cpu/cpu0/cpuidle/` exists with TWO
-     states: `LPI-0` (= CPU_NR) and `LPI-1` (= CLUSTER_NR). The LPI
-     path does NOT insert a synthetic WFI/safe state — index 0 is the
-     first flattened state (processor_idle.c setup_lpi_states names
-     LPI-i for every flattened state i; safe_state_index is simply
-     the last one registered)
+   - `ls /sys/devices/system/cpu/cpu0/cpuidle/` with TWO states:
+     `LPI-0` = WFI (the index-0 special path: cpu_do_idle, no SBI
+     suspend — its usage counts prove idle ENTRY, not suspend) and
+     `LPI-1` = CPU_NR (the actual SBI suspend state; only THIS
+     state's usage proves non-retentive entry)
    - `cat /sys/devices/system/cpu/cpu*/cpuidle/state*/name` — expect
-     `LPI-0`, `LPI-1` on all 8 CPUs
+     `LPI-0`, `LPI-1` on all 8 CPUs; CLUSTER_NR is deferred
    - `dmesg | grep -iE 'LPI|cpuidle'` — no `Invalid LPI entry method`,
      no `acpi_cpu_init_idle` failure
    - Soak: `sleep 60 && cat /sys/devices/system/cpu/cpu*/cpuidle/state*/usage`
@@ -158,3 +157,30 @@ no synthetic safe/WFI state (unlike the C-state path's ACPI_IDLE_STATE_START
 behavior). With two _LPI states, expect exactly `LPI-0` (= CPU_NR) and
 `LPI-1` (= CLUSTER_NR). Gate count now four: _OSC presence, _OSC buffer
 contract, FFH encoding, state Flags.
+
+## Addendum 5: index-0 semantics, timer-stop flag, _OSC bitfields
+
+Audit round (all verified against the deployed 6.12 kernel source):
+
+1. Index 0 of the flattened LPI states is special
+   (__CPU_PM_CPU_IDLE_ENTER: cpu_do_idle() WITHOUT the SBI suspend
+   entry). CPU_NR at index 0 would never suspend and its usage counts
+   would be meaningless. Fixed: State 0 = explicit WFI (FFH address 0,
+   timer runs), State 1 = CPU_NR. CLUSTER_NR REMOVED from the AML —
+   deferred until cluster qualification validates the wake mechanism.
+2. Timer-stop: CPU_NR sets ArchFlags bit 0 (local timer stops).
+   KERNEL COMPANION REQUIRED: 6.12 RISC-V has no
+   arch_get_idle_state_flags override (weak default returns 0; only
+   ARM64 maps CPUIDLE_CORE_CTXT -> CPUIDLE_FLAG_TIMER_STOP) — a
+   one-line kernel override is needed for the flag to take effect.
+   The AML is correct and forward-compatible.
+3. PCI _OSC: Support (CDW2) and Control (CDW3) are different
+   bitfields. SUPP = CDW2 & 0x10 (OSC_PCI_MSI_SUPPORT — provided:
+   APLIC-MSI + IMSIC live); CTRL = CDW3 & 0x10
+   (OSC_PCI_EXPRESS_CAPABILITY — MCFG ECAM). The earlier
+   CTRL = CDW3 & SUPP mixed the two fields.
+4. Platform _OSC hardening: revision != 1 -> 0x08; unknown UUID ->
+   0x04 (_OSC_UNRECOGNIZED_UUID — the earlier `1` was the query bit).
+
+Checklist acceptance criteria corrected accordingly (LPI-0 WFI usage
+proves idle entry; LPI-1 CPU_NR usage proves suspend entry).

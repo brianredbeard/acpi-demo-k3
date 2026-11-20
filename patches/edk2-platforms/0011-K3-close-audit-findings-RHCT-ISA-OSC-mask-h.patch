@@ -1,7 +1,7 @@
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH 11/11] K3: close audit findings — RHCT ISA, _OSC mask, hart contract, IDs, GMAC rows, clock semantics
+Subject: [PATCH 11/11] K3: close audit findings — RHCT ISA, _OSC masks, hart contract, IDs, GMAC rows, clock semantics
 
-K3: close audit findings — RHCT ISA, _OSC mask, hart contract, IDs, GMAC rows, clock semantics
+K3: close audit findings — RHCT ISA, _OSC masks, hart contract, IDs, GMAC rows, clock semantics
 
 - RHCT: complete the X100 ISA string from K3Cpus.dtsi. Under ACPI the
   kernel does NOT imply zicsr/zifencei/zicntr/zihpm from base letters
@@ -9,39 +9,42 @@ K3: close audit findings — RHCT ISA, _OSC mask, hart contract, IDs, GMAC rows,
   zicntr zicond zicsr zifencei zihintpause zihpm zfh zfhmin zba zbb
   zbc zbs zkt zvbb..zvkt (vector-crypto) svinval svnapot. Missing
   names silently dropped HWCAP/perf capability. (Audit item 5)
-- _OSC: publish a real firmware-supported mask instead of echoing the
-  OS request. Only the PCIeCapability bit (0x10, MCFG ECAM) is
-  supported; hot-plug/SHPC/PME/AER have no firmware backing (no _PRT,
-  no GPE wiring). SUPP=CDW2&0x10, CTRL=CDW3&SUPP. (Item 8)
-- Hart contract: ACPI describes ONLY the 8 X100 harts (all qualified
-  evidence covers 8 CPUs; A100 harts lack h/v and any ACPI objects).
-  Documented at PcdX100HartCount; unused PcdHartCount dropped from the
-  tables INF. (Item 3)
-- ACPI ID provenance: USB2 808622B7 (Intel BSW DWC3) and DBI0 AMZN0001
-  (Amazon Annapurna) are BORROWED IDs - documented in AML with the
-  proper fix (PRP0001 + compatible) gated on a qualified boot.
-  SPMT0001 (APLIC HardwareId) is a SpacemiT-owned form, not
-  registry-verified. (Item 10)
-- DBI0 _CRS: ResourceProducer -> ResourceConsumer (register window
-  device, not a bridge), completing the 0009 A5 sweep. (Item 11)
-- ClockDxe: GMAC1_TX/GMAC1_PHY and GMAC2_TX/GMAC2_PHY rows retargeted
-  from EMAC0 to their own EMAC1/EMAC2 CLK_RES_CTRL blocks. (Item 9)
-- EnableClock: a zero-address (table-bug) row now fails the enable
-  with EFI_DEVICE_ERROR instead of silently reporting success.
-  (Item 12)
-- ResetSystemLib: the post-SBI-reset CpuDeadLoop documented as
-  terminal by design. (Item 13)
+- _OSC (PCI0): Support (CDW2) and Control (CDW3) are DIFFERENT
+  bitfields with different bit assignments. Support confirms MSI
+  (0x10 in CDW2: the APLIC-MSI + IMSIC path is live). Control grants
+  only PCIeCapability (0x10 in CDW3: MCFG ECAM); hot-plug/SHPC/PME/
+  AER/LTR/DPC have no firmware backing (no _PRT, no GPE wiring). The
+  earlier CTRL=CDW3&SUPP mixed the fields - the two 0x10 values are
+  different bits that happen to coincide. (Item 8)
+- Hart contract: ACPI describes ONLY the 8 X100 harts. Documented at
+  PcdX100HartCount; unused PcdHartCount dropped from the tables INF.
+  (Item 3)
+- ACPI ID provenance: USB2 808622B7 (Intel BSW DWC3) and DBI0
+  AMZN0001 (Amazon Annapurna) are BORROWED IDs - documented in AML
+  with the proper fix gated on a qualified boot. (Item 10)
+- DBI0 _CRS: ResourceProducer -> ResourceConsumer. (Item 11)
+- ClockDxe: GMAC1/2 TX/PHY rows retargeted to their own EMAC blocks.
+  (Item 9)
+- EnableClock: zero-address rows fail with EFI_DEVICE_ERROR. (Item 12)
+- ResetSystemLib: deadloop documented terminal by design. (Item 13)
 
-Verified: full RELEASE build clean; built AML decodes SUPP=(CDW2&0x10)
-and DBI0 ResourceConsumer; RHCT carries the complete string
-(zicond/zvbb/zicsr present in the FV). Hardware re-validation pending
-(RHCT HWCAP check + a GMAC1/2 SKU when available).
+Verified: full RELEASE build clean; built AML decodes the PCI _OSC
+with separate CDW2&0x10 / CDW3&0x10 masks and DBI0 ResourceConsumer;
+RHCT carries the complete string. Hardware re-validation pending.
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
-index f069dc60..d97da1e5 100644
+index f069dc60..d38b6c6c 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
-@@ -118,6 +118,14 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+@@ -19,6 +19,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+   include ("Cpu.asl")
+ 
+   Scope (_SB) {
++
+     Device (IC00)
+     {
+       Name (_HID, "RSCV0002")
+@@ -118,6 +119,14 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
  
      Device (USB2)
      {
@@ -56,7 +59,7 @@ index f069dc60..d97da1e5 100644
        Name (_HID, "808622B7")
        Name (_UID, Zero)
        Name (_CCA, 0)
-@@ -203,11 +211,17 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+@@ -203,11 +212,17 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
            CreateDWordField (Arg3, 4, CDW2)
            CreateDWordField (Arg3, 8, CDW3)
  
@@ -66,20 +69,20 @@ index f069dc60..d97da1e5 100644
 -          /* Allow: PCIeHotPlug SHPCHotPlug PME AER PCIeCapability */
 -          CTRL &= 0x1F
 +          /*
-+           * Firmware-supported mask. The platform supports only the
-+           * PCIeCapability bit (bit 4: extended config space via MCFG);
-+           * hot-plug, SHPC, PME and AER have no firmware backing (no
-+           * _PRT, no GPE wiring, no AER handler). SUPP must report what
-+           * THIS firmware supports - echoing the OS request (SUPP=CDW2)
-+           * misrepresents platform support - and CTRL may only clear
-+           * bits the firmware actually granted.
++           * Support (CDW2) and Control (CDW3) are DIFFERENT bitfields
++           * with different bit assignments - they must not be mixed.
++           * Support: MSI (0x10) is provided (the APLIC-MSI path and the
++           * IMSIC MSI domain are live). Control: only the PCIe
++           * Capability bit (0x10 in CDW3: extended config via MCFG) is
++           * granted; hot-plug, SHPC, PME, AER, LTR, DPC have no firmware
++           * backing (no _PRT, no GPE wiring, no AER handler).
 +           */
 +          SUPP = CDW2 & 0x10
-+          CTRL = CDW3 & SUPP
++          CTRL = CDW3 & 0x10
  
            If (Arg1 != 1) { CDW1 |= 0x08 } /* unknown revision */
            If (CDW3 != CTRL) { CDW1 |= 0x10 } /* capabilities lost */
-@@ -239,12 +253,21 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+@@ -239,12 +254,21 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
        // PCIe host bridge 0 DBI registers (reserve from generic use).
        Device (DBI0)
        {

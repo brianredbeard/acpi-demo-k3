@@ -107,11 +107,11 @@
         },
         {
           "file": "patches/edk2-platforms/0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch",
-          "sha256": "5eca5361dc683be1dfd2c8f0b53b6492e149cfe7d511d2fb9acbca698e47d5f2"
+          "sha256": "af04fa3fbb1f3ef285a81d9e7a67ae4d2fedf3dafe137ad97ff32f4661019ab6"
         },
         {
           "file": "patches/edk2-platforms/0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch",
-          "sha256": "0be13f4a761f9e53e1fccd961e749b2ca42e7b9702bbdc7045567ccc8fd16c66"
+          "sha256": "83f33a3894200ae9e4bec63f8e6b1f34824aad18abe1f4b0bc34e4bba5899bc8"
         }
       ],
       "configs": [],
