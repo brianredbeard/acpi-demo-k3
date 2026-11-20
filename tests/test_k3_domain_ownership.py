@@ -24,14 +24,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 def build_fixture():
-    """The ownership model is not yet in the locked patch series; read it
-    from the P1 working fixture (prepared once into a fixed path)."""
-    fixture = Path(tempfile.gettempdir()) / 'k3-p1-worktree'
-    src = fixture / 'esos/bsp/spacemit/drivers/rpmi/k3'
+    """Read the ownership model from the canonical ESOS tree (the
+    reset-handoff checkout with the P1 files applied); fall back to the
+    in-tree copy under patches/esos/p1/."""
+    src = ROOT.parent / 'esos-reset-handoff/bsp/spacemit/drivers/rpmi/k3'
     if not (src / 'k3_domain_ownership.c').exists():
-        self_test = Path(tempfile.gettempdir()) / 'k3-p1-fixture-x'
+        src = ROOT / 'patches/esos/p1'
+    if not (src / 'k3_domain_ownership.c').exists():
         raise unittest.SkipTest(
-            f'P1 working tree not staged at {src}; stage it first')
+            f'P1 sources not found at {src}; stage the canonical tree first')
     return src
 
 SOURCE_DIR = build_fixture()
