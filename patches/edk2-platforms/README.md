@@ -26,12 +26,13 @@ DSDT v10 is a separate un-promoted experiment — see below).
 | `0005` DwEqosDxe EMAC clocks | Stop gating EMAC bus clock at ExitBootServices (APMU EMAC0 CLK_RES_CTRL) | Live: GMAC MMIO does not wedge kernel; full DHCP/SSH |
 | `0006` PCIe bus-0 config window | 2 MB DW iATU OB window for bus 0 at 0x11_00000000 | Live: ATU OB0 dump base 0x11:00000000; removes kernel ECAM hack |
 | `0007` ResetSystemLib resets | Reset path hardening (see patch body) | EFI runtime cold/warm/shutdown cycles (COM260 evidence) |
+| `0008` SPCR re-add + UART XScale binding | SPCR v4 (16550-with-GAS, namespace `\_SB.COM0`) back in the INF; COM0 `_DSD` declares `"spacemit,k3-uart", "intel,xscale-uart"` (gates the kernel's PORT_XSCALE fixed-type quirk); BaudRate fixed to 115200 (6.12 spcr.c treats 0 as "already configured"); UART clock 14745600 | iasl-clean DSDT matching the proven v10 COM0 AML; full RELEASE build; SPCR decoded from DXEFV (GAS mmio32 0xd4017000, GSI 42). Hardware boot pending |
 
 ## Deliberately not in this series
 
-- `Uart.asl`/`Spcr.aslc` worktree edits: superseded (the exported DSDT v8
-  carries its own COM0 device; SPCR is intentionally not in the INF after the
-  console-hang root-cause).
+- `Uart.asl` worktree edits: superseded (the exported DSDT v8 carries its
+  own COM0 device; SPCR is now re-added via 0008 with the kernel-side
+  autoconfig hazard closed).
 - `AcpiNvsDxe`, `Pcct.aslc`, `K3.dec` PcdK3PccEndpointPresent,
   `Soc/Power/Platform.asl`: the PCC power-model design remains unwired draft
   (no DSC/FDF reference); it must not ship until the ESOS PCC endpoint passes

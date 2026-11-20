@@ -84,6 +84,10 @@
         {
           "file": "patches/edk2-platforms/0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch",
           "sha256": "51acf570b402b04ab8d07f28f1fd360c4381e99eae1bb5df64b0b5f076b347d4"
+        },
+        {
+          "file": "patches/edk2-platforms/0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch",
+          "sha256": "c78372fc1de56db97b831b613e9a6e5b3dda15301efe629329e776bce02f665f"
         }
       ],
       "configs": [],

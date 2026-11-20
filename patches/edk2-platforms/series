@@ -5,3 +5,4 @@
 0005-Silicon-Spacemit-K3-DwEqosDxe-leave-EMAC-clocks-enab.patch
 0006-Silicon-Spacemit-extend-PCIe-bus-0-config-window.patch
 0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch
+0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch
