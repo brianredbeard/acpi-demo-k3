@@ -1,186 +1,71 @@
-# v13 boot cycle — payload request and verification checklist
+# v13 boot cycle — payload, checklist, and evidence ledger
 
-Firmware deltas vs the qualified v12 (edk2 = v12 + 0011 + 0012; ESOS unchanged
-from the 0006-fixed build):
+**This document supersedes all earlier revisions and addenda of the v13
+checklist.** The `_LPI` bring-up went through five fix rounds (gate ledger
+below); earlier text describing three states or `CLUSTER_NR` is historical.
+
+## Firmware deltas vs the qualified v12 flash
+
+ESOS/OpenSBI/FSBL/agent: **unchanged** from the live v12 payload
+(`37533b27` ESOS). Only edk2.bin changes:
 
 | Patch | Content |
 |---|---|
-| 0011 | RHCT ISA string completed (zicntr zicond zicsr zifencei zihintpause zihpm zfh zfhmin zba zbb zbc zbs zkt zvbb..zvkt svinval svnapot), `_OSC` real support mask (PCIeCapability only), DBI0 ResourceConsumer, GMAC1/2 ClockDxe rows retargeted, EnableClock failure semantics, hart contract docs, borrowed-ID docs |
-| 0012 | `_LPI` on all 8 ACPI0007 devices: CPU_NR (`(1<<60)|0x90000000`) + CLUSTER_NR (`(1<<60)|0x91000000`), vendor latencies |
+| 0011 | RHCT ISA completion (HWCAP), PCI `_OSC` support/control bitfield separation, hart contract docs, borrowed-ID docs, GMAC1/2 ClockDxe retargeting, EnableClock failure semantics, comment corrections (clock bring-up scope, SDT rationale) |
+| 0012 | `_LPI` (WFI + CPU_NR) + `\_SB` platform `_OSC` (PCLPI, 2-DWORD contract, revision/UUID error paths) |
 
-ESOS/OpenSBI/FSBL/agent: unchanged from the qualified v11/v12 payloads.
+## Flash artifact (authoritative)
 
-## Flash payload request
+`fitimage/MUSE-Pico.itb` — sha256
+`8b511a13c1da3ecc2f1a131318d4b549be96efc3561b826841e7b5bef5687402`,
+size 3248128. Built from the maintained tree at the comment-fix tip
+(series 0001–0012 replaying clean from the pinned baseline `8e686e13`).
+Earlier artifact hashes (`27f40…`, `0d0f…`, `694e…`, `5969…`) are
+superseded — do not flash them; they predate the FFH/flags/index fixes.
 
-- `edk2.bin`: rebuild from the maintained tree at `3faadd7b` (series 0001-0012)
-  with `ACPI_ENABLE=TRUE`, RELEASE. The built FV on this workstation already
-  verifies: 8× `_LPI` with both states, RHCT carries zicond/zvbb/zicsr,
-  `SUPP=(CDW2&0x10)`, DBI0 consumer.
-- Everything else: keep v11/v12 bytes.
-
-## Verification checklist (in order, serial console)
+## Verification checklist (in order)
 
 1. **Boot health** — full RHEL boot, zero BUG/WARNING/ERROR; SPCR console
-   still active (`ACPI: SPCR: console: uart,mmio32,0xd4017000,115200`).
-2. **RHCT HWCAP** — `grep -m1 isa /proc/cpuinfo` must now show
-   `zicbom zicboz zicntr zicond zicsr zifencei zihintpause zihpm zfh zfhmin
-   zba zbb zbc zbs zkt zvbb... svinval svnapot` (the 0011 fix; the v12 boot
-   showed only the RHCT subset). Also `dmesg | grep -i 'riscv: base ISA'`.
-3. **_LPI / cpuidle** — the new milestone:
-   - `ls /sys/devices/system/cpu/cpu0/cpuidle/` with TWO states:
-     `LPI-0` = WFI (the index-0 special path: cpu_do_idle, no SBI
-     suspend — its usage counts prove idle ENTRY, not suspend) and
-     `LPI-1` = CPU_NR (the actual SBI suspend state; only THIS
-     state's usage proves non-retentive entry)
-   - `cat /sys/devices/system/cpu/cpu*/cpuidle/state*/name` — expect
-     `LPI-0`, `LPI-1` on all 8 CPUs; CLUSTER_NR is deferred
-   - `dmesg | grep -iE 'LPI|cpuidle'` — no `Invalid LPI entry method`,
-     no `acpi_cpu_init_idle` failure
+   active.
+2. **RHCT HWCAP** (0011, already proven on the v12 boot) — `/proc/cpuinfo`
+   isa carries the full X100 set.
+3. **`_OSC`** (proven live on the previous boot) — `platform _OSC: OS
+   control mask [00000080]`.
+4. **`_LPI` / cpuidle** — THE milestone:
+   - `dmesg`: NO `Invalid FFH LPI data` (the previous boot's failure)
+   - `/sys/devices/system/cpu/cpu0/cpuidle/` with exactly TWO states:
+     `LPI-0` = WFI and `LPI-1` = CPU_NR
+   - State semantics: index 0 is the special path (`cpu_do_idle()`, no SBI
+     suspend). **LPI-0 usage proves idle entry; only LPI-1 usage proves
+     actual suspend entry.** There is no LPI-2; CLUSTER_NR is deferred.
    - Soak: `sleep 60 && cat /sys/devices/system/cpu/cpu*/cpuidle/state*/usage`
-     — LPI-1/LPI-2 usage counts must increase
-4. **Wake sources after deep idle** (the audit's hard requirements):
-   - IPI: task across CPUs, no hang
-   - UART: serial console still responsive after idle soak
-   - NVMe: `dd` from the root device after the soak
-   - Network: GMAC still passes traffic (cluster votes + M2 coordination)
-5. **Timer behavior** (local-timer-stop): `dmesg | grep -iE 'tick|broadcast'`
-   — if the tick stops in CLUSTER_NR and nothing broadcasts, restrict to
-   CPU_NR for the next cycle (drop the CLUSTER state from the macro).
-6. **_OSC sanity** — `dmesg | grep -i _OSC`: no new capability-granted
-   errors; PCIe still enumerates (NVMe root present).
-7. **No regressions** — thermal zones, fan RPM, EC, EEPROM, GMAC link, the
-   13 RPMI clock rates (ufs_aclk 491.52 MHz).
+     — both LPI-0 and LPI-1 counts increase
+5. **Wake sources after idle** (the hard requirements):
+   - IPI across CPUs, serial console responsiveness, NVMe I/O, GMAC traffic
+6. **Tick broadcast under CPU_NR timer-stop** — CPU_NR stops the local
+   timer (ArchFlags bit 0). KERNEL DEPENDENCY: the deployed 6.12 kernel
+   has NO `arch_get_idle_state_flags` RISC-V override (only ARM64 maps the
+   flag), so `CPUIDLE_FLAG_TIMER_STOP` is NOT set unless the one-line
+   kernel override is carried. **Without it, CPU_NR may stop the local
+   timer without the kernel arranging broadcast — a potential idle-entry
+   hang.** Carry the kernel override in the validation kernel, or watch
+   `dmesg | grep -iE 'tick|broadcast'` and be prepared to restrict to
+   WFI-only if hangs appear. Test CPU_NR (not CLUSTER_NR — deferred).
+7. **`_OSC` sanity** — PCIe still enumerates (NVMe root on MSI-X).
+8. **No regressions** — thermal, fan, EC, EEPROM, GMAC, the 13 RPMI clock
+   rates (ufs_aclk 491.52 MHz).
 
 ## Rollback
 
-GRUB retains the previous kernel entry; the firmware payload is a single
-edk2.bin replacement — reflash v12's edk2 if `_LPI` wedges the boot (the
-`_LPI` object failing to parse is non-fatal to boot; a bad suspend state
-entry is not, so the first CPU_NR idle entry is the risk point).
+Single edk2.bin reflash of the v12 payload; GRUB retains the previous
+kernel entry.
 
-## v13 flash artifact (ready)
+## Gate ledger (historical, all fixed in the current artifact)
 
-`fitimage/MUSE-Pico/MUSE-Pico.itb` — sha256
-`27f40cb4c47dc205fb7d975020ea22fcdb80e6a8e932af241eb9ecf15e535aa3`,
-size 3248128. Built from the maintained tree at `3faadd7b` (series
-0001-0012 = the flashed v12 payload's edk2 content + 0012 `_LPI` only).
-ESOS/OpenSBI/FSBL/agent unchanged from the live v12 payload — the ONLY
-delta is edk2.bin. The built FV verifies 8x `_LPI` (both states, correct
-FFH addresses).
-
-v12-boot status of the checklist: items 1, 2, 6, 7 CLOSED live (zero
-errors; full RHCT HWCAP; _OSC truthful mask with PCIe intact; all
-peripherals + real clock rates from the firmware DSDT, no GRUB
-override). Remaining on the v13 boot: items 3-5 (cpuidle states, usage
-soak, wake sources, tick broadcast) — the `_LPI`-specific checks.
-
-## Addendum: first v13 boot failed silently — root cause + fix
-
-Symptom: _LPI present in the DSDT (24 strings), processor devices bound
-(ACPI0007, firmware_node paths resolve), but NO cpuidle directory and zero
-LPI-related dmesg. Config verified on the running kernel:
-ACPI_PROCESSOR_IDLE=y, RISCV_SBI_CPUIDLE=y, ffh_lpi_probe present in
-kallsyms.
-
-Root cause: acpi_processor_get_lpi_info() gates ALL _LPI parsing on
-osc_pc_lpi_support_confirmed, which is set only by the platform-wide _OSC
-handshake (Linux acpi_bus_osc_support at \_SB, UUID 0811B06E-...,
-OSC_SB_PCLPI_SUPPORT = 0x80). The DSDT had no \_SB._OSC, so the handshake
-failed and the whole path bailed with -EOPNOTSUPP before touching _LPI —
-and the resulting "No ACPI power information" is pr_debug, invisible at
-default loglevel.
-
-Fix (patch 0012 amended, maintained b1a2bd8b): \_SB._OSC confirming
-PCLPI (0x80) only. Unknown UUIDs return _OSC failure; PR3/GED/hotplug-OST
-not confirmed (not provided by this firmware).
-
-Expected evidence on the fixed boot:
-- dmesg: "ACPI: \_SB_: platform _OSC: OS control mask [00000080]" (or the
-  support-mask line reflecting 0x80)
-- /sys/devices/system/cpu/cpu0/cpuidle/ with LPI-0/LPI-1/LPI-2
-- the checklist items 3-5 as originally written
-
-## Addendum 2: _OSC buffer contract fix (supersedes the first fix)
-
-The first \\_SB._OSC implementation (b1a2bd8b) had a buffer overrun:
-the platform _OSC from acpi_bus_osc_negotiate_platform_control() passes
-u32 capbuf[2] — DWORD[0] Query/Status, DWORD[1] Support, NO Control
-DWORD. Creating CDW3 at offset 8 reads past the 8-byte buffer
-(AE_AML_BUFFER_LIMIT on every evaluation), which would have broken the
-handshake this method exists to perform.
-
-Fixed in cfe7bc63 / regenerated patch 0012: the \\_SB._OSC creates only
-CDW1/CDW2 and handles both handshake passes (query pass with
-OSC_QUERY_ENABLE set, then the direct pass). The PCI0 _OSC legitimately
-keeps CDW3 — pci_root.c passes capbuf[OSC_CXL_CAPABILITY_DWORDS=5].
-
-Current artifact: fitimage/MUSE-Pico.itb sha256
-0d0f407d4feddb7beddd6c364b2e334e0eb23f138b8fafc88c3918011cc271e6.
-
-Expected evidence unchanged from Addendum 1 (PCLPI 0x80 confirmed,
-LPI-0/1/2, usage soak, wake sources).
-
-## Addendum 3: FFH address encoding fix
-
-The second boot (with the _OSC fixes) confirmed the handshake works —
-dmesg: `platform _OSC: OS control mask [00000080]` (PCLPI acknowledged,
-_LPI parsing enabled) — but then: `ACPI: CPUx: Invalid FFH LPI data` on
-all 8 CPUs.
-
-Root cause: the FFH addresses were malformed. The RISC-V FFH LPI
-encoding is (1ULL<<60) | sbi_suspend_param with bits[59:32] RESERVED
-ZERO — the param goes in the LOW 32 bits (same convention as the CPPC
-FFH registers already in Cpu.asl: 0x1000000000000005 = (1<<60)|5). The
-0x19-prefixed form put the param in the reserved field, and
-acpi_cpu_init_idle's RISCV_FFH_LPI_RSVD_MASK check rejected every state.
-
-Fixed (maintained e0fcedf5, patch 0012 regenerated): CPU_NR =
-0x1000000090000000, CLUSTER_NR = 0x1000000091000000. Built DSDT
-verified: 8x correct addresses, no bad form, _LPI count 8.
-
-Gate status after three fixes: _OSC presence → _OSC buffer contract →
-FFH encoding. The next boot is the first where all three are correct.
-
-## Addendum 4: state Flags must be ENABLED; acceptance criteria corrected
-
-Audit finding: the state packages carried Flags=0. flatten_lpi_states()
-skips any state without ACPI_LPI_STATE_FLAGS_ENABLED (bit 0), so both
-states would have been dropped at flatten (zero states -> the backend's
-count>1 check fails -ENODEV -> still no cpuidle). Fixed (maintained
-4649f3cf, patch 0012): Flags=1 on both states; built AML verified
-(One in both state packages).
-
-Acceptance criteria corrected: the checklist previously expected
-"LPI-0 (safe), LPI-1, LPI-2" — three states. The kernel's LPI path
-names LPI-i for every FLATTENED state starting at index 0 and inserts
-no synthetic safe/WFI state (unlike the C-state path's ACPI_IDLE_STATE_START
-behavior). With two _LPI states, expect exactly `LPI-0` (= CPU_NR) and
-`LPI-1` (= CLUSTER_NR). Gate count now four: _OSC presence, _OSC buffer
-contract, FFH encoding, state Flags.
-
-## Addendum 5: index-0 semantics, timer-stop flag, _OSC bitfields
-
-Audit round (all verified against the deployed 6.12 kernel source):
-
-1. Index 0 of the flattened LPI states is special
-   (__CPU_PM_CPU_IDLE_ENTER: cpu_do_idle() WITHOUT the SBI suspend
-   entry). CPU_NR at index 0 would never suspend and its usage counts
-   would be meaningless. Fixed: State 0 = explicit WFI (FFH address 0,
-   timer runs), State 1 = CPU_NR. CLUSTER_NR REMOVED from the AML —
-   deferred until cluster qualification validates the wake mechanism.
-2. Timer-stop: CPU_NR sets ArchFlags bit 0 (local timer stops).
-   KERNEL COMPANION REQUIRED: 6.12 RISC-V has no
-   arch_get_idle_state_flags override (weak default returns 0; only
-   ARM64 maps CPUIDLE_CORE_CTXT -> CPUIDLE_FLAG_TIMER_STOP) — a
-   one-line kernel override is needed for the flag to take effect.
-   The AML is correct and forward-compatible.
-3. PCI _OSC: Support (CDW2) and Control (CDW3) are different
-   bitfields. SUPP = CDW2 & 0x10 (OSC_PCI_MSI_SUPPORT — provided:
-   APLIC-MSI + IMSIC live); CTRL = CDW3 & 0x10
-   (OSC_PCI_EXPRESS_CAPABILITY — MCFG ECAM). The earlier
-   CTRL = CDW3 & SUPP mixed the two fields.
-4. Platform _OSC hardening: revision != 1 -> 0x08; unknown UUID ->
-   0x04 (_OSC_UNRECOGNIZED_UUID — the earlier `1` was the query bit).
-
-Checklist acceptance criteria corrected accordingly (LPI-0 WFI usage
-proves idle entry; LPI-1 CPU_NR usage proves suspend entry).
+| # | Gate | Failure signature | Fix |
+|---|---|---|---|
+| 1 | `_OSC` presence | silent `-EOPNOTSUPP` | `\_SB._OSC` added; proven live (`OS control mask [00000080]`) |
+| 2 | `_OSC` buffer contract | CDW3 past the 8-byte buffer | 2-DWORD method (CDW1/CDW2 only) |
+| 3 | FFH encoding | `Invalid FFH LPI data` ×8 (live) | param in low 32 bits: `0x1000000090000000` |
+| 4 | state Flags | zero flattened states | Flags=1 (ENABLED) on both states |
+| 5 | index-0 semantics | CPU_NR would never suspend | WFI at index 0, CPU_NR at 1; CLUSTER_NR removed |

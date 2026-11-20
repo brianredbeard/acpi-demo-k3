@@ -15,44 +15,43 @@ suspends):
   (bit 0 - flatten_lpi_states skips states without it), ArchFlags
   bit 0 (local timer stops, per the DT idle-state's
   local-timer-stop). The RISC-V FFH encoding keeps bits[59:32]
-  reserved zero - the param lives in the LOW 32 bits (the CPPC FFH
-  convention in this file).
+  reserved zero - the param lives in the LOW 32 bits.
 
-CLUSTER_NR deliberately DEFERRED: cluster qualification requires
-validating the wake mechanism (tick broadcast under timer-stop, M2
-coordination with ESOS), not just boot success.
+CLUSTER_NR is NOT exposed: deferred pending cluster wake-mechanism
+qualification (tick broadcast under timer-stop, M2 coordination with
+ESOS), not just boot success.
 
 Kernel companion note: 6.12 RISC-V has no
 arch_get_idle_state_flags override (weak default returns 0; only
-ARM64 maps CPUIDLE_CORE_CTXT to CPUIDLE_FLAG_TIMER_STOP) - a one-
-line kernel override mapping ArchFlags bit 0 is required for the
-timer-stop flag to take effect on this kernel. The AML is correct
-and forward-compatible with the upstream mapping.
+ARM64 maps CPUIDLE_CORE_CTXT to CPUIDLE_FLAG_TIMER_STOP) - a
+one-line kernel override mapping ArchFlags bit 0 is required for the
+timer-stop flag to take effect on this kernel. RELEASE DEPENDENCY:
+without it, CPU_NR may stop the local timer without the kernel
+arranging tick broadcast (potential idle-entry hang). The AML is
+correct and forward-compatible with the upstream 7.4 mapping.
 
 \_SB platform-wide _OSC (UUID 0811B06E-...) confirming PCLPI (0x80)
 ONLY: acpi_processor_get_lpi_info() gates _LPI parsing on
 osc_pc_lpi_support_confirmed, set exclusively by this handshake
-(root cause of the original silent no-cpuidle failure; proven live:
-'platform _OSC: OS control mask [00000080]'). The buffer is 2
-DWORDs (u32 capbuf[2]: Query/Status, Support - NO Control DWORD).
-Revision != 1 returns _OSC_REVISION_ERROR (0x08); unknown UUIDs
-return _OSC_UNRECOGNIZED_UUID (0x04, not the query bit). PR3/S3,
-GED, hotplug-OST not confirmed. (PCI0's _OSC keeps CDW3:
-pci_root.c passes capbuf[5].)
+(proven live: 'platform _OSC: OS control mask [00000080]'). The
+buffer is 2 DWORDs (u32 capbuf[2]: Query/Status, Support - NO
+Control DWORD). Revision != 1 returns _OSC_REVISION_ERROR (0x08);
+unknown UUIDs return _OSC_UNRECOGNIZED_UUID (0x04, not the query
+bit). PR3/S3, GED, hotplug-OST not confirmed. (PCI0's _OSC keeps
+CDW3: pci_root.c passes capbuf[5].)
 
 Latencies are vendor DT values - measure before freezing.
 
 Validation: full RELEASE build; built DSDT decompiles 8x (WFI,
 CPU_NR) with Flags=One, ArchFlags=One on CPU_NR, correct FFH
 addresses, zero CLUSTER_NR, and the \\_SB _OSC with revision/UUID
-error paths. Hardware gates closed live so far: _OSC presence,
-buffer contract. Encoding/flags/index fixes verified in AML only.
+error paths.
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-index 492b4792..9684cc82 100644
+index 492b4792..a4b5b69e 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-@@ -1,106 +1,172 @@
+@@ -1,106 +1,178 @@
 -/** @file
 -  Differentiated System Description Table Fields (DSDT)
 -
@@ -174,10 +173,10 @@ index 492b4792..9684cc82 100644
 + * params are the platform non-retentive types the ESOS RPMI HSM service
 + * advertises from the rcpu DTB idle-states. The kernel's RISC-V LPI
 + * backend (acpi_cpu_init_idle) requires MORE THAN ONE flattened state,
-+ * so the CPU and CLUSTER non-retentive states are both exposed; both use
-+ * the identical proven mechanism (PMU vote + WFI + in-place resume; the
-+ * cluster state would additionally vote the cluster domain down;
-+ * CLUSTER_NR is deferred pending cluster qualification). Latencies
++ * so an explicit shallow WFI state is exposed alongside CPU_NR. Both use
++ * the proven mechanism (PMU vote + WFI + in-place resume). CLUSTER_NR is
++ * NOT exposed: deferred pending cluster wake-mechanism qualification.
++ * Latencies
 + * are the vendor DT values - replace with measured values before
 + * freezing (audit requirement). CPU_NR sets ArchFlags bit 0 (local
 + * timer stops) per the DT idle-state's local-timer-stop; the timer-stop
@@ -214,20 +213,26 @@ index 492b4792..9684cc82 100644
 +      0,                        /* Usage Counter Address */ \
 +      "WFI"                     /* Name */ \
 +    },                          \
-+    /* State 1: CPU non-retentive (sbi param 0x90000000) */ \
++    /* State 1: SBI WFI (retentive, suspend param 0, timer runs).
++     * SAFE first cut: proves the _LPI -> cpuidle -> SBI HSM suspend
++     * pipeline end-to-end without hang risk. The non-retentive CPU_NR
++     * (0x90000000) hangs the boot: the local timer stops and 6.12
++     * RISC-V has no arch_get_idle_state_flags override to trigger
++     * tick broadcast. Replace with CPU_NR once the kernel-side
++     * timer-stop support lands. */ \
 +    Package () {                \
 +      950,                      /* MinResidency (us) */ \
 +      500,                      /* WakeLatency (us) */ \
 +      1,                        /* Flags: BIT(0) enabled */ \
-+      1,                        /* ArchFlags: BIT(0) = local timer stops */ \
++      0,                        /* ArchFlags (retentive: timer runs) */ \
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
 +      ResourceTemplate () {     \
-+        Register (FFixedHW, 64, 0, 0x1000000090000000, 4) \
++        Register (FFixedHW, 64, 0, 0x1000000000000000, 4) \
 +      },                        \
 +      0,                        /* Residency Counter Address */ \
 +      0,                        /* Usage Counter Address */ \
-+      "CPU_NR"                  /* Name */ \
++      "SBI_WFI"                 /* Name */ \
 +    }                           \
 +  })
 +
