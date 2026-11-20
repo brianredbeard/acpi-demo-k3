@@ -26,7 +26,7 @@ hardware definitions are not vendor-authored changes.
 | 0009 | ACPI 6.6 conformance: processor objects (Cpu.asl), APLIC 512/HardwareId, MADT rev 7, ResourceConsumer, dead-file removal, count static asserts |
 | 0010 | DSDT v12 promotion: full qualified peripheral set (GPIO/I2C/EEPROM/eSPI/EC/PWM/fan/tsensor) + MPXY (RSCV0005) + RCLK — the firmware DSDT is complete; the GRUB override is retired |
 | 0011 | Audit fixes: RHCT ISA completion (HWCAP), PCI _OSC support/control bitfield separation (MSI vs PCIeCapability), hart contract, borrowed-ID docs, GMAC1/2 register retargeting, EnableClock failure semantics |
-| 0012 | Cpu.asl _LPI (WFI at index 0 + CPU_NR with ArchFlags timer-stop; CLUSTER_NR deferred) + \_SB platform _OSC (PCLPI only, 2-DWORD contract, revision/UUID error paths) |
+| 0012 | \_SB platform _OSC (PCLPI only, 2-DWORD contract, revision/UUID error paths); _LPI REMOVED pending the OpenSBI retentive fix (patches/opensbi/0001: type 0 as plain wfi; build-verified, hardware qualification pending) |
 
 ## Current artifact identity
 

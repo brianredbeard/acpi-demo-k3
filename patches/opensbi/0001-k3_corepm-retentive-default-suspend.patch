@@ -1,0 +1,57 @@
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Subject: [PATCH] spacemit: k3_corepm: implement genuine retentive default suspend
+
+__rpmi_hsm_suspend() treated every type except 0x90000000 as a
+cluster power-down (vote + D-cache disable + L2 snoop clear before
+WFI) - including SBI_HSM_SUSPEND_RET_DEFAULT (type 0), which the
+SBI HSM spec defines as plain retentive WFI with no power
+management operations. The rpmi-hsm device never returns
+SBI_ENOTSUPP, so the generic sbi_hsm plain-wfi fallback for
+default types was unreachable: every type-0 request executed the
+cluster power-down path.
+
+Special-case SBI_HSM_SUSPEND_RET_DEFAULT as wfi() + return 0
+(register state intact, caller resumes in place).
+
+--- a/platform/generic/spacemit/k3_corepm.c
++++ b/platform/generic/spacemit/k3_corepm.c
+@@ -691,6 +691,24 @@ int __rpmi_hsm_suspend_pre(void)
+ int __rpmi_hsm_suspend(u32 type)
+ {
+ 	int i, j, k;
+ 	struct imsic_config *imsic;
+ 	struct sbi_scratch *rscratch = NULL;
++
++	/*
++	 * SBI HSM spec: SBI_HSM_SUSPEND_RET_DEFAULT (type 0) is a plain
++	 * retentive wait-for-interrupt - no power management operations,
++	 * no votes, no cache/snoop changes; register state stays intact
++	 * and the caller resumes in place. Everything below this early
++	 * return implements power-down paths and must not run for it.
++	 * (Previously type 0 fell into the cluster power-down branch,
++	 * which also made the generic sbi_hsm plain-wfi fallback
++	 * unreachable since this device never returns SBI_ENOTSUPP.)
++	 */
++	if (type == SBI_HSM_SUSPEND_RET_DEFAULT) {
++		wfi();
++		return 0;
++	}
+ 
+ 	rscratch = sbi_hartindex_to_scratch(current_hartid());
+ 	imsic = sbi_scratch_offset_ptr(rscratch, hart_imisc_save_offset);
+
+Build-verified: fw_dynamic.elf disassembly shows the type-0 path
+as exactly 'wfi; li a0,0; ret' with NO vote/cache/snoop/IMSIC side
+effects; all non-zero types retain the existing dispatch.
+
+HARDWARE QUALIFICATION REQUIRED BEFORE _LPI RETURNS (per review):
+1. type 0 reaches WFI without side effects (disassembly-proven;
+   confirm on hardware: no cluster vote, caches stay on)
+2. existing non-retentive types (0x90000000 CPU, 0x91000000
+   cluster) retain their behavior - regression-test
+3. wake sources from type-0 suspend: timer tick, IPI, UART - each
+   must wake the hart and deliver
+
+PREREQUISITE for the K3 ACPI _LPI bring-up (Task 9): the AML
+side is reverted to no-_LPI until this lands and passes the three
+qualification items on hardware.

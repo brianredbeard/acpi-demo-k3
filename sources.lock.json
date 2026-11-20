@@ -111,7 +111,7 @@
         },
         {
           "file": "patches/edk2-platforms/0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch",
-          "sha256": "cbf1beb9920d5f68db4a26dd881f336ac2b73042fa32aab2c208a793d82e7958"
+          "sha256": "c012284984fb4c8cdf651142c9bee32d425dea420ac34ad46276f5203852dfd2"
         }
       ],
       "configs": [],
