@@ -1,11 +1,11 @@
 # edk2-platforms ACPI patch series export
 
-Export date: 2026-11-20 (revised). Source tree:
-`workdir/k3-maintained-efi/edk2-platforms` (maintained tree, baseline commit
-`8e686e13d9f76e9acc478fa03bf1ba74f06517a2`, "Platform/Spacemit/K3: reject
-incomplete RAM fixups and conflicting description modes").
+Export date: 2026-11-20 (rev 3). Source tree:
+`workdir/k3-maintained-efi/edk2-platforms` branch `k3-maintained-efi`
+(tip `8071f600`), baseline commit
+`8e686e13d9f76e9acc478fa03bf1ba74f06517a2`.
 
-## Series
+## Series (12 patches)
 
 Applied in order by `meta.py prepare` with `git apply` (not `git am`; the
 series carries CRLF context lines from vendor files that mbox parsing
@@ -15,69 +15,50 @@ hardware definitions are not vendor-authored changes.
 
 | Patch | Content |
 | --- | --- |
-| 0001 | ACPI tables for Pico-ITX bring-up: DSDT v8 (COM0/IC00/ETH0/USB2/PCI0/RES0/DBI0 only), MADT (AIA topology: 8×RINTC, IMSIC, APLIC-MSI), K3AcpiTables.inf wiring |
-| 0002 | ClockDxe: TSEN/ESPI clock entries; ConfigNum/row mismatch fixes (the address-0 write that reset the SoC); zero-address guards |
-| 0003 | AcpiClockInitDxe: deterministic ReadyToBoot clock bring-up for firmware-unowned OS-driven blocks (TSEN, ESPI) |
-| 0004 | MUSE-Pico DSC/FDF: AcpiClockInitDxe wiring, quiet-console status-code/DEBUG PCDs, ACPI SDT protocol install |
-| 0005 | DwEqosDxe: leave EMAC clocks enabled at ExitBootServices (ACPI handoff) |
-| 0006 | DesignWarePcieControllerLib: bus-0 2MB config window (pairs with the kernel MCFG quirk) |
-| 0007 | ResetSystemLib: resets via the SBI srst extension instead of direct WDT MMIO |
-| 0008 | SPCR re-add (v4, 16550-with-GAS, namespace `\_SB.COM0`) + COM0 `_DSD` XScale compatible; BaudRate 115200 and UART clock 14745600 fixes |
+| 0001 | ACPI tables for Pico-ITX bring-up: DSDT v8 core devices, MADT (AIA topology), tables INF |
+| 0002 | ClockDxe: TSEN/ESPI clock entries; ConfigNum corruption fix (the address-0 write that reset the SoC); zero-address guards |
+| 0003 | AcpiClockInitDxe: ReadyToBoot clock bring-up for the FIRMWARE-UNOWNED blocks only (TSEN, ESPI). GMAC/PCIe/USB are deliberately excluded — their UEFI drivers enable them during BDS connect |
+| 0004 | MUSE-Pico DSC/FDF: ACPI build wiring, quiet-console PCDs, SDT protocol install (kept for tooling; K3AcpiNvsDxe is NOT in components) |
+| 0005 | DwEqosDxe: leave EMAC clocks enabled at ExitBootServices |
+| 0006 | DesignWarePcieControllerLib: bus-0 2MB config window |
+| 0007 | ResetSystemLib: resets via SBI srst; terminal deadloop documented |
+| 0008 | SPCR v4 re-add + COM0 XScale compatible; BaudRate/UART-clock fixes |
+| 0009 | ACPI 6.6 conformance: processor objects (Cpu.asl), APLIC 512/HardwareId, MADT rev 7, ResourceConsumer, dead-file removal, count static asserts |
+| 0010 | DSDT v12 promotion: full qualified peripheral set (GPIO/I2C/EEPROM/eSPI/EC/PWM/fan/tsensor) + MPXY (RSCV0005) + RCLK — the firmware DSDT is complete; the GRUB override is retired |
+| 0011 | Audit fixes: RHCT ISA completion (HWCAP), PCI _OSC support/control bitfield separation (MSI vs PCIeCapability), hart contract, borrowed-ID docs, GMAC1/2 register retargeting, EnableClock failure semantics |
+| 0012 | Cpu.asl _LPI (WFI at index 0 + CPU_NR with ArchFlags timer-stop; CLUSTER_NR deferred) + \_SB platform _OSC (PCLPI only, 2-DWORD contract, revision/UUID error paths) |
 
-**Peripheral coverage of this series is exactly:** serial console (COM0),
-GMAC ethernet, USB2/xHCI, PCIe root bridge + NVMe-by-MSI-X, thermal sensor
-clocks, eSPI controller clocks, and the SPCR console contract. The DSDT in
-0001 does **not** contain GPIO, I2C, eSPI-EC, PWM-fan or tsensor devices;
-see "Historical evidence vs this series" below.
+## Current artifact identity
+
+- Firmware chain qualified through pico-acpi-v12 (edk2 9ef6a15f: 0010+0011;
+  ESOS 37533b27: the clk framework rework). Live evidence: full RHCT HWCAP
+  set, truthful _OSC masks, all RPMI clocks at real rates, all peripherals
+  bound from the firmware DSDT with no GRUB override.
+- _LPI cycle (0012) in bring-up: _OSC presence and buffer contract proven
+  live; FFH encoding, state Flags, and index-0 structuring fixed in AML and
+  verified by build decode. Next flash is the first with all gates correct.
 
 ## Verification
 
-- All eight patches apply cleanly in order to the pinned baseline
-  (`git apply --check` + `git apply`, the exact mechanism `meta.py` uses),
-  and reproduce the maintained tree's build inputs content-exactly. Three
-  files (`K3AcpiTables.inf`, `ClockDxe.c`, `DwEqosSpacemit.c`) differ from
-  the live tree only in line endings: the export restores the baseline CRLF
-  convention so the diffs are content-only.
-- 0008 was built and verified in isolation for this export: iasl-clean DSDT,
-  full RELEASE firmware build (`ACPI_ENABLE=TRUE`), SPCR decoded from the
-  built DXEFV (GAS mmio32 0xd4017000, GSI 42, baud 115200, UART clock
-  14745600, namespace string `\_SB.COM0`). Its hardware boot validation is
-  pending and is scheduled with the board owner.
-- The live firmware bundle built from these inputs is
-  `pico-acpi-v9e-20261119` (fedora-k3-firmware `bundles/pico-acpi-v9`,
-  edk2 ITB sha256 `01a4194e6ff4fcea312da819b8903c67ee6756206f0fe7276cca98919bd103af`).
+- All twelve patches apply cleanly in order to the pinned baseline, and
+  reproduce the maintained tree content-exactly (CRLF-normalized for three
+  vendor files).
+- Full RELEASE firmware builds verified at each increment; tables decoded
+  from the built FV (see per-patch ledger in patches/edk2-platforms/README.md
+  for hardware-qualification status and evidence).
 
-## Historical evidence vs this series
+## Deliberately NOT in this series
 
-GPIO (gpiolib-acpi), I2C (i2c-k1 + at24 EEPROM), thermal telemetry
-(k3_tsensor), eSPI/ChromeOS-EC/PWM-fan and the XScale serial quirk are all
-**validated on hardware** — but through kernel-side experiment AML
-(GRUB DSDT overrides v9/v10, `patches/acpi-kernel/experiments/`), not
-through patch 0001's DSDT. Those devices are *not* in this series. They get
-promoted into the firmware DSDT only as each experiment DSDT is qualified
-and folded back; the eSPI/EC/fan set (DSDT v10) is the next promotion
-candidate and lives in the maintained tree as uncommitted work until then.
+- `AcpiNvsDxe`, `Pcct.aslc`, `K3AcpiNvs.h`, Power.asl: the PCC power model,
+  unwired by design (no DSC/FDF component), gated on the ESOS PCC endpoint
+  passing the acceptance requirements.
+- CLUSTER_NR `_LPI` state: deferred until cluster wake-mechanism
+  qualification.
+- A6 (`RSCV0006` SYSMSI): firmware-side unvalidated-MSI-target hole.
 
-## Deliberately NOT exported (present in the maintained tree)
+## Outstanding dependency pins
 
-- `Pcct.aslc`, `K3AcpiNvs.h`, `AcpiNvsDxe/`: the PCC power-model design;
-  unwired draft (no DSC/FDF reference), gated on the ESOS PCC endpoint
-  passing the acceptance requirements in
-  `docs/k3-maintained-efi/acpi-platform-management-architecture.md`.
-- `Dsdt/Uart.asl`, `Platform.asl`, `Soc.asl`, `Power.asl`, `*.noscope`:
-  stale DSDT split experiments; `Dsdt.asl` is the single source of truth.
-  (`Spcr.aslc` **is** exported and wired via patch 0008.)
-- `Silicon/Spacemit/K3/K3.dec` PCC feature PCD: consumed only by the
-  unwired AcpiNvsDxe experiment.
-- `docs/k3-maintained-efi/`: maintained-tree documentation, not a build
-  input (kept in the maintained repository).
-
-## Outstanding dependency pins (next increment)
-
-- EDK2 core / vendor SDK: the build consumes the vendored edk2 tree at
-  `K3-Ubuntu-Images` commit `0dbb43a7303de574dc3e98ddae7666b68cf664e0`
-  (provides edk2 core, BaseTools, and the SPL/boot-chain files used by the
-  FIT packaging). Pin it as an explicit component once the canonical
-  reachable remote for that revision is confirmed.
-- Compiler: `riscv64-linux-gnu-gcc` (GCC 16.2.1 Red Hat Cross) — needs an
-  explicit toolchain pin per the README toolchain policy.
+- EDK2 core: vendored tree at `0dbb43a7…` — pin as an explicit component
+  once the canonical reachable remote is confirmed.
+- Compiler toolchain pin for release builds.
+- OpenSBI: qualified binary, unpinned source.
