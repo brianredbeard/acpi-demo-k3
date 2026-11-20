@@ -92,6 +92,10 @@
         {
           "file": "patches/edk2-platforms/0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch",
           "sha256": "c78372fc1de56db97b831b613e9a6e5b3dda15301efe629329e776bce02f665f"
+        },
+        {
+          "file": "patches/edk2-platforms/0009-Platform-Spacemit-K3-ACPI-6-6-conformance-fixes-for-t.patch",
+          "sha256": "6020c0281dbb0afc409a03953c640bc3414c9bdcf1747dd411d7779d212ad68e"
         }
       ],
       "configs": [],

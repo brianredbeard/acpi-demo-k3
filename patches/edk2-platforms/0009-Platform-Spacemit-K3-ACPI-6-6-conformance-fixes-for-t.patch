@@ -1,0 +1,484 @@
+From 3780b9f83df6db80d760c7275aea628a03a1009b Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 18:54:02 -0800
+Subject: [PATCH 9/9] Platform/Spacemit/K3: ACPI 6.6 conformance fixes for the AIA
+ tables
+
+Addresses the 2026-11-20 audit (A1-A5, A7, A8). The AIA-specific
+IMSIC/APLIC MADT values were confirmed correct; these are ACPI 6.6
+conformance and description-quality defects:
+
+- A1: re-add include ("Cpu.asl") to the DSDT. ACPI 6.6 5.2.12.27
+  requires every RINTC hart to have a processor device object
+  (_HID ACPI0007, _UID matching the RINTC AcpiProcessorUid). The
+  monolithic-DSDT rewrite dropped it, so acpi_processor could not
+  bind and cpuidle/_LPI (Task 9) had no namespace objects. Cpu.asl
+  provides CPU0-7 plus CL00/CL01 ACPI0010 containers whose _UIDs
+  match the PPTT cluster nodes.
+- A2: APLIC NumExtIntSources 511 -> 512, matching
+  riscv,num-sources = <512> in the vendored and OS K3.dtsi.
+- A3: MADT revision EFI_ACPI_6_5 (0x06) -> EFI_ACPI_6_6 (0x07); the
+  table carries 6.6 RINTC/IMSIC/APLIC subtypes and must self-identify
+  as 6.6.
+- A4: APLIC HardwareId 0 -> "SPMT0001" (ACPI 6.6 Table 5.59 requires
+  a valid NNNN#### ACPI ID). New ACPI_HWID_LIST_8 macro passes the
+  8 ASCII bytes through the INIT macro (macro arguments cannot carry
+  unparenthesized comma lists).
+- A5: device MMIO _CRS descriptors for IC00/COM0/ETH0/USB2 switch
+  ResourceProducer -> ResourceConsumer; they are devices, not
+  bridges. PCI0 windows and RES0 stay producers.
+- A7: delete the dead DSDT split files (Aplic/Uart/Usb/Pci.asl).
+  Dsdt.asl is the single source of truth; Aplic.asl declared a second
+  IC00 and Uart.asl carried a stale _DEP, both traps if anyone
+  re-included them.
+- A8: STATIC_ASSERT that the explicit RINTC/RHCT-CPU initializer
+  counts match PcdX100HartCount; a PCD change without updating the
+  initializers would emit zero-filled subtables.
+
+Deliberately NOT done (A6): no RSCV0006 RPMI SYSMSI device. The
+firmware-side SYSMSI group has an unvalidated-MSI-target hole
+(k3_os0_validate_msi_addr returns success unconditionally; a
+shared-memory client could direct arbitrary aligned 32-bit writes)
+plus response-format defects. Exposing it in ACPI would make that
+reachable; it stays uninstantiated until the service is fixed.
+
+Validation: full RELEASE build (ACPI_ENABLE=TRUE); tables decoded
+from the built DXEFV: MADT revision 7, APLIC HwId=SPMT0001
+NumSources=512 NumIdcs=0, 8 RINTC records with nonzero UIDs, DSDT
+carries 8 ACPI0007 + 2 ACPI0010, four device descriptors decode as
+ResourceConsumer while PCI0 keeps 3 producer windows. Hardware boot
+validation pending (scheduled with the board owner).
+---
+ Platform/Spacemit/K3/AcpiTables/Acpi66Temp.h  |   8 ++
+ .../Spacemit/K3/AcpiTables/Dsdt/Aplic.asl     |  33 -----
+ Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl |  14 +-
+ Platform/Spacemit/K3/AcpiTables/Dsdt/Pci.asl  | 133 ------------------
+ Platform/Spacemit/K3/AcpiTables/Dsdt/Uart.asl |  44 ------
+ Platform/Spacemit/K3/AcpiTables/Dsdt/Usb.asl  |  48 -------
+ Platform/Spacemit/K3/AcpiTables/Madt.aslc     |  20 ++-
+ Platform/Spacemit/K3/AcpiTables/Rhct.aslc     |   6 +
+ 8 files changed, 39 insertions(+), 267 deletions(-)
+ delete mode 100644 Platform/Spacemit/K3/AcpiTables/Dsdt/Aplic.asl
+ delete mode 100644 Platform/Spacemit/K3/AcpiTables/Dsdt/Pci.asl
+ delete mode 100644 Platform/Spacemit/K3/AcpiTables/Dsdt/Uart.asl
+ delete mode 100644 Platform/Spacemit/K3/AcpiTables/Dsdt/Usb.asl
+
+diff --git a/Platform/Spacemit/K3/AcpiTables/Acpi66Temp.h b/Platform/Spacemit/K3/AcpiTables/Acpi66Temp.h
+index 672cf25..d63a832 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Acpi66Temp.h
++++ b/Platform/Spacemit/K3/AcpiTables/Acpi66Temp.h
+@@ -145,6 +145,14 @@ typedef struct {
+     HartIndexBits, GroupIndexBits, GroupIndexShift                             \
+   }
+ 
++/*
++ * HardwareId is a UINT8 HwId[8] ("NNNN####" ACPI ID). Macro arguments
++ * cannot contain unparenthesized commas, so callers pass the 8 ASCII
++ * bytes through LIST_8(); e.g.
++ *   LIST_8 ('S','P','M','T','0','0','0','1')
++ */
++#define ACPI_HWID_LIST_8(a, b, c, d, e, f, g, h)  { a, b, c, d, e, f, g, h }
++
+ #define EFI_ACPI_6_6_APLIC_STRUCTURE_INIT(AplicId, HardwareId, NumIdcs,     \
+     NumExtIntSources, GsiBase, AplicAddress, AplicSize)                     \
+   {                                                                         \
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Aplic.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Aplic.asl
+deleted file mode 100644
+index 79aa5e3..0000000
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Aplic.asl
++++ /dev/null
+@@ -1,33 +0,0 @@
+-/** @file
+-  Differentiated System Description Table Fields (DSDT)
+-
+-  Copyright (c) 2026, SpacemiT Co., Ltd. All rights reserved.<BR>
+-
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-**/
+-
+-Scope (_SB)
+-{
+-  // RISC-V APLIC
+-  Device (IC00) {
+-    Name (_HID, "RSCV0002")
+-    Name (_UID, 0)
+-    Name (_GSB, 0)  // Global System Interrupt Base for this APLIC starts at 0
+-
+-    Name (_CRS, ResourceTemplate () {
+-      QWordMemory (
+-        ResourceProducer,
+-        PosDecode,
+-        MinFixed,
+-        MaxFixed,
+-        NonCacheable,
+-        ReadWrite,
+-        0x0,               // AddressGranularity, should be 2^n - 1
+-        0xe0804000,        // AddressMinimum
+-        0xe0807fff,        // AddressMaximum
+-        0x00000000000,     // AddressTranslation
+-        0x4000             // RangeLength
+-      )
+-    })
+-  }
+-}
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+index 0f541fc..09fce75 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
++++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+@@ -9,6 +9,12 @@
+ #include "K3PlatformAcpi.h"
+ 
+ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISION) {
++  // ACPI 6.6 §5.2.12.27: every RINTC hart requires a processor device
++  // object (_HID ACPI0007, _UID matching the RINTC AcpiProcessorUid).
++  // Cpu.asl provides CPU0-7 plus the CL00/CL01 ACPI0010 containers whose
++  // _UIDs match the PPTT cluster nodes.
++  include ("Cpu.asl")
++
+   Scope (_SB) {
+     Device (IC00)
+     {
+@@ -18,7 +24,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+       Name (_CRS, ResourceTemplate ()
+       {
+         QWordMemory (
+-          ResourceProducer, PosDecode, MinFixed, MaxFixed,
++          ResourceConsumer, PosDecode, MinFixed, MaxFixed,
+           NonCacheable, ReadWrite,
+           0x0, 0xE0804000, 0xE0807FFF, 0x0, 0x4000
+         )
+@@ -37,7 +43,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+       Name (_CRS, ResourceTemplate ()
+       {
+         QWordMemory (
+-          ResourceProducer, PosDecode, MinFixed, MaxFixed,
++          ResourceConsumer, PosDecode, MinFixed, MaxFixed,
+           NonCacheable, ReadWrite,
+           0x0, 0xD4017000, 0xD40170FF, 0x0, 0x100
+         )
+@@ -79,7 +85,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+       Name (_CRS, ResourceTemplate ()
+       {
+         QWordMemory (
+-          ResourceProducer, PosDecode, MinFixed, MaxFixed,
++          ResourceConsumer, PosDecode, MinFixed, MaxFixed,
+           NonCacheable, ReadWrite,
+           0x0, 0xCAC80000, 0xCAC81FFF, 0x0, 0x2000
+         )
+@@ -115,7 +121,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+       Name (_CRS, ResourceTemplate ()
+       {
+         QWordMemory (
+-          ResourceProducer, PosDecode, MinFixed, MaxFixed,
++          ResourceConsumer, PosDecode, MinFixed, MaxFixed,
+           NonCacheable, ReadWrite,
+           0x0, 0xC0A00000, 0xC0A0FFFF, 0x0, 0x10000
+         )
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Pci.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Pci.asl
+deleted file mode 100644
+index e0ef7ba..0000000
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Pci.asl
++++ /dev/null
+@@ -1,133 +0,0 @@
+-/** @file
+-  Differentiated System Description Table Fields (DSDT)
+-
+-  Copyright (c) 2026, SpacemiT Co., Ltd. All rights reserved.<BR>
+-
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-**/
+-
+-#define PCI_OSC()                                                             \
+-  Name (SUPP, 0)  /* Object to save PCI _OSC Support Field value */           \
+-  Name (CTRL, 0)  /* Object to save PCI _OSC Control Field value */           \
+-  Method (_OSC, 4, NotSerialized) {                                           \
+-    /* DWORD1 in Capabilities Buffer: status and error information */         \
+-    CreateDWordField (Arg3, 0, CDW1)                                          \
+-                                                                              \
+-    If ((Arg0 == ToUUID ("33DB4D5B-1FF7-401C-9657-7441C03DD766"))) {          \
+-      /* DWORD2 in Capabilities Buffer: Support Field */                      \
+-      CreateDWordField (Arg3, 4, CDW2)                                        \
+-      /* DWORD3 in Capabilities Buffer: Control Field */                      \
+-      CreateDWordField (Arg3, 8, CDW3)                                        \
+-                                                                              \
+-      /* Save Support Field and Control Field values */                       \
+-      SUPP = CDW2                                                             \
+-      CTRL = CDW3                                                             \
+-                                                                              \
+-      /* Allow OS control for 5 features: */                                  \
+-      /*  PCIe Hot Plug, SHPC Hot Plug, PME, AER, PCIe Capability */          \
+-      CTRL &= 0x1f                                                            \
+-                                                                              \
+-      /* Unknown revision */                                                  \
+-      if ((Arg1 != 1)) {                                                      \
+-        CDW1 |= 0x08                                                          \
+-      }                                                                       \
+-      /* Some capabilities bits set by OS were cleared by firmware */         \
+-      if ((CDW3 != CTRL)) {                                                   \
+-        CDW1 |= 0x10                                                          \
+-      }                                                                       \
+-      /* Update DWORD3 in Capabilities Buffer */                              \
+-      CDW3 = CTRL                                                             \
+-                                                                              \
+-      Return (Arg3)                                                           \
+-                                                                              \
+-    } Else {  /* Unrecognized UUID */                                         \
+-      CDW1 |= 0x04                                                            \
+-      Return (Arg3)                                                           \
+-    }                                                                         \
+-  } /* End _OSC */
+-
+-Scope (_SB)
+-{
+-  Device (PCI0) {
+-    Name (_HID, "PNP0A08")    // PCI Express Root Bridge
+-    Name (_CID, "PNP0A03")    // Compatible PCI Root Bridge
+-    Name (_UID, 0)            // Unique ID
+-    Name (_SEG, 0)            // PCI Segment Group Number
+-    Name (_BBN, 0x00)         // PCI Base Bus Number
+-    Name (_CCA, 0)            // Cache Coherency Attribute
+-
+-    Name (_CRS, ResourceTemplate () {
+-      WordBusNumber (
+-        ResourceProducer, MinFixed, MaxFixed, PosDecode,
+-        0x0,    // AddressGranularity
+-        0x00,   // AddressMinimum
+-        0xff,   // AddressMaximum
+-        0x00,   // AddressTranslation
+-        0x100   // RangeLength
+-      )
+-
+-      // RISC-V BRS Spec v0.0.2 AML_020 requires that the IO space window
+-      // SHOULD NOT (NOT RECOMMENDED) be defined.
+-
+-      QWordMemory (    // non-prefetchable memory
+-        ResourceProducer, PosDecode, MinFixed, MaxFixed,
+-        NonCacheable, ReadWrite,
+-        0x00000000,           // AddressGranularity, should be 2^n - 1
+-        0x0010000000,         // PCI AddressMinimum
+-        0x007FFFFFFF,         // PCI AddressMaximum
+-        0x1100000000,         // AddressTranslation
+-        0x0070000000          // RangeLength
+-      )
+-
+-      QWordMemory (    // 64-bit prefetchable memory:
+-        ResourceProducer, PosDecode, MinFixed, MaxFixed,
+-        Prefetchable, ReadWrite,
+-        0x0,                   // AddressGranularity, should be 2^n - 1
+-        0x0000001800000000,    // AddressMinimum
+-        0x00000018FFFFFFFF,    // AddressMaximum
+-        0x0000000000000000,    // AddressTranslation
+-        0x0000000100000000     // RangeLength
+-      )
+-    })
+-
+-    PCI_OSC ()
+-
+-    // Reserve the ECAM region declared in MCFG.
+-    Device (RES0) {
+-      Name (_HID, "PNP0C02")
+-      Name (_CRS, ResourceTemplate () {
+-        QWordMemory (
+-          ResourceProducer, PosDecode, MinFixed, MaxFixed,
+-          NonCacheable, ReadWrite,
+-          0x0,                   // AddressGranularity, should be 2^n - 1
+-          0x0000001100000000,    // AddressMinimum
+-          0x000000110FFFFFFF,    // AddressMaximum
+-          0x0000000000000000,    // AddressTranslation
+-          0x0000000010000000     // RangeLength
+-        )
+-      })
+-    }
+-  } // End of PCI0
+-
+-  // PCIe host bridge 0 config space accessed over DBI interfaces.
+-  Device (DBI0) {
+-    Name (_HID, "AMZN0001")
+-    Name (_CID, "PNP0C02")
+-    Name (_UID, 0)
+-    Name (_CRS, ResourceTemplate () {
+-      QWordMemory (
+-        ResourceProducer,
+-        PosDecode,
+-        MinFixed,
+-        MaxFixed,
+-        NonCacheable,
+-        ReadWrite,
+-        0x0,           // AddressGranularity, should be 2^n - 1
+-        0x80000000,    // AddressMinimum
+-        0x80000FFF,    // AddressMaximum
+-        0x00000000,    // AddressTranslation
+-        0x1000         // RangeLength
+-      )
+-    })
+-  } // End DBI0
+-}
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Uart.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Uart.asl
+deleted file mode 100644
+index 20c4c49..0000000
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Uart.asl
++++ /dev/null
+@@ -1,44 +0,0 @@
+-/** @file
+-  Differentiated System Description Table Fields (DSDT)
+-
+-  Copyright (c) 2026, SpacemiT Co., Ltd. All rights reserved.<BR>
+-
+-  SPDX-License-Identifier: BSD-2-Clause-Patent
+-**/
+-
+-Scope (_SB)
+-{
+-  // spacemit UART
+-  Device (COM0) {
+-    Name (_HID, "RSCV0003")
+-    Name (_UID, 0)
+-
+-    Name (_DEP, Package () { \_SB.IC00 })   // Depends on the APLIC
+-
+-    Name (_CRS, ResourceTemplate () {
+-      QWordMemory (
+-        ResourceProducer,
+-        PosDecode,
+-        MinFixed,
+-        MaxFixed,
+-        NonCacheable,
+-        ReadWrite,
+-        0x0,                  // AddressGranularity, should be 2^n - 1
+-        0xD4017000,           // AddressMinimum
+-        0xD40170FF,           // AddressMaximum
+-        0x00000000000,        // AddressTranslation
+-        0x100                 // RangeLength
+-        )
+-      Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 42 }
+-    })
+-
+-    Name (_DSD, Package () {
+-      ToUUID ("daffd814-6eba-4d8c-8a91-bc9bbf4aa301"),
+-      Package () {
+-        Package (2) { "clock-frequency", 14750000 },
+-        Package (2) { "reg-shift", 2 },
+-        Package (2) { "reg-io-width", 4 }
+-      }
+-    })
+-  }
+-}
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Usb.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Usb.asl
+deleted file mode 100644
+index 03475c7..0000000
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Usb.asl
++++ /dev/null
+@@ -1,48 +0,0 @@
+-Scope (\_SB)
+-{
+-    Device (USB2)
+-    {
+-        Name (_HID, "808622B7")  // HID
+-        Name (_UID, 0)           // Unique ID
+-        Name (_CCA, 0)           // Cache Coherency Attribute
+-
+-        Name (_CRS, ResourceTemplate () {
+-            QWordMemory (
+-                ResourceConsumer,
+-                PosDecode,
+-                MinFixed,
+-                MaxFixed,
+-                NonCacheable,
+-                ReadWrite,
+-                0x0,                // AddressGranularity, should be 2^n - 1
+-                0xC0A00000,         // AddressMinimum
+-                0xC0A0FFFF,         // AddressMaximum
+-                0x00000000,         // AddressTranslation
+-                0x10000             // RangeLength
+-                )
+-            Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 105 }
+-        })
+-
+-        Method (_STA, 0, NotSerialized) {
+-            Return (0x0F)
+-        }
+-
+-        Name (_DSD, Package () {
+-            ToUUID("daffd814-6eba-4d8c-8a91-bc9bbf4aa301"),
+-            Package () {
+-                Package () { "dr_mode", "host" },
+-                Package () { "phy_type", "utmi" },
+-                Package () { "snps,hsphy_interface", "utmi" },
+-                Package () { "snps,dis_enblslpm_quirk", 1 },
+-                Package () { "snps,dis_u2_susphy_quirk", 1 },
+-                Package () { "snps,dis_u3_susphy_quirk", 1 },
+-                Package () { "snps,dis-del-phy-power-chg-quirk", 1 },
+-                Package () { "snps,dis-tx-ipgap-linecheck-quirk", 1 },
+-                Package () { "snps,parkmode-disable-ss-quirk", 1 },
+-                Package () { "usb-role-switch", 1 },
+-                Package () { "role-switch-default-mode", "host" },
+-                Package () { "maximum-speed", "high-speed" },
+-            }
+-        })
+-    }
+-}
+diff --git a/Platform/Spacemit/K3/AcpiTables/Madt.aslc b/Platform/Spacemit/K3/AcpiTables/Madt.aslc
+index e1fe816..e9927af 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Madt.aslc
++++ b/Platform/Spacemit/K3/AcpiTables/Madt.aslc
+@@ -23,9 +23,9 @@ typedef struct {
+ STATIC EFI_ACPI_MULTIPLE_APIC_DESCRIPTION_TABLE  Madt = {
+   {
+     ACPI_HEADER (
+-      EFI_ACPI_6_5_MULTIPLE_APIC_DESCRIPTION_TABLE_SIGNATURE,
++      EFI_ACPI_6_6_MULTIPLE_APIC_DESCRIPTION_TABLE_SIGNATURE,
+       EFI_ACPI_MULTIPLE_APIC_DESCRIPTION_TABLE,
+-      EFI_ACPI_6_5_MULTIPLE_APIC_DESCRIPTION_TABLE_REVISION
++      EFI_ACPI_6_6_MULTIPLE_APIC_DESCRIPTION_TABLE_REVISION
+       ),
+     //
+     // MADT specific fields
+@@ -115,15 +115,25 @@ STATIC EFI_ACPI_MULTIPLE_APIC_DESCRIPTION_TABLE  Madt = {
+   // 3. APLIC Structure
+   EFI_ACPI_6_6_APLIC_STRUCTURE_INIT (
+     0x0,               // AplicId
+-    { 0x00000000 },    // HardwareId
+-    0,                 // NumIdcs
+-    511,               // NumExtIntSources
++    // ACPI 6.6 Table 5.59: HardwareId must be a valid ACPI ID "NNNN####".
++    // SPMT0001 = Spacemit K3 supervisor APLIC.
++    ACPI_HWID_LIST_8 ('S', 'P', 'M', 'T', '0', '0', '0', '1'),
++    0,                 // NumIdcs (wired-to-MSI bridge: no IDCs)
++    512,               // NumExtIntSources (matches riscv,num-sources in K3.dtsi)
+     0,                 // GsiBase
+     0xe0804000,        // AplicAddress (supervisor APLIC; matches saplic in K3.dtsi and DSDT IC00)
+     0x4000             // AplicSize
+     ),
+ };
+ 
++// The RINTC array is sized by PcdX100HartCount but initialized with explicit
++// entries; a mismatch would silently emit zero-filled (Type 0, Length 0)
++// subtables and corrupt every MADT parser. UID sequence must also stay dense
++// from 0 so RINTC _UIDs match the DSDT ACPI0007 devices.
++STATIC_ASSERT (
++  FixedPcdGet32 (PcdX100HartCount) == 8,
++  "Madt.aslc carries 8 explicit RINTC initializers; update them with the PCD"
++  );
+ // Reference the table being generated to prevent the optimizer
+ // from removing the data structure from the executable
+ VOID *CONST  ReferenceAcpiTable = &Madt;
+diff --git a/Platform/Spacemit/K3/AcpiTables/Rhct.aslc b/Platform/Spacemit/K3/AcpiTables/Rhct.aslc
+index 791b85e..4d46d31 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Rhct.aslc
++++ b/Platform/Spacemit/K3/AcpiTables/Rhct.aslc
+@@ -197,6 +197,12 @@ STATIC EFI_ACPI_RISCV_HART_CAPABILITIES_TABLE  Rhct = {
+   }
+ };
+ 
++// Hart-info array is sized by PcdX100HartCount but initialized with explicit
++// CPU0-7 entries; a mismatch would silently emit zero-filled nodes.
++STATIC_ASSERT (
++  FixedPcdGet32 (PcdX100HartCount) == 8,
++  "Rhct.aslc carries 8 explicit hart-info initializers; update them with the PCD"
++  );
+ // Reference the table being generated to prevent the optimizer
+ // from removing the data structure from the executable
+ VOID *CONST  ReferenceAcpiTable = &Rhct;
+-- 
+2.56.1
+

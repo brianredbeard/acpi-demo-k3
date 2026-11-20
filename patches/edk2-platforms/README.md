@@ -27,6 +27,7 @@ DSDT v10 is a separate un-promoted experiment — see below).
 | `0006` PCIe bus-0 config window | 2 MB DW iATU OB window for bus 0 at 0x11_00000000 | Live: ATU OB0 dump base 0x11:00000000; removes kernel ECAM hack |
 | `0007` ResetSystemLib resets | Reset path hardening (see patch body) | EFI runtime cold/warm/shutdown cycles (COM260 evidence) |
 | `0008` SPCR re-add + UART XScale binding | SPCR v4 (16550-with-GAS, namespace `\_SB.COM0`) back in the INF; COM0 `_DSD` declares `"spacemit,k3-uart", "intel,xscale-uart"` (gates the kernel's PORT_XSCALE fixed-type quirk); BaudRate fixed to 115200 (6.12 spcr.c treats 0 as "already configured"); UART clock 14745600 | iasl-clean DSDT matching the proven v10 COM0 AML; full RELEASE build; SPCR decoded from DXEFV (GAS mmio32 0xd4017000, GSI 42). Hardware boot pending |
+| `0009` ACPI 6.6 conformance fixes | A1 processor devices (`Cpu.asl` re-included: 8×ACPI0007 + 2×ACPI0010 matching PPTT), A2 APLIC NumSources 511→512, A3 MADT revision 6.5→6.6 (0x07), A4 APLIC HardwareId `SPMT0001`, A5 device `_CRS` ResourceConsumer, A7 dead split-ASL removal, A8 RINTC/RHCT count static asserts. A6 (`RSCV0006` SYSMSI) deliberately excluded — firmware-side unvalidated-MSI-target hole | Full RELEASE build; decoded from DXEFV: rev 7, HwId=SPMT0001, 512 sources, 8 RINTC, 8×ACPI0007/2×ACPI0010, consumer flags verified by AML decompile. Hardware boot pending |
 
 ## Deliberately not in this series
 
