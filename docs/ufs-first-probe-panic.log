@@ -1,0 +1,218 @@
+[  OK  ] Started dbus-broker.service - D-Bus System Message Bus.
+[  OK  ] Reached target basic.target - Basic System.
+         Starting avahi-daemon.service - Avahi mDNS/DNS-SD Stack...
+         Starting chronyd.service - NTP client/server...
+         Starting dracut-shutdown.service -…store /run/initramfs on shutdown...
+[  OK  ] Started firewalld.service - firewalld - dynamic firewall daemon.
+[  OK  ] Reached target network-pre.target - Preparation for Network.
+         Starting NetworkManager.service - Network Manager...
+         Starting foomaticrip-upgrade.servi…talled printers for foomatic-rip...
+[  OK  ] Started irqbalance.service - irqbalance daemon.
+[  OK  ] Started libstoragemgmt.service - libstoragemgmt plug-in server daemon.
+         Starting lm_sensors.service - Hardware Monitoring Sensors...
+         Starting polkit.service - Authorization Manager...
+         Starting rtkit-daemon.service - Re…imeKit Scheduling Policy Service...
+         Starting smartd.service - Self Mon…orting Technology (SMART) Daemon...
+[  OK  ] Reached target sshd-keygen.target.
+[  OK  ] Reached target nss-user-lookup.target - User and Group Name Lookups.
+         Starting accounts-daemon.service - Accounts Service...
+         Starting switcheroo-control.servic…Switcheroo Control Proxy service...
+         Starting systemd-logind.service - User Login Management...
+         Starting systemd-machined.service …d Container Registration Service...
+         Starting udisks2.service - Disk Manager...
+         Starting upower.service - Daemon for power management...
+[  OK  ] Started chronyd.service - NTP client/server.
+[  OK  ] Started smartd.service - Self Moni…eporting Technology (SMART) Daemon.
+[  OK  ] Started systemd-logind.service - User Login Management.
+[  OK  ] Finished dracut-shutdown.service - Restore /run/initramfs on shutdown.
+[  OK  ] Finished foomaticrip-upgrade.servi…nstalled printers for foomatic-rip.
+[  OK  ] Started rtkit-daemon.service - RealtimeKit Scheduling Policy Service.
+[  OK  ] Started switcheroo-control.service - Switcheroo Control Proxy service.
+[  OK  ] Finished lm_sensors.service - Hardware Monitoring Sensors.
+[  OK  ] Started systemd-machined.service -…and Container Registration Service.
+         Starting systemd-hostnamed.service - Hostname Service...
+         Starting systemd-userdbd.service - User Database Manager...
+[  OK  ] Started systemd-userdbd.service - User Database Manager.
+[  OK  ] Started systemd-hostnamed.service - Hostname Service.
+[  OK  ] Started avahi-daemon.service - Avahi mDNS/DNS-SD Stack.
+[  OK  ] Listening on systemd-rfkill.socket…ll Switch Status /dev/rfkill Watch.
+         Starting NetworkManager-dispatcher…anager Script Dispatcher Service...
+[   59.674201] spacemit-dwmac PRP0001:05 enaprp1i5: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   59.711227] spacemit-dwmac PRP0001:05 enaprp1i5: PHY [stmmac-0:00] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[  OK  ] Started polkit.service - Authorization Manager.
+[   59.731226] spacemit-dwmac PRP0001:05 enaprp1i5: No Safety Features support found
+[   59.739616] spacemit-dwmac PRP0001:05 enaprp1i5: Invalid PTP clock rate
+[   59.746366] spacemit-dwmac PRP0001:05 enaprp1i5: PTP init failed
+[   59.752469] spacemit-dwmac PRP0001:05 enaprp1i5: configuring for phy/rgmii-id link mode
+[  OK  ] Started accounts-daemon.service - Accounts Service.
+[  OK  ] Started NetworkManager-dispatcher.… Manager Script Dispatcher Service.
+[  OK  ] Started upower.service - Daemon for power management.
+[  OK  ] Started udisks2.service - Disk Manager.
+[  OK  ] Started NetworkManager.service - Network Manager.
+[  OK  ] Reached target network.target - Network.
+         Starting ModemManager.service - Modem Manager...
+         Starting NetworkManager-wait-onlin…ce - Network Manager Wait Online...
+         Starting cups.service - CUPS Scheduler...
+         Starting gssproxy.service - GSSAPI Proxy Daemon...
+         Starting sshd.service - OpenSSH server daemon...
+         Starting tuned.service - Dynamic System Tuning Daemon...
+[   60.159856] NET: Registered PF_QIPCRTR protocol family
+[  OK  ] Started cups.service - CUPS Scheduler.
+[  OK  ] Started sshd.service - OpenSSH server daemon.
+[  OK  ] Started gssproxy.service - GSSAPI Proxy Daemon.
+[  OK  ] Started ModemManager.service - Modem Manager.
+[  OK  ] Reached target nfs-client.target - NFS client services.
+[  OK  ] Reached target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Reached target remote-cryptsetup.target - Remote Encrypted Volumes.
+[  OK  ] Started tuned.service - Dynamic System Tuning Daemon.
+         Starting tuned-ppd.service - PPD-to-TuneD API Translation Daemon...
+[  OK  ] Started tuned-ppd.service - PPD-to-TuneD API Translation Daemon.
+[   62.952642] spacemit-dwmac PRP0001:05 enaprp1i5: Link is Up - 1Gbps/Full - flow control off
+[  OK  ] Finished NetworkManager-wait-onlin…vice - Network Manager Wait Online.
+[  OK  ] Reached target network-online.target - Network is Online.
+         Starting cockpit-issue.service - Cockpit issue updater service...
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+         Starting kdump.service - Crash recovery kernel arming...
+         Starting rpc-statd-notify.service - Notify NFS peers of a restart...
+         Starting rsyslog.service - System Logging Service...
+         Starting systemd-user-sessions.service - Permit User Sessions...
+         Starting virtqemud.service - libvirt QEMU daemon...
+[  OK  ] Started rsyslog.service - System Logging Service.
+[  OK  ] Started rpc-statd-notify.service - Notify NFS peers of a restart.
+[  OK  ] Started virtqemud.service - libvirt QEMU daemon.
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+[  OK  ] Started atd.service - Deferred execution scheduler.
+[  OK  ] Started crond.service - Command Scheduler.
+         Starting gdm.service - GNOME Display Manager...
+[  OK  ] Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[  OK  ] Reached target getty.target - Login Prompts.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Finished cockpit-issue.service - Cockpit issue updater service.
+[  OK  ] Started gdm.service - GNOME Display Manager.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+         Starting systemd-update-utmp-runle…- Record Runlevel Change in UTMP...
+[  OK  ] Finished systemd-update-utmp-runle…e - Record Runlevel Change in UTMP.
+
+Red Hat Enterprise Linux 10.3 (Coughlan)
+Kernel 6.12.0-dbg1 on riscv64
+
+Web console: https://localhost:9090/ or https://192.168.137.146:9090/
+
+localhost login:
+localhost login:
+localhost login: root
+Password:
+Last login: Fri Nov 20 21:35:12 on ttyS0
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]# [  109.134076] ufshcd-spacemit PRP0001:06: ufshcd_init_clocks: axi clk get failed, -2
+[  109.141796] ufshcd-spacemit PRP0001:06: probe with driver ufshcd-spacemit failed with error -2
+[  193.529076] ------------[ cut here ]------------
+[  193.529083] WARNING: CPU: 1 PID: 1874 at drivers/clk/clk.c:4758 __clk_put+0xbc/0xda
+[  193.529094] Modules linked in: ufs_spacemit(OE+) sd_mod nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_
+ipv6 nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat ufshcd_pltfrm ufshcd_core gov
+ernor_simpleondemand at24 rpmb_core fuse loop xfs realtek dwmac_spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core pcs_x
+pcs gpio_spacemit_k1(OE) nvme_keyring phylink gpio_generic udc_core nvme_auth k3_tsensor(OE) rtc_efi i2c_k1(OE) sunrpc dm_mirror dm_region_hash dm_
+log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nf
+netlink
+[  193.529169] Unloaded tainted modules: ufs_spacemit(OE):1 [last unloaded: ufs_spacemit(OE)]
+[  193.529179] CPU: 1 UID: 0 PID: 1874 Comm: insmod Tainted: G           OE      ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  193.529185] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+[  193.529187] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/20/2026
+[  193.529189] epc : __clk_put+0xbc/0xda
+[  193.529193]  ra : __clk_put+0x1a/0xda
+[  193.529196] epc : ffffffffa9892286 ra : ffffffffa98921e4 sp : ffffffc601573690
+[  193.529199]  gp : ffffffffab51f920 tp : ffffffd63ea83240 t0 : ffffffff2cbd84c0
+[  193.529202]  t1 : 0000000000000018 t2 : 0000000000000000 s0 : ffffffc6015736b0
+[  193.529204]  s1 : ffffffd641fd32a0 a0 : 0000000000000001 a1 : 0000000000000000
+[  193.529207]  a2 : 0000000000000000 a3 : ffffffd63ea83240 a4 : ffffffd63ea83240
+[  193.529210]  a5 : 00000000684ab948 a6 : 0000000000000005 a7 : 000000004d505859
+[  193.529212]  s2 : ffffffff2cbd84c8 s3 : ffffffff2d22d1a0 s4 : 0000000000000000
+[  193.529215]  s5 : ffffffd63c79f8d8 s6 : ffffffd6028dc410 s7 : ffffffd63c79f338
+[  193.529218]  s8 : fffffffffffff000 s9 : ffffffff2d22d1b0 s10: ffffffff2cbd84c0
+[  193.529220]  s11: 0000000000000000 t3 : ffffffda55ae6000 t4 : 0000000000000008
+[  193.529223]  t5 : 071c71c71c71c71c t6 : ffffffc6015735ec
+[  193.529225] status: 0000000200000120 badaddr: ffffffffa9892286 cause: 0000000000000003
+[  193.529228] [<ffffffffa9892286>] __clk_put+0xbc/0xda
+[  193.529234] [<ffffffffa9888eda>] clk_put+0xc/0x14
+[  193.529239] [<ffffffff2ccd0454>] ufs_spacemit_acpi_init.constprop.0+0xb6/0x1c4 [ufs_spacemit]
+[  193.529314] [<ffffffff2ccd060e>] ufs_spacemit_probe+0xac/0x11c [ufs_spacemit]
+[  193.529386] [<ffffffffa9968632>] platform_probe+0x46/0x80
+[  193.529393] [<ffffffffa9965b40>] really_probe+0x8a/0x30a
+[  193.529397] [<ffffffffa9965e28>] __driver_probe_device+0x68/0x110
+[  193.529401] [<ffffffffa9965f92>] driver_probe_device+0x2c/0xb2
+[  193.529405] [<ffffffffa9966182>] __driver_attach+0x9a/0x1a4
+[  193.529409] [<ffffffffa996386a>] bus_for_each_dev+0x62/0xb0
+[  193.529413] [<ffffffffa9965492>] driver_attach+0x1a/0x22
+[  193.529416] [<ffffffffa9964c14>] bus_add_driver+0xf6/0x1fe
+[  193.529420] [<ffffffffa99670a8>] driver_register+0x40/0xda
+[  193.529425] [<ffffffffa99682ee>] __platform_driver_register+0x1c/0x24
+[  193.529430] [<ffffffff2d242020>] ufs_spacemit_pltform_init+0x20/0x1000 [ufs_spacemit]
+[  193.529503] [<ffffffffa92188ca>] do_one_initcall+0x54/0x288
+[  193.529507] [<ffffffffa931150e>] do_init_module+0x54/0x1ce
+[  193.529511] [<ffffffffa93125e6>] load_module+0x6c8/0x850
+[  193.529514] [<ffffffffa93129a4>] init_module_from_file+0xc0/0x108
+[  193.529518] [<ffffffffa9312ba0>] idempotent_init_module+0x1b4/0x294
+[  193.529522] [<ffffffffa9312d12>] __riscv_sys_finit_module+0x5a/0xbc
+[  193.529525] [<ffffffffa9d6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  193.529531] [<ffffffffa9d784b8>] handle_exception+0x160/0x16c
+[  193.529539] ---[ end trace 0000000000000000 ]---
+[  193.529550] Unable to handle kernel paging request at virtual address dead000000000122
+[  193.885396] Current insmod pgtable: 4K pagesize, 39-bit VAs, pgdp=0x00000001064b4000
+[  193.893264] [dead000000000122] pgd=0000000000000000, p4d=0000000000000000, pud=0000000000000000
+[  193.902116] Oops [#1]
+[  193.904411] Modules linked in: ufs_spacemit(OE+) sd_mod nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_
+ipv6 nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat ufshcd_pltfrm ufshcd_core gov
+ernor_simpleondemand at24 rpmb_core fuse loop xfs realtek dwmac_spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core pcs_x
+pcs gpio_spacemit_k1(OE) nvme_keyring phylink gpio_generic udc_core nvme_auth k3_tsensor(OE) rtc_efi i2c_k1(OE) sunrpc dm_mirror dm_region_hash dm_
+log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nf
+netlink
+[  193.904541] Unloaded tainted modules: ufs_spacemit(OE):1 [last unloaded: ufs_spacemit(OE)]
+[  193.978521] CPU: 1 UID: 0 PID: 1874 Comm: insmod Tainted: G        W  OE      ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  193.990078] Tainted: [W]=WARN, [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+[  193.996336] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/20/2026
+[  194.004007] epc : __clk_put+0x22/0xda
+[  194.007718]  ra : __clk_put+0xd4/0xda
+[  194.011421] epc : ffffffffa98921ec ra : ffffffffa989229e sp : ffffffc601573690
+[  194.018738]  gp : ffffffffab51f920 tp : ffffffd63ea83240 t0 : ffffffff2cbd84c0
+[  194.026056]  t1 : 0000000000000018 t2 : 0000000000000000 s0 : ffffffc6015736b0
+[  194.033373]  s1 : ffffffd641fd32a0 a0 : ffffffd60307d600 a1 : 0000000000000000
+[  194.040691]  a2 : 0000000000000000 a3 : ffffffd60307d600 a4 : dead000000000122
+[  194.048008]  a5 : dead000000000100 a6 : 0000000000000005 a7 : 000000004d505859
+[  194.055326]  s2 : ffffffff2cbd84c8 s3 : ffffffff2d22d1a0 s4 : 0000000000000000
+[  194.062643]  s5 : ffffffd63c79f8d8 s6 : ffffffd6028dc410 s7 : ffffffd63c79f338
+[  194.069960]  s8 : fffffffffffff000 s9 : ffffffff2d22d1b0 s10: ffffffff2cbd84c0
+[  194.077278]  s11: 0000000000000000 t3 : ffffffda55ae6000 t4 : 0000000000000008
+[  194.084595]  t5 : 071c71c71c71c71c t6 : ffffffc6015735ec
+[  194.089973] status: 0000000200000120 badaddr: dead000000000122 cause: 000000000000000f
+[  194.097996] [<ffffffffa98921ec>] __clk_put+0x22/0xda
+[  194.103030] [<ffffffffa9888eda>] clk_put+0xc/0x14
+[  194.107800] [<ffffffff2ccd0454>] ufs_spacemit_acpi_init.constprop.0+0xb6/0x1c4 [ufs_spacemit]
+[  194.116528] [<ffffffff2ccd060e>] ufs_spacemit_probe+0xac/0x11c [ufs_spacemit]
+[  194.123827] [<ffffffffa9968632>] platform_probe+0x46/0x80
+[  194.129303] [<ffffffffa9965b40>] really_probe+0x8a/0x30a
+[  194.134688] [<ffffffffa9965e28>] __driver_probe_device+0x68/0x110
+[  194.140869] [<ffffffffa9965f92>] driver_probe_device+0x2c/0xb2
+[  194.146776] [<ffffffffa9966182>] __driver_attach+0x9a/0x1a4
+[  194.152427] [<ffffffffa996386a>] bus_for_each_dev+0x62/0xb0
+[  194.158078] [<ffffffffa9965492>] driver_attach+0x1a/0x22
+[  194.163456] [<ffffffffa9964c14>] bus_add_driver+0xf6/0x1fe
+[  194.169011] [<ffffffffa99670a8>] driver_register+0x40/0xda
+[  194.174573] [<ffffffffa99682ee>] __platform_driver_register+0x1c/0x24
+[  194.181107] [<ffffffff2d242020>] ufs_spacemit_pltform_init+0x20/0x1000 [ufs_spacemit]
+[  194.189120] [<ffffffffa92188ca>] do_one_initcall+0x54/0x288
+[  194.194763] [<ffffffffa931150e>] do_init_module+0x54/0x1ce
+[  194.200317] [<ffffffffa93125e6>] load_module+0x6c8/0x850
+[  194.205694] [<ffffffffa93129a4>] init_module_from_file+0xc0/0x108
+[  194.211865] [<ffffffffa9312ba0>] idempotent_init_module+0x1b4/0x294
+[  194.218214] [<ffffffffa9312d12>] __riscv_sys_finit_module+0x5a/0xbc
+[  194.224570] [<ffffffffa9d6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  194.230221] [<ffffffffa9d784b8>] handle_exception+0x160/0x16c
+[  194.236052] Code: 84aa e463 0aa7 e04a 80ef d3df 589c e3c5 7c9c 60b8 (e31c) c391
+[  194.243597] ---[ end trace 0000000000000000 ]---
+[  194.248281] Kernel panic - not syncing: Fatal exception
+[  194.253577] SMP: stopping secondary CPUs
+[  194.257550] Kernel Offset: 0x29200000 from 0xffffffff80000000
+[  194.263371] Rebooting in 180 seconds..
+

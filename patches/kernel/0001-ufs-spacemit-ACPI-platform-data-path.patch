@@ -1,7 +1,10 @@
 --- /tmp/ufs-orig.c	2026-11-20 21:46:14.196429030 +0000
-+++ drivers/ufs/host/ufs-spacemit.c	2026-11-20 21:47:19.566470582 +0000
-@@ -6,7 +6,9 @@
++++ drivers/ufs/host/ufs-spacemit.c	2026-11-20 22:09:29.898270812 +0000
+@@ -4,9 +4,12 @@
+  */
+ 
  #include <linux/clk.h>
++#include <linux/clkdev.h>
  #include <linux/delay.h>
  #include <linux/io.h>
 +#include <linux/property.h>
@@ -10,7 +13,7 @@
  #include <linux/module.h>
  #include <linux/of.h>
  #include <linux/platform_device.h>
-@@ -40,6 +42,13 @@
+@@ -40,6 +43,13 @@
  #define MPHY_RX_FSM_STATE	0xC1
  #define MPHY_TX_FSM_STATE	0x41
  
@@ -24,7 +27,7 @@
  static int ufs_spacemit_dme_set(struct ufs_hba *hba,
  				const struct ufshcd_dme_attr_val *v, int n)
  {
-@@ -430,6 +439,112 @@
+@@ -430,6 +440,127 @@
  	hba->quirks |= UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8;
  }
  
@@ -40,15 +43,20 @@
 +	const char *rpmi_name;
 +} ufs_acpi_clocks[] = {
 +	{ "axi", "ufs_aclk" },
-+	{ "ref", "ufs_refclk" },
++	/*
++	 * "ref" (ufs_refclk) is deliberately NOT in the list: the
++	 * firmware leaves it enabled and the RPMI clock server reports
++	 * RPMI_ERR_ALREADY (-EALREADY) for enable-when-enabled, which
++	 * would fail the core's ufshcd_setup_clocks(). The refclk rate
++	 * is fixed (19.2 MHz) and the driver only needs it for OPP
++	 * scaling, which the ACPI path does not use.
++	 */
 +};
 +
 +static void ufs_spacemit_acpi_init(struct ufs_hba *hba)
 +{
 +	struct device *dev = hba->dev;
 +	struct ufs_clk_info *clki;
-+	struct clk *clk;
-+	unsigned long rate;
 +
 +	/* lanes-per-direction (ufshcd core default is 2) */
 +	device_property_read_u32(dev, "lanes-per-direction",
@@ -57,35 +65,45 @@
 +	if (!hba->lanes_per_direction)
 +		hba->lanes_per_direction = 2;
 +
++	/*
++	 * ufshcd_init() -> ufshcd_init_clocks() resolves every entry by
++	 * LIST NAME via devm_clk_get(dev, name). Register clkdev aliases
++	 * "axi"/"ref" -> the RPMI clock names first, then let the CORE
++	 * do the acquisition exactly as in the DT path. This avoids any
++	 * double ownership of the clk pointer.
++	 */
 +	for (unsigned int i = 0; i < ARRAY_SIZE(ufs_acpi_clocks); i++) {
-+		clk = clk_get(dev, ufs_acpi_clocks[i].rpmi_name);
-+		if (IS_ERR(clk)) {
++		struct clk *probe = clk_get(dev, ufs_acpi_clocks[i].rpmi_name);
++
++		if (IS_ERR(probe)) {
 +			/*
 +			 * Miss here means sys1clk falls back to the
 +			 * 409.6 MHz constant — 20% off the real rate.
 +			 * Loud on purpose.
 +			 */
 +			dev_info(dev, "clock %s not resolved (ret %ld); %s-rate timing will use the fallback constant\n",
-+				 ufs_acpi_clocks[i].rpmi_name, PTR_ERR(clk),
++				 ufs_acpi_clocks[i].rpmi_name, PTR_ERR(probe),
 +				 ufs_acpi_clocks[i].list_name);
 +			continue;
 +		}
-+		if (clk_prepare_enable(clk)) {
-+			clk_put(clk);
++		clk_put(probe);
++
++		if (clk_add_alias(ufs_acpi_clocks[i].list_name, NULL,
++				  ufs_acpi_clocks[i].rpmi_name, dev)) {
++			dev_info(dev, "clkdev alias %s -> %s failed\n",
++				 ufs_acpi_clocks[i].list_name,
++				 ufs_acpi_clocks[i].rpmi_name);
 +			continue;
 +		}
-+		rate = clk_get_rate(clk);
++
++		/* Pre-populate the list so the core enables the clock. */
 +		clki = devm_kzalloc(dev, sizeof(*clki), GFP_KERNEL);
-+		if (!clki) {
-+			clk_disable_unprepare(clk);
-+			clk_put(clk);
++		if (!clki)
 +			continue;
-+		}
 +		clki->name = devm_kstrdup(dev, ufs_acpi_clocks[i].list_name,
 +					  GFP_KERNEL);
-+		clki->clk = clk;
-+		clki->min_freq = rate;
-+		clki->max_freq = rate;
++		clki->min_freq = 0;
++		clki->max_freq = ULONG_MAX;
 +		list_add_tail(&clki->list, &hba->clk_list_head);
 +	}
 +}
@@ -137,7 +155,7 @@
  /**
   * ufs_spacemit_init - init phy and prepare clk
   * @hba: host controller instance
-@@ -440,6 +555,13 @@
+@@ -440,6 +571,13 @@
  	struct ufs_spacemit_host *host;
  	struct reset_control *rst;
  
@@ -151,7 +169,7 @@
  	host = devm_kzalloc(dev, sizeof(*host), GFP_KERNEL);
  	if (!host)
  		return -ENOMEM;
-@@ -620,8 +742,42 @@
+@@ -620,8 +758,42 @@
  };
  MODULE_DEVICE_TABLE(of, ufs_spacemit_of_match);
  
