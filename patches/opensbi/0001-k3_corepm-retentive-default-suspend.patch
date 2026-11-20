@@ -1,114 +1,81 @@
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH] spacemit: explicit suspend dispatch, genuine type-0 WFI, error propagation
+Subject: [PATCH] spacemit: suspend dispatch, type-0 WFI, error propagation, P0-4 context audit
 
-First implementation batch of the OpenSBI/ESOS suspend-ownership plan
-(OpenSBI owns the hart's architectural suspend/resume contract; ESOS
-owns shared-resource eligibility). P0 items 1-3:
+Implementation batches P0 (1-3) and P0-4/5 per the suspend-ownership
+plan. All disassembly-verified.
 
-P0-1 EXPLICIT DISPATCH: __rpmi_hsm_suspend() previously routed every
-type except 0x90000000 to the cluster power-down branch. Now:
+P0-1 EXPLICIT DISPATCH: type 0 -> plain wfi; 0x80000000 -> ENOTSUPP;
+0x90000000 -> ENOTSUPP (see P0-4 F6); cluster -> ENOTSUPP (gated on
+the ESOS P1 model); anything else -> EINVAL BEFORE any hardware
+change.
 
-- SBI_HSM_SUSPEND_RET_DEFAULT (type 0): plain wfi() + return 0 —
-  see P0-2
-- SBI_HSM_SUSPEND_NON_RET_DEFAULT (0x80000000): REJECTED with
-  SBI_ENOTSUPP (it previously took the cluster branch by accident;
-  no qualified non-retentive default path exists)
-- 0x90000000 (CPU non-retentive platform): per-CPU power-down vote,
-  existing path unchanged
-- K3_HSM_SUSP_CLUSTER_NON_RET (0x91000000): REJECTED with
-  SBI_ENOTSUPP — cluster shutdown is NOT implemented until ESOS
-  shared-domain ownership and the retained wake mechanism are
-  qualified (plan P1; do not implement cluster shutdown as an
-  automatic step)
-- any other type: SBI_EINVAL — rejected BEFORE any hardware change:
-  no vote, no cache/snoop/IMSIC operations
+P0-2 GENUINE DEFAULT-RETENTIVE: type 0 = wfi() before votes,
+masking, IMSIC, cache changes.
 
-P0-2 GENUINE DEFAULT-RETENTIVE: type 0 returns before power votes,
-interrupt masking, IMSIC manipulation, or cache changes. Register
-state intact; caller resumes in place.
+P0-3 ERROR PROPAGATION: the K3 wrapper returns the backend result
+(failures logged with hart/type/error).
 
-P0-3 ERROR PROPAGATION: the CONFIG_PLATFORM_SPACEMIT_K3 wrapper in
-fdt_hsm_rpmi.c previously discarded __rpmi_hsm_suspend()'s result
-and returned 0 unconditionally — rejected/failed suspends were
-reported to the SBI caller as success. The result is now propagated,
-with a one-line diagnostic (hart, type, error) on failure. Full
-retained-counter/bounded-buffer diagnostics are follow-up work
-(supporting deliverable).
+P0-4 CONTEXT AUDIT (docs/p0-4-context-audit-2026-11-20.md):
+F1/F4  vote/devote are now a NAMED pair: spacemit_devote_pwrdown_core
+       added as the exact inverse of the vote (the historical unmask
+       cleared the vote by accident); k3_hsm_cleanup_wake() is the
+       single documented cleanup owner for future wake/abort paths.
+F2     the pending-interrupt check is folded INTO
+       __rpmi_hsm_suspend (abort with SBI_EFAIL + flags=1 before the
+       first CSR write) — previously only the unenforced _pre() had
+       it, so a direct caller could tear the IMSIC save.
+F3     HSTATUS restored after the VGEN sweep (virtual-interrupt
+       routing intact on in-place wake).
+F5     csi_enable_data_preftch() added as the named inverse; the
+       wake path previously never re-enabled prefetch.
+F6     0x90000000 REJECTED: its in-place wake restores neither IMSIC
+       nor H-state nor vote nor prefetch while the SBI non-retentive
+       contract expects warmboot resume — the resume contract is
+       unresolved, so no non-retentive state is offered until one is
+       implemented and qualified (the P0-6 principle). The defective
+       vote+WFI path is DELETED, replaced by the cleanup-ownership
+       table documenting the required pairings for the future
+       qualified implementation.
+F7     "for a100" comment corrected to x100.
 
-Build-verified by disassembly (fw_dynamic.elf):
-- type-0 path: exactly 'wfi; li a0,0; ret' at the beqz branch
-- 0x80000000 compare -> li a0,-2 (SBI_ERR_NOT_SUPPORTED) exit
-- type-mask compare -> li a0,-3 (SBI_ERR_INVALID_PARAM) exit
-- both rejection paths exit BEFORE any CSR write, vote call, or
-  cache operation
-- wrapper: bnez a0 -> sbi_printf failure path -> returns the
-  backend's error code
+The only offered suspend type is the qualified retentive type-0 WFI.
 
-HARDWARE QUALIFICATION REQUIRED (the acceptance criteria):
-1. type 0 reaches WFI without side effects: no cluster vote, caches
-   stay on, architectural state survives
-2. non-retentive type 0x90000000 retains its behavior (regression)
-3. wake from type-0: timer tick, IPI, UART — each wakes the hart
-   and delivers
-4. rejected types return their SBI error to the caller with no
-   hardware change
+Build identity: fw_dynamic.bin sha256
+c83ce98ee4efe897a6da91d7b933a4ce67e1f00edbad095a64c222110f345e46
+(269920 bytes). Disassembly: type-0 = 'wfi; ret'; pending check
+('csrr stopei/mtopei; bnez -> flags=1, li a0,-1') precedes the first
+CSR write; HSTATUS restore ('ld ...1064(a6); csrw hstatus') follows
+the VGEN sweep; every non-retentive type exits to 'li a0,-2' before
+the vote.
 
-Remaining P0 (follow-up batches, NOT in this patch): the non-
-retentive context-preservation audit (P0-4), entry/abort/resume
-cleanup ownership (P0-5), versioned capability discovery (P0-6).
-ESOS-side P1 items (resource ownership, shared-domain state machine,
-transactional votes, quiescence, retained wake, domain sequencing,
-bounded transactions, clock ownership/rate policy) are prerequisites
-for re-enabling cluster states.
+HARDWARE QUALIFICATION (acceptance): timer/IPI/UART wake from type
+0; no votes/cache/snoop changes on type 0; rejected types return
+errors with no hardware change; with virtualization active, per-hart
+repeated type-0 suspend/resume preserves execution and interrupt
+delivery.
+
+--- a/include/sbi_utils/cache/cache.h
++++ b/include/sbi_utils/cache/cache.h
+@@ static inline void csi_disable_data_preftch(void)
++static inline void csi_enable_data_preftch(void)
++{ csr_set(CSR_MSETUP, 32); }
 
 --- a/lib/utils/hsm/fdt_hsm_rpmi.c
 +++ b/lib/utils/hsm/fdt_hsm_rpmi.c
 @@ static int rpmi_hsm_suspend(u32 type, ulong resume_addr)
- {
- #ifdef CONFIG_PLATFORM_SPACEMIT_K3
--	__rpmi_hsm_suspend(type);
-+	int rc;
-+
-+	rc = __rpmi_hsm_suspend(type);
-+	if (rc)
-+		sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d\n",
-+			   current_hartid(), type, rc);
++	int rc = __rpmi_hsm_suspend(type);
++	if (rc) sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d\n", ...);
 +	return rc;
- #else
 
 --- a/platform/generic/spacemit/k3_corepm.c
 +++ b/platform/generic/spacemit/k3_corepm.c
 @@ int __rpmi_hsm_suspend(u32 type)
- {
-+	/*
-+	 * SBI HSM spec: SBI_HSM_SUSPEND_RET_DEFAULT (type 0) is a plain
-+	 * retentive wait-for-interrupt - no power management operations,
-+	 * no votes, no cache/snoop changes; register state stays intact
-+	 * and the caller resumes in place.
-+	 */
-+	if (type == SBI_HSM_SUSPEND_RET_DEFAULT) {
-+		wfi();
-+		return 0;
-+	}
-+
- 	[... existing IMSIC save / cache prep ...]
- 
-+	/*
-+	 * EXPLICIT dispatch: only the supported non-retentive platform
-+	 * type may vote power down. Unsupported types are rejected
-+	 * BEFORE any hardware change.
-+	 */
-+	if (type == SBI_HSM_SUSPEND_NON_RET_DEFAULT)
-+		return SBI_ENOTSUPP;
-+
-+	if (type != (SBI_HSM_SUSP_NON_RET_BIT | SBI_HSM_SUSP_PLAT_BASE) &&
-+	    type != K3_HSM_SUSP_CLUSTER_NON_RET)
-+		return SBI_EINVAL;
-+
-+	[... 0x90000000 keeps the per-CPU vote path ...]
-+
-+	} else {
-+		/* cluster: UNSUPPORTED until ESOS ownership + retained
-+		 * wake are qualified */
-+		return SBI_ENOTSUPP;
-+	}
++	if (type == SBI_HSM_SUSPEND_RET_DEFAULT) { wfi(); return 0; }
++	[F2: pending STOPEI/MTOPEI check -> flags=1, SBI_EFAIL]
+ 	[IMSIC M/S save]
+ 	[H-state save + VGEN sweep]
++	[F3: csr_write(CSR_HSTATUS, imsic->hstatus) after the sweep]
++	[F6: all non-retentive types -> SBI_ENOTSUPP; the vote+WFI
++	 path deleted; k3_hsm_cleanup_wake() documents the P0-5
++	 entry/cleanup pairings]
++void spacemit_devote_pwrdown_core(uint32_t hartid)  [F1/F4 inverse]
