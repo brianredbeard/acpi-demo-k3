@@ -218,3 +218,45 @@ retentive default) on every hart, with the suspend-ownership plan's
 ordering intact (cluster/non-retentive states remain unexposed
 pending the ESOS P1 model being driven by real AP traffic and a
 qualified non-retentive resume contract).
+
+---
+
+## v20 (ESOS P1, reproducible build) cycle results — 2026-11-20
+
+Payload: pico-acpi-v20. ESOS = P1 via build_esos.py (patch 0007 added
+to the tracked series; pristine e0b8d955b + 0001-0007, pinned
+toolchain, manifest-hash version stamp 66a66a3f — the same flow that
+built the qualified v12). All other regions at latest qualified state
+(OpenSBI v16, EDK2 v19).
+
+### Results: ALL PASS
+
+1. UFS FROM INITRAMFS: /dev/sda up at 56s with the patched module
+   (no manual swap, no stock-driver errors) — the initramfs rebuild
+   works. 256 MiB direct read 630 MB/s.
+2. P0 rejection regression: identical codes (-1/-2/-3), canary
+   intact, console diagnostics firing.
+3. Type-0 WFI + _LPI: live (9422 state-1 entries in the first
+   minute post-reboot).
+4. REBOOT GATE: clean — the v17 regression does not reproduce on
+   the reproducibly-built P1 image. This closes the v17 provenance
+   finding: the hang was the baseline rebuild, not P1.
+5. Post-reboot health: zero lockups/BUGs, UFS from initramfs
+   again, _LPI live.
+
+### P1 on hardware — state
+
+The P1 ownership model is now FLASHED and stable on hardware with
+provenance intact. Per the v17 architectural finding the gate is
+dormant from the AP path (OpenSBI's K3 branch handles suspend
+locally; RPMI_HSM_SRV_HART_SUSPEND is never sent). Live coverage:
+per-cluster init, M2 enter/exit ISR hooks, state machine + retained
+counters.
+
+Remaining P1 hardware work (per the plan, in order):
+- a future OpenSBI revision routing at least one suspend type
+  through RPMI_HSM_SRV_HART_SUSPEND so the eligibility gate is
+  actually driven by AP traffic (natural candidate: the qualified
+  cluster-retentive state)
+- M2 fault injection with counters observable (debugger or a
+  future RPMI diagnostics service)
