@@ -81,3 +81,38 @@ display Phase 1 (firmware-GOP handoff); both independent of cpuidle.
 | 4 | state Flags | zero flattened states | Flags=1 |
 | 5 | index-0 semantics | CPU_NR never suspends | WFI at index 0 |
 | 6 | **firmware suspend semantics** | type 0 = cluster power-down; CPU_NR hangs without kernel timer-stop | **_LPI pulled; OpenSBI fix staged, qualification pending** |
+
+## OpenSBI first implementation batch (P0 items 1-3) — staged
+
+Per the suspend-ownership plan (OpenSBI owns the hart's architectural
+suspend/resume; ESOS owns shared-resource eligibility), the first batch
+is implemented and build-verified, awaiting its own flash+qualification
+cycle (this is a NEW OpenSBI payload — the v13 artifact above still
+carries the stock OpenSBI):
+
+| Item | Status |
+|---|---|
+| P0-1 explicit dispatch | type 0 → wfi; 0x80000000 → ENOTSUPP; 0x90000000 → per-CPU vote (unchanged); 0x91000000 cluster → ENOTSUPP (deferred until ESOS ownership + retained wake); anything else → EINVAL before any hardware change |
+| P0-2 genuine retentive type 0 | wfi() before votes/masking/IMSIC/cache; register state intact |
+| P0-3 error propagation | wrapper returns the backend result; failure diagnostic line |
+
+Build identity: `fw_dynamic.bin` sha256
+`3a75be0412661ec8695c83f1ae82815de45a8ede89437788d0535c77308cb57b`
+(269920 bytes), from the local tree with
+`patches/opensbi/0001-k3_corepm-retentive-default-suspend.patch`
+applied. Disassembly-verified: the type-0 path is exactly `wfi; li
+a0,0; ret`; both rejection paths exit before any CSR write, vote, or
+cache operation; the wrapper propagates the error.
+
+Hardware qualification criteria (the batch's acceptance):
+1. type 0 reaches WFI with no side effects (no cluster vote, caches on)
+2. 0x90000000 retains its behavior (regression)
+3. timer / IPI / UART each wake the hart from type-0 and deliver
+4. rejected types return their SBI error with no hardware change
+
+Explicitly deferred per the plan: cluster shutdown is NOT implemented
+as the next automatic step — it requires the ESOS ownership model and
+retained wake mechanism (P1) first. Remaining P0 follow-ups:
+non-retentive context audit, entry/abort/resume cleanup ownership,
+versioned capability discovery. Supporting deliverables (retained-
+counter diagnostics, fault-injection tests) are follow-up work.
