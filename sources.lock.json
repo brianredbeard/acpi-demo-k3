@@ -34,7 +34,7 @@
         },
         {
           "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
-          "sha256": "6c4bcf3ce26866ba21ce8a2c746876ebe5172f4bb3149cb7c0783cdc88abe897"
+          "sha256": "d064fa20ad4a02940ffd570d04ce5d2c4692b7323d525040c01ed3f7a18374f1"
         }
       ],
       "configs": [
@@ -120,6 +120,14 @@
       ],
       "configs": [],
       "sparse_paths": []
+    },
+    {
+      "name": "opensbi",
+      "repository": "file:///home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic",
+      "revision": "b4152e0761ac1986dfd313876eaff8d7f63cd703",
+      "path": "opensbi",
+      "patches": [],
+      "note": "Vendored local snapshot: the spacemit K3 opensbi tree as staged during this project (no clean upstream identity survives \u2014 the tree predates the repo-qualification discipline). Pinned at the hardware-qualified v21g state: fw_dynamic sha256 2f14c5c85bf91e1c... (P0 batches, dispatch hoist, ENOTSUPP-fallback translation, 0x11000000 routing with the safe grant path). The repository field is a local absolute path \u2014 reproduction requires this workstation until the tree is published."
     }
   ]
 }

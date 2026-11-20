@@ -1,141 +1,230 @@
---- a/dev/null	2026-11-04 09:29:14.498852464 -0800
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h	2026-11-20 14:26:06.839057983 -0800
-@@ -0,0 +1,132 @@
-+/*
-+ * K3 shared-domain ownership model and retained wake mechanism (P1).
-+ *
-+ * Design per the suspend-ownership plan:
-+ *   - OpenSBI owns the hart's architectural suspend/resume contract
-+ *     (register operations executing on the affected hart).
-+ *   - ESOS owns shared-resource ELIGIBILITY and hardware coordination:
-+ *     whether a cluster/domain may power down, and how a sleeping
-+ *     cluster is woken.
-+ *
-+ * Scope of this first implementation:
-+ *   P1-a Explicit resource ownership: per-cluster consumer tracking.
-+ *     Unknown ownership is a BLOCKER (conservative).
-+ *   P1-b Shared-domain state machine: active / entering / committed /
-+ *     asleep / restoring / aborted with single-owner transitions.
-+ *   P1-c Transactional power votes: requests carry a generation number;
-+ *     stale or duplicate requests cannot leave a domain eligible.
-+ *   P1-d Retained wake mechanism: the M2 interrupt path (already the
-+ *     hardware contract: AP_Cx_M2_ENTER/EXIT interrupts, clusterx_m2_lp_ctrl
-+ *     registers, AUDIO_WAKEUP_EN_REG) is wired to the state machine with
-+ *     BOUNDED waits; a timeout aborts entry and leaves the cluster
-+ *     runnable with no stale vote.
-+ *
-+ * Deliberately NOT implemented here (per plan): cluster shutdown itself.
-+ * The model gates it; when every consumer is accounted for and the wake
-+ * mechanism is qualified, the actual power sequence goes through
-+ * k3_domain_commit_sleep() with the documented ordering hooks.
-+ *
-+ * Diagnostics (supporting deliverable): retained per-cluster counters —
-+ * requests, aborts, wake reasons, state transitions — readable via
-+ * debugger; NO serial logging in the transition path.
-+ */
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
+index 221acf09c..8f35bd28b 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
+@@ -11,6 +11,7 @@
+ #include <riscv-ops.h>
+ #include <riscv-plic.h>
+ #include "k3_hsm.h"
++#include "k3_domain_ownership.h"
+ #include <register_defination.h>
+ #include "../spacemit-rpmi.h"
+ 
+@@ -81,13 +82,40 @@ static enum rpmi_hart_hw_state k3_hsm_get_hw_state(void* priv,
+ 	struct spacemit_rpmi_hsm_config *config = priv;
+ 
+ 	if (config->hsm->leaf.harts[hart_index].state == 0xffffffff) {
+-		if (hart_index == 0) {
++		/*
++		 * HARDWARE-VALIDATED FIX (v21b cycle): the AP harts
++		 * (X100: hartids 0-7) come up under OpenSBI cold/warm
++		 * boot WITHOUT RPMI hart_start messages, so the librpmi
++		 * software state never leaves STOPPED for them — the
++		 * v21 probes of harts != 0 were denied by the librpmi
++		 * state check BEFORE the P1 gate ran. The AP domain is
++		 * managed by OpenSBI, not by this service: report the
++		 * X100 harts STARTED so the state check passes and the
++		 * ownership gate (not a tracking artifact) makes the
++		 * decision. A100 (8-15) and beyond stay STOPPED until
++		 * they are actually managed.
++		 */
++		if (hart_index < PLATFORM_MAX_CPUS_PER_CLUSTER * 2)
+ 			return RPMI_HART_HW_STATE_STARTED;
+-		} else {
+-			return RPMI_HART_HW_STATE_STOPPED;
+-		}
++		return RPMI_HART_HW_STATE_STOPPED;
+ 	}
+ 
++	/*
++	 * v21g FIX: the cluster-retentive suspend is IN-PLACE — the
++	 * hart never leaves the hardware STARTED state. Map the
++	 * librpmi SUSPEND_PENDING bookkeeping onto the in-place
++	 * lifecycle: report hw-SUSPENDED while the service believes
++	 * the hart suspends, so the state-change poll runs
++	 * suspend_finalize (the P1 abort cleanup) and the state
++	 * advances to SUSPENDED; the next poll sees STARTED and the
++	 * hart returns to STARTED. Without this the hart sticks in
++	 * SUSPEND_PENDING and every later request returns
++	 * RPMI_ERR_ALREADY (v21g second probe: raw -6).
++	 */
++	if (config->hsm->leaf.harts[hart_index].state ==
++	    RPMI_HSM_HART_STATE_SUSPEND_PENDING)
++		return RPMI_HART_HW_STATE_SUSPENDED;
 +
-+#ifndef K3_DOMAIN_OWNERSHIP_H
-+#define K3_DOMAIN_OWNERSHIP_H
+ 	/* this is a fake value */
+ 	return RPMI_HART_HW_STATE_STARTED;
+ }
+@@ -123,6 +151,32 @@ static enum rpmi_error k3_hsm_hart_suspend_prepare(
+ 	const struct rpmi_hsm_suspend_type* suspend_type,
+ 	rpmi_uint64_t resume_addr)
+ {
++	rpmi_uint32_t cluster = CPU_TO_CLUSTER(hart_index);
 +
-+#include <rthw.h>
-+#include <rtthread.h>
++	/*
++	 * P1 ownership gate: shared-resource eligibility is ESOS's call.
++	 * Unknown ownership or an active consumer blocks the suspend
++	 * (RPMI_ERR_DENIED) — the AP hart then falls back to plain WFI.
++	 */
++	if (!k3_domain_sleep_eligible(cluster))
++		return RPMI_ERR_DENIED;
 +
-+/* ---- cluster/domains ------------------------------------------------ */
++	/*
++	 * Transactional request with a bounded wait for cluster-wide
++	 * M2 coordination; a timeout aborts and leaves the cluster
++	 * ACTIVE with no vote (RPMI_ERR_DENIED -> AP falls back to WFI).
++	 *
++	 * HARDWARE-VALIDATED BOUND (v21b cycle): the wait MUST stay
++	 * below the OpenSBI mailbox RX timeout (RPMI_DEF_RX_TIMEOUT =
++	 * 20ms) — the suspend prepare runs INSIDE the RPMI request,
++	 * and a wait longer than the transport window makes OpenSBI
++	 * time out and drop the (late) response: the v21 hart-0 probe
++	 * returned ETIMEDOUT exactly this way with a 100ms wait.
++	 * 10ms: under the window, still a real bounded wait.
++	 */
++	if (k3_domain_request_sleep(cluster, 10 /* bounded ms, < RPMI_DEF_RX_TIMEOUT */))
++		return RPMI_ERR_DENIED;
 +
-+#define K3_MAX_CLUSTERS		4	/* C0..C3 (X100: C0/C1 only) */
+ 	return 0;
+ }
+ 
+@@ -132,7 +186,8 @@ static void k3_hsm_hart_suspend_finalize(
+ 	const struct rpmi_hsm_suspend_type* suspend_type,
+ 	rpmi_uint64_t resume_addr)
+ {
+-	/* do nothing */
++	/* P1: back to ACTIVE on the abort/in-place path (no vote survives) */
++	k3_domain_abort_sleep(CPU_TO_CLUSTER(hart_index));
+ }
+ 
+ struct rpmi_hsm_platform_ops k3_os0_hsm_pops = {
+@@ -145,6 +200,18 @@ struct rpmi_hsm_platform_ops k3_os0_hsm_pops = {
+ 	.hart_suspend_finalize = k3_hsm_hart_suspend_finalize
+ };
+ 
++/* Bounded-handshake helpers (audit fix 4) */
++static volatile unsigned int *cluster_m2_ctl(rpmi_uint32_t cluster_id)
++{
++	switch (cluster_id) {
++	case 0: return (volatile unsigned int *)AP_C0_M2_INT_EN_REG;
++	case 1: return (volatile unsigned int *)AP_C1_M2_INT_EN_REG;
++	case 2: return (volatile unsigned int *)AP_C2_M2_INT_EN_REG;
++	case 3: return (volatile unsigned int *)AP_C3_M2_INT_EN_REG;
++	default: return RT_NULL;
++	}
++}
 +
-+/*
-+ * Shared-domain states. Transitions are single-owner (the ESOS management
-+ * core serializes through the cluster lock):
-+ *
-+ *   ACTIVE -> ENTERING -> COMMITTED -> ASLEEP -> RESTORING -> ACTIVE
-+ *        \              \
-+ *         \              -> ABORTED -> ACTIVE (no vote survives)
-+ *         -> ABORTED -> ACTIVE
-+ *
-+ * ENTERING: votes are being placed; a late consumer or a timeout aborts.
-+ * COMMITTED: the power-down decision is final; wake is the only exit.
-+ * ASLEEP: hardware MP state confirms the cluster is in M2.
-+ * RESTORING: the M2-EXIT path is waking the cluster; new requests wait.
-+ */
-+enum k3_domain_state {
-+	K3_DOMAIN_ACTIVE = 0,
-+	K3_DOMAIN_ENTERING,
-+	K3_DOMAIN_COMMITTED,
-+	K3_DOMAIN_ASLEEP,
-+	K3_DOMAIN_RESTORING,
-+	K3_DOMAIN_ABORTED,
-+};
+ static void spacemit_m2_enter_exit(int vector, void *param)
+ {
+ 	unsigned int val;
+@@ -156,14 +223,47 @@ static void spacemit_m2_enter_exit(int vector, void *param)
+ 			(vector == AP_C2_M2_ENTER_INT_NUM) ||
+ 			(vector == AP_C3_M2_ENTER_INT_NUM)) {
+ 
+-			/* clear the pending */
+-			spacemit_cx_m2_enter_wait(config->bootcore_index);
++			/* P1: M2 entry observed — drive the state machine */
++			k3_domain_m2_enter_isr(cluster_id);
 +
-+/* Consumer classes for ownership accounting. Unknown = blocker. */
-+enum k3_consumer_class {
-+	K3_CONSUMER_X100_AP	= 0,	/* application cores in this cluster */
-+	K3_CONSUMER_A100	= 1,	/* accelerator cores (harts 8-15) */
-+	K3_CONSUMER_GPU		= 2,
-+	K3_CONSUMER_DISPLAY	= 3,
-+	K3_CONSUMER_DMA		= 4,
-+	K3_CONSUMER_MGMT	= 5,	/* ESOS/management itself */
-+	K3_CONSUMER_CLASS_COUNT,
-+	K3_CONSUMER_UNKNOWN	= 0xff,	/* blocker: unaccounted activity */
-+};
++			/*
++			 * AUDIT FIX 4: clear the pending with a BOUNDED
++			 * hardware handshake. The vendor
++			 * spacemit_cx_m2_enter_wait() polls the
++			 * enter-interrupt status bit INDEFINITELY — an
++			 * interrupt handler that never returns is not a
++			 * bounded transition. Poll with a deadline; on
++			 * timeout, log to the retained stats and leave
++			 * the bit set (the next M2-enter re-triggers the
++			 * ISR; no state is corrupted by a skipped ack).
++			 */
++			{
++				volatile rt_uint32_t v;
++				int tries;
 +
-+struct k3_wake_stats {
-+	rt_uint32_t m2_enter_count;
-+	rt_uint32_t m2_exit_count;
-+	rt_uint32_t wake_ipc;
-+	rt_uint32_t wake_timer;
-+	rt_uint32_t wake_other;
-+	rt_uint32_t aborted_entry;
-+	rt_uint32_t stale_vote_rejected;
-+};
++				v = readl((unsigned int *)
++					  cluster_m2_ctl(cluster_id));
++				for (tries = 0; tries < 1000; tries++) {
++					writel(v | (1 << 2),
++					       (unsigned int *)
++					       cluster_m2_ctl(cluster_id));
++					v = readl((unsigned int *)
++						  cluster_m2_ctl(cluster_id));
++					if (!((v >> 4) & 0x1))
++						break;
++				}
++				if ((v >> 4) & 0x1)
++					k3_domain_note_hw_timeout(cluster_id);
++			}
+ 
+ 			rt_sem_release(config->cm2_etr_sem);
+ 
+ 		return;
+ 	}
+ 
++	/* P1: M2 exit observed — wake accounting + restoring */
++	k3_domain_m2_exit_isr(cluster_id);
 +
-+struct k3_cluster_domain {
-+	/* state machine (protected by lock) */
-+	enum k3_domain_state	state;
-+	rt_uint32_t		generation;	/* vote transaction id */
-+	rt_base_t		lock;
+ 	/* assert corex */
+ 	spacemit_assert_corex(config->bootcore_index);
+ 
+@@ -196,6 +296,21 @@ static rt_int32_t _k3_os0_hsm_init(void *priv)
+ 
+ 	rpmi_uint32_t cluster_id = CPU_TO_CLUSTER(config->bootcore_index);
+ 
++	/*
++	 * P1: bring up the ownership state machine for this cluster
++	 * and WIRE ITS FIRST REAL PROVIDER (audit fix 5): the X100
++	 * clusters run the AP OS — an always-on consumer of the
++	 * cluster's shared resources. The acquire both qualifies the
++	 * domain (an ownership source exists) and holds it: cluster
++	 * sleep is denied while Linux runs, for the RIGHT reason.
++	 * Release becomes meaningful when a future AP-side quiesce
++	 * protocol (RPMI service) hands the domain back.
++	 */
++	k3_domain_init(cluster_id);
++	k3_domain_qualify(cluster_id);
++	if (cluster_id < 2)
++		k3_domain_consumer_acquire(cluster_id, K3_CONSUMER_X100_AP);
 +
-+	/* ownership: bitmask of active consumers (per class) */
-+	rt_uint32_t		consumers;
+ 	switch (cluster_id) {
+ 	case 0:
+ 		/* exit m2 */
+diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
+index 0ec46bce9..4102e4164 100644
+--- a/bsp/spacemit/platform/rt24/k3.dtsi
++++ b/bsp/spacemit/platform/rt24/k3.dtsi
+@@ -785,6 +785,25 @@
+ 					min-residency-us = <2700>;
+ 					wakeup-latency-us = <1500>;
+ 				};
 +
-+	/* entry coordination */
-+	rt_sem_t		m2_enter_sem;	/* AP requested entry */
-+	rt_sem_t		m2_exit_sem;	/* cluster exited M2 */
-+	rt_uint32_t		hw_mp_state;	/* last observed clx_mp_state */
-+
-+	/* retained diagnostics (debugger-readable; no serial I/O) */
-+	struct k3_wake_stats	stats;
-+};
-+
-+/*
-+ * Ownership API. All return 0 on success, negative errno on failure.
-+ * Unknown ownership BLOCKS sleep: k3_domain_consumer_acquire() with
-+ * K3_CONSUMER_UNKNOWN returns -RT_EINVAL and marks the cluster
-+ * permanently active until explicitly cleared.
-+ */
-+int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c);
-+int k3_domain_consumer_release(int cluster, enum k3_consumer_class c);
-+rt_bool_t k3_domain_sleep_eligible(int cluster);
-+
-+/*
-+ * State machine + wake. Bounded waits only: timeout_ms <= 0 means
-+ * non-blocking poll. Entry abort leaves the cluster ACTIVE with no vote.
-+ */
-+int k3_domain_request_sleep(int cluster, int timeout_ms);
-+int k3_domain_abort_sleep(int cluster);
-+int k3_domain_note_wake(int cluster, enum k3_consumer_class source);
-+
-+/* M2 hardware hooks (called from the existing IRQ handlers). */
-+void k3_domain_m2_enter_isr(int cluster);
-+void k3_domain_m2_exit_isr(int cluster);
-+
-+/* One-time init per cluster (idempotent). */
-+int k3_domain_init(int cluster);
-+
-+#endif /* K3_DOMAIN_OWNERSHIP_H */
---- a/dev/null	2026-11-04 09:29:14.498852464 -0800
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c	2026-11-20 14:26:06.838830694 -0800
-@@ -0,0 +1,332 @@
++				/*
++				 * Cluster-RETENTIVE (P1 activation): routed by
++				 * OpenSBI through RPMI_HSM_SRV_HART_SUSPEND so
++				 * the ESOS ownership gate drives the cluster M2
++				 * decision. The hart retains full architectural
++				 * state (no local-timer-stop: the timer keeps
++				 * running and is a wake source). Latencies TBD —
++				 * placeholder vendor values until measured.
++				 */
++				CLUSTER_RET: cluster-retentive@18 {
++					compatible = "riscv,idle-state";
++					reg = <0x0 0x0>;
++					riscv,sbi-suspend-param = <0x11000000>;
++					entry-latency-us = <600>;
++					exit-latency-us = <1100>;
++					min-residency-us = <2700>;
++					wakeup-latency-us = <1500>;
++				};
+ 			};
+ 
+ 			rpmi_sysreset0: rpmi-sysreset@18 {
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
+new file mode 100644
+index 000000000..6c1856618
+--- /dev/null
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
+@@ -0,0 +1,425 @@
 +/*
 + * K3 shared-domain ownership model and retained wake mechanism (P1).
 + * See k3_domain_ownership.h for the design contract.
@@ -154,6 +243,21 @@
 +
 +static struct k3_cluster_domain k3_domains[K3_MAX_CLUSTERS];
 +
++/*
++ * AUDIT-FIXED ACCOUNTING (2026-11-20 review):
++ *  - consumers[] is a per-class REFCOUNT array: multiple users of one
++ *    class each hold a count; one release cannot clear everyone.
++ *  - domains start BLOCKED: the sticky unknown-ownership blocker is
++ *    set at init and cleared only when an ownership provider has
++ *    actually qualified the domain (k3_domain_qualify()).
++ *  - acquiring during ENTERING/COMMITTED invalidates the in-flight
++ *    transaction ATOMICICALLY (generation++ in the same critical
++ *    section that aborts) — a late consumer can never be committed
++ *    over by a request that captured the old generation.
++ *  - request_sleep rechecks generation AND ownership before
++ *    committing.
++ */
++
 +/* ---- internal helpers ------------------------------------------------ */
 +
 +static struct k3_cluster_domain *dom(int cluster)
@@ -168,10 +272,9 @@
 +	return (rt_uint32_t)1U << (c & 0x1f);
 +}
 +
-+/* Cluster sleep is eligible only when EVERY consumer class is accounted
-+ * for and released. Unknown ownership is sticky: it blocks until cleared. */
-+#define OWNERSHIP_UNKNOWN_BIT	((rt_uint32_t)1U << 31)
-+
++/* Cluster sleep is eligible only when EVERY consumer class is fully
++ * released and the domain has been qualified by an ownership provider.
++ * Unknown ownership is sticky: it blocks until explicitly cleared. */
 +int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c)
 +{
 +	struct k3_cluster_domain *d = dom(cluster);
@@ -186,10 +289,14 @@
 +
 +	level = rt_hw_interrupt_disable();
 +	if (d->state != K3_DOMAIN_ACTIVE) {
-+		/* Acquiring a consumer while entering/committed is the
-+		 * abort path: entry must not strand new work. */
++		/* Acquiring a consumer while entering/committed must
++		 * INVALIDATE the in-flight transaction: the generation
++		 * bumps in the SAME critical section as the abort, so a
++		 * request that later compares generations cannot miss
++		 * this consumer and commit over it (audit finding 2). */
 +		if ((d->state == K3_DOMAIN_ENTERING) ||
 +		    (d->state == K3_DOMAIN_COMMITTED)) {
++			d->generation++;	/* atomic invalidation */
 +			d->state = K3_DOMAIN_ABORTED;
 +			d->stats.aborted_entry++;
 +			ret = 1;	/* entry aborted; caller retries */
@@ -197,11 +304,8 @@
 +			ret = -RT_EBUSY;	/* asleep/restoring: wait */
 +		}
 +	}
-+	d->consumers |= class_bit(c);
++	d->consumers[c]++;
 +	rt_hw_interrupt_enable(level);
-+
-+	if (ret == 1)
-+		k3_domain_abort_sleep(cluster);
 +
 +	return (ret < 0) ? ret : 0;
 +}
@@ -213,14 +317,46 @@
 +
 +	if (!d)
 +		return -RT_EINVAL;
-+	if ((c >= K3_CONSUMER_CLASS_COUNT) && (c != K3_CONSUMER_UNKNOWN))
++	if (c >= K3_CONSUMER_CLASS_COUNT)
 +		return -RT_EINVAL;
 +
 +	level = rt_hw_interrupt_disable();
-+	if (c == K3_CONSUMER_UNKNOWN)
-+		d->consumers &= ~OWNERSHIP_UNKNOWN_BIT;
-+	else
-+		d->consumers &= ~class_bit(c);
++	if (d->consumers[c])
++		d->consumers[c]--;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++/*
++ * Domain qualification: an ownership provider that has actually
++ * enumerated this cluster's consumers clears the sticky blocker.
++ * Before this call the domain is BLOCKED (audit finding 3: init
++ * must not start sleep-eligible by default).
++ */
++/*
++ * Bounded-handshake failure accounting (audit fix 4): the M2-enter
++ * ISR could not clear the hardware pending bit within its budget.
++ * Retained counter only — no serial I/O in the transition path.
++ */
++void k3_domain_note_hw_timeout(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++
++	if (!d)
++		return;
++	d->stats.hw_handshake_timeouts++;
++}
++
++int k3_domain_qualify(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++	rt_base_t level;
++
++	if (!d)
++		return -RT_EINVAL;
++
++	level = rt_hw_interrupt_disable();
++	d->qualified = 1;
 +	rt_hw_interrupt_enable(level);
 +	return 0;
 +}
@@ -233,12 +369,18 @@
 +	if (!d)
 +		return RT_FALSE;
 +
-+	/* Sticky unknown-ownership bit blocks sleep. Any active consumer
-+	 * class blocks sleep. The management core (K3_CONSUMER_MGMT)
-+	 * itself must be released before the cluster it manages sleeps. */
-+	eligible = (d->consumers == 0) &&
-+		   !(d->consumers & OWNERSHIP_UNKNOWN_BIT) &&
++	/* Sticky unqualified blocker + any active consumer count blocks
++	 * sleep. The management core (K3_CONSUMER_MGMT) itself must be
++	 * released before the cluster it manages sleeps. */
++	eligible = d->qualified &&
 +		   (d->state == K3_DOMAIN_ACTIVE);
++	if (eligible) {
++		for (int i = 0; i < K3_CONSUMER_CLASS_COUNT; i++)
++			if (d->consumers[i]) {
++				eligible = RT_FALSE;
++				break;
++			}
++	}
 +	return eligible;
 +}
 +
@@ -275,6 +417,18 @@
 +	my_generation = d->generation;
 +	rt_hw_interrupt_enable(level);
 +
++	/*
++	 * HARDWARE-VALIDATED FIX (v21g cycle): drain any STALE
++	 * semaphore count before waiting. A boot-time or leftover
++	 * M2-enter interrupt release pre-arms m2_enter_sem; without
++	 * the drain, the first request after boot is granted
++	 * instantly (v21g test 1: grant with the cluster busy).
++	 * The drain discards stale signals so only an M2-enter that
++	 * lands DURING this wait can grant the transaction.
++	 */
++	while (rt_sem_take(d->m2_enter_sem, RT_WAITING_NO) == RT_EOK)
++		d->stats.stale_vote_rejected++;
++
 +	/* Bounded wait for the hardware M2-enter handshake. The ISR
 +	 * releases m2_enter_sem when the cluster's M2 request lands. */
 +	if (timeout_ms > 0) {
@@ -300,6 +454,26 @@
 +		rt_hw_interrupt_enable(level);
 +		d->stats.stale_vote_rejected++;
 +		return -RT_EINTR;
++	}
++	/*
++	 * AUDIT FIX 2: recheck OWNERSHIP before committing — the
++	 * generation guards transaction ordering, but a consumer may
++	 * have arrived and been refused (not aborting this request)
++	 * or the qualifier state may have changed. Commit only when
++	 * both the transaction is current AND no consumer holds the
++	 * domain (fall back to the same eligibility rules).
++	 */
++	{
++		rt_bool_t still_eligible = d->qualified;
++		for (int i = 0; i < K3_CONSUMER_CLASS_COUNT; i++)
++			if (d->consumers[i])
++				still_eligible = RT_FALSE;
++		if (!still_eligible) {
++			rt_hw_interrupt_enable(level);
++			d->state = K3_DOMAIN_ABORTED;
++			d->stats.aborted_entry++;
++			return -RT_EINTR;
++		}
 +	}
 +	d->state = K3_DOMAIN_COMMITTED;
 +	rt_hw_interrupt_enable(level);
@@ -452,8 +626,16 @@
 +		return -RT_ENOMEM;
 +	}
 +
++	/*
++	 * AUDIT FIX 3: start BLOCKED. The domain is sleep-ineligible
++	 * until k3_domain_qualify() runs (an ownership provider has
++	 * enumerated the consumers). consumers[] refcounts start at
++	 * zero; qualification — not emptiness — is what admits sleep.
++	 */
 +	d->state = K3_DOMAIN_ACTIVE;
-+	d->consumers = 0;
++	for (int i = 0; i < K3_CONSUMER_CLASS_COUNT; i++)
++		d->consumers[i] = 0;
++	d->qualified = 0;
 +	d->generation = 0;
 +	rt_memset(&d->stats, 0, sizeof(d->stats));
 +	return 0;
@@ -468,80 +650,152 @@
 +		rt_sem_release(d->m2_enter_sem);
 +}
 +#endif
-diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
-index 221acf09c..0a51fdfad 100644
---- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
-@@ -11,6 +11,7 @@
- #include <riscv-ops.h>
- #include <riscv-plic.h>
- #include "k3_hsm.h"
-+#include "k3_domain_ownership.h"
- #include <register_defination.h>
- #include "../spacemit-rpmi.h"
- 
-@@ -123,6 +124,24 @@ static enum rpmi_error k3_hsm_hart_suspend_prepare(
- 	const struct rpmi_hsm_suspend_type* suspend_type,
- 	rpmi_uint64_t resume_addr)
- {
-+	rpmi_uint32_t cluster = CPU_TO_CLUSTER(hart_index);
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+new file mode 100644
+index 000000000..d5f3aff23
+--- /dev/null
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+@@ -0,0 +1,143 @@
++/*
++ * K3 shared-domain ownership model and retained wake mechanism (P1).
++ *
++ * Design per the suspend-ownership plan:
++ *   - OpenSBI owns the hart's architectural suspend/resume contract
++ *     (register operations executing on the affected hart).
++ *   - ESOS owns shared-resource ELIGIBILITY and hardware coordination:
++ *     whether a cluster/domain may power down, and how a sleeping
++ *     cluster is woken.
++ *
++ * Scope of this first implementation:
++ *   P1-a Explicit resource ownership: per-cluster consumer tracking.
++ *     Unknown ownership is a BLOCKER (conservative).
++ *   P1-b Shared-domain state machine: active / entering / committed /
++ *     asleep / restoring / aborted with single-owner transitions.
++ *   P1-c Transactional power votes: requests carry a generation number;
++ *     stale or duplicate requests cannot leave a domain eligible.
++ *   P1-d Retained wake mechanism: the M2 interrupt path (already the
++ *     hardware contract: AP_Cx_M2_ENTER/EXIT interrupts, clusterx_m2_lp_ctrl
++ *     registers, AUDIO_WAKEUP_EN_REG) is wired to the state machine with
++ *     BOUNDED waits; a timeout aborts entry and leaves the cluster
++ *     runnable with no stale vote.
++ *
++ * Deliberately NOT implemented here (per plan): cluster shutdown itself.
++ * The model gates it; when every consumer is accounted for and the wake
++ * mechanism is qualified, the actual power sequence goes through
++ * k3_domain_commit_sleep() with the documented ordering hooks.
++ *
++ * Diagnostics (supporting deliverable): retained per-cluster counters —
++ * requests, aborts, wake reasons, state transitions — readable via
++ * debugger; NO serial logging in the transition path.
++ */
 +
-+	/*
-+	 * P1 ownership gate: shared-resource eligibility is ESOS's call.
-+	 * Unknown ownership or an active consumer blocks the suspend
-+	 * (RPMI_ERR_DENIED) — the AP hart then falls back to plain WFI.
-+	 */
-+	if (!k3_domain_sleep_eligible(cluster))
-+		return RPMI_ERR_DENIED;
++#ifndef K3_DOMAIN_OWNERSHIP_H
++#define K3_DOMAIN_OWNERSHIP_H
 +
-+	/*
-+	 * Transactional request with a bounded wait for cluster-wide
-+	 * M2 coordination; a timeout aborts and leaves the cluster
-+	 * ACTIVE with no vote (RPMI_ERR_DENIED -> AP falls back to WFI).
-+	 */
-+	if (k3_domain_request_sleep(cluster, 100 /* bounded ms */))
-+		return RPMI_ERR_DENIED;
++#include <rthw.h>
++#include <rtthread.h>
 +
- 	return 0;
- }
- 
-@@ -132,7 +151,8 @@ static void k3_hsm_hart_suspend_finalize(
- 	const struct rpmi_hsm_suspend_type* suspend_type,
- 	rpmi_uint64_t resume_addr)
- {
--	/* do nothing */
-+	/* P1: back to ACTIVE on the abort/in-place path (no vote survives) */
-+	k3_domain_abort_sleep(CPU_TO_CLUSTER(hart_index));
- }
- 
- struct rpmi_hsm_platform_ops k3_os0_hsm_pops = {
-@@ -156,6 +176,9 @@ static void spacemit_m2_enter_exit(int vector, void *param)
- 			(vector == AP_C2_M2_ENTER_INT_NUM) ||
- 			(vector == AP_C3_M2_ENTER_INT_NUM)) {
- 
-+			/* P1: M2 entry observed — drive the state machine */
-+			k3_domain_m2_enter_isr(cluster_id);
++/* ---- cluster/domains ------------------------------------------------ */
 +
- 			/* clear the pending */
- 			spacemit_cx_m2_enter_wait(config->bootcore_index);
- 
-@@ -164,6 +187,9 @@ static void spacemit_m2_enter_exit(int vector, void *param)
- 		return;
- 	}
- 
-+	/* P1: M2 exit observed — wake accounting + restoring */
-+	k3_domain_m2_exit_isr(cluster_id);
++#define K3_MAX_CLUSTERS		4	/* C0..C3 (X100: C0/C1 only) */
 +
- 	/* assert corex */
- 	spacemit_assert_corex(config->bootcore_index);
- 
-@@ -196,6 +222,9 @@ static rt_int32_t _k3_os0_hsm_init(void *priv)
- 
- 	rpmi_uint32_t cluster_id = CPU_TO_CLUSTER(config->bootcore_index);
- 
-+	/* P1: bring up the ownership state machine for this cluster */
-+	k3_domain_init(cluster_id);
++/*
++ * Shared-domain states. Transitions are single-owner (the ESOS management
++ * core serializes through the cluster lock):
++ *
++ *   ACTIVE -> ENTERING -> COMMITTED -> ASLEEP -> RESTORING -> ACTIVE
++ *        \              \
++ *         \              -> ABORTED -> ACTIVE (no vote survives)
++ *         -> ABORTED -> ACTIVE
++ *
++ * ENTERING: votes are being placed; a late consumer or a timeout aborts.
++ * COMMITTED: the power-down decision is final; wake is the only exit.
++ * ASLEEP: hardware MP state confirms the cluster is in M2.
++ * RESTORING: the M2-EXIT path is waking the cluster; new requests wait.
++ */
++enum k3_domain_state {
++	K3_DOMAIN_ACTIVE = 0,
++	K3_DOMAIN_ENTERING,
++	K3_DOMAIN_COMMITTED,
++	K3_DOMAIN_ASLEEP,
++	K3_DOMAIN_RESTORING,
++	K3_DOMAIN_ABORTED,
++};
 +
- 	switch (cluster_id) {
- 	case 0:
- 		/* exit m2 */
++/* Consumer classes for ownership accounting. Unknown = blocker. */
++enum k3_consumer_class {
++	K3_CONSUMER_X100_AP	= 0,	/* application cores in this cluster */
++	K3_CONSUMER_A100	= 1,	/* accelerator cores (harts 8-15) */
++	K3_CONSUMER_GPU		= 2,
++	K3_CONSUMER_DISPLAY	= 3,
++	K3_CONSUMER_DMA		= 4,
++	K3_CONSUMER_MGMT	= 5,	/* ESOS/management itself */
++	K3_CONSUMER_CLASS_COUNT,
++	K3_CONSUMER_UNKNOWN	= 0xff,	/* blocker: unaccounted activity */
++};
++
++struct k3_wake_stats {
++	rt_uint32_t m2_enter_count;
++	rt_uint32_t m2_exit_count;
++	rt_uint32_t wake_ipc;
++	rt_uint32_t wake_timer;
++	rt_uint32_t wake_other;
++	rt_uint32_t aborted_entry;
++	rt_uint32_t stale_vote_rejected;
++	rt_uint32_t hw_handshake_timeouts;	/* audit fix 4 */
++};
++
++struct k3_cluster_domain {
++	/* state machine (protected by lock) */
++	enum k3_domain_state	state;
++	rt_uint32_t		generation;	/* vote transaction id */
++	rt_base_t		lock;
++
++	/* ownership: per-class consumer REFCOUNTS (one release cannot
++	 * clear another user of the same class) + the qualification
++	 * gate (a domain starts BLOCKED until a provider qualifies it) */
++	rt_uint16_t		consumers[K3_CONSUMER_CLASS_COUNT];
++	rt_uint8_t		qualified;
++
++	/* entry coordination */
++	rt_sem_t		m2_enter_sem;	/* AP requested entry */
++	rt_sem_t		m2_exit_sem;	/* cluster exited M2 */
++	rt_uint32_t		hw_mp_state;	/* last observed clx_mp_state */
++
++	/* retained diagnostics (debugger-readable; no serial I/O) */
++	struct k3_wake_stats	stats;
++};
++
++/*
++ * Ownership API. All return 0 on success, negative errno on failure.
++ * Unknown ownership BLOCKS sleep: k3_domain_consumer_acquire() with
++ * K3_CONSUMER_UNKNOWN returns -RT_EINVAL and marks the cluster
++ * permanently active until explicitly cleared.
++ */
++int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c);
++int k3_domain_consumer_release(int cluster, enum k3_consumer_class c);
++rt_bool_t k3_domain_sleep_eligible(int cluster);
++
++/* Domain qualification: clears the sticky unqualified blocker once an
++ * ownership provider has actually enumerated this cluster's consumers. */
++int k3_domain_qualify(int cluster);
++
++/* Retained-counter hook for a bounded M2 handshake timeout in the ISR. */
++void k3_domain_note_hw_timeout(int cluster);
++
++/*
++ * State machine + wake. Bounded waits only: timeout_ms <= 0 means
++ * non-blocking poll. Entry abort leaves the cluster ACTIVE with no vote.
++ */
++int k3_domain_request_sleep(int cluster, int timeout_ms);
++int k3_domain_abort_sleep(int cluster);
++int k3_domain_note_wake(int cluster, enum k3_consumer_class source);
++
++/* M2 hardware hooks (called from the existing IRQ handlers). */
++void k3_domain_m2_enter_isr(int cluster);
++void k3_domain_m2_exit_isr(int cluster);
++
++/* One-time init per cluster (idempotent). */
++int k3_domain_init(int cluster);
++
++#endif /* K3_DOMAIN_OWNERSHIP_H */
