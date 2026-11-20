@@ -128,3 +128,53 @@ The qualified suspend state for index 1 still needs the
 arch_get_idle_state_flags kernel override plus a genuinely
 retentive hardware state beyond plain WFI (or index 1 stays
 unimplemented and only WFI is advertised).
+
+---
+
+## v17 (ESOS P1) cycle results — 2026-11-20
+
+Payload: pico-acpi-v17 (esos rcpu0-fw with the P1 ownership model;
+OpenSBI unchanged at hardware-qualified v16; all other regions v12).
+
+### P0 regression: PASS
+
+All four rejection types return the same codes as v16
+(-1/-2/-3/-3), canary intact, system alive. The ESOS P1 wiring did
+not perturb the AP-visible suspend contract.
+
+### Type-0 WFI + hotplug + soak: PASS
+
+- type 0: result=0, in-place resume, canary intact
+- CPU hotplug (cpu1 offline/online): works — the RPMI hart_start
+  path through the P1-wired ESOS is healthy
+- 10k type-0 soak: PASS — 10,005 iterations, result=0, canary intact, zero lockups/NMI in dmesg
+
+### Architectural finding: the P1 gate is DORMANT from the AP path
+
+The K3 branch of rpmi_hsm_suspend() (OpenSBI) handles suspend
+locally since the v16 dispatch: type 0 = plain wfi, all
+non-retentive types rejected locally with zero hardware changes.
+The RPMI_HSM_SRV_HART_SUSPEND request exists only in the non-K3
+branch. Consequence: k3_hsm_hart_suspend_prepare() (the P1
+eligibility gate in ESOS) is never invoked by an AP suspend — the
+ownership model's live coverage on this firmware is:
+
+  - k3_domain_init() per cluster at boot
+  - the M2 enter/exit ISR hooks (hardware cluster-power events)
+  - the state machine, consumer tracking, and retained counters
+    (armed but not driven by AP traffic)
+
+This is SAFE-by-construction for this cycle (the gate cannot
+reject anything because nothing asks), and it is the correct
+ordering per the plan: the ownership model ships and boots and
+coordinates M2 events, while the AP suspend path stays at the
+qualified v16 behavior. To activate the gate for AP suspends, a
+future OpenSBI revision must route at least one suspend type
+through RPMI_HSM_SRV_HART_SUSPEND (the natural candidate: the
+future qualified cluster-retentive state, gated by the ESOS
+ownership model per the original plan).
+
+### Boot health
+
+No lockups, no M2/ownership console errors, thermal/clock/GMAC
+unregressed (checked post-boot).
