@@ -11,6 +11,14 @@
         {
           "file": "patches/esos/0001-k3-reset-restore-owned-i2c-pins.patch",
           "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
+        },
+        {
+          "file": "patches/esos/0002-rpmi-clk-wire-service-to-ccu.patch",
+          "sha256": "6a9f4a9ca812c2b44bea09c5aa3286baad69694903036a82ada84088e3a6223f"
+        },
+        {
+          "file": "patches/esos/0003-ccu-k3-port-RPMI-consumer-clocks.patch",
+          "sha256": "fde976b277cfc96f126bb103c8bc868543a6341051148f3d35b8054cdd707de4"
         }
       ],
       "configs": [

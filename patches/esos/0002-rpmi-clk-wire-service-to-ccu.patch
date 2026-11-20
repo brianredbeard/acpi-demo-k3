@@ -1,0 +1,178 @@
+diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+index 4d6ee9ac6..b01af56f3 100644
+--- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
++++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+@@ -997,6 +997,9 @@ int ccu_common_init(struct clk_hw * hw, struct spacemit_k1x_clk *clk_info)
+ 	case BASE_TYPE_MPMU:
+ 		common->base = clk_info->mpmu_base;
+ 		break;
++	case BASE_TYPE_APBC:
++		common->base = clk_info->apbc_base;
++		break;
+ 	case BASE_TYPE_APBS:
+ 		common->base = clk_info->apbs_base;
+ 		break;
+@@ -1089,55 +1092,62 @@ int spacemit_ccu_init(void)
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.apmu_base = (void *)dtb_node_get_addr_index(compatible_node, 1);
++			/* reg index 1: APBC (application-core peripheral clock domain) */
++			ccu->clk_info.apbc_base = (void *)dtb_node_get_addr_index(compatible_node, 1);
++			if (ccu->clk_info.apbc_base < 0) {
++				rt_kprintf("get apbc error\n");
++				return -RT_ERROR;
++			}
++
++			ccu->clk_info.apmu_base = (void *)dtb_node_get_addr_index(compatible_node, 2);
+ 			if (ccu->clk_info.apmu_base < 0) {
+ 				rt_kprintf("get apmu error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.apbs_base = (void *)dtb_node_get_addr_index(compatible_node, 2);
++			ccu->clk_info.apbs_base = (void *)dtb_node_get_addr_index(compatible_node, 3);
+ 			if (ccu->clk_info.apbs_base < 0) {
+ 				rt_kprintf("get apbs error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu_base = (void *)dtb_node_get_addr_index(compatible_node, 3);
++			ccu->clk_info.rcpu_base = (void *)dtb_node_get_addr_index(compatible_node, 4);
+ 			if (ccu->clk_info.rcpu_base < 0) {
+ 				rt_kprintf("get rcpu error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu1_base = (void *)dtb_node_get_addr_index(compatible_node, 4);
++			ccu->clk_info.rcpu1_base = (void *)dtb_node_get_addr_index(compatible_node, 5);
+ 			if (ccu->clk_info.rcpu1_base < 0) {
+ 				rt_kprintf("get rcpu1 error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu2_base = (void *)dtb_node_get_addr_index(compatible_node, 5);
++			ccu->clk_info.rcpu2_base = (void *)dtb_node_get_addr_index(compatible_node, 6);
+ 			if (ccu->clk_info.rcpu2_base < 0) {
+ 				rt_kprintf("get rcpu2 error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu3_base = (void *)dtb_node_get_addr_index(compatible_node, 6);
++			ccu->clk_info.rcpu3_base = (void *)dtb_node_get_addr_index(compatible_node, 7);
+ 			if (ccu->clk_info.rcpu3_base < 0) {
+ 				rt_kprintf("get rcpu3 error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu4_base = (void *)dtb_node_get_addr_index(compatible_node, 7);
++			ccu->clk_info.rcpu4_base = (void *)dtb_node_get_addr_index(compatible_node, 8);
+ 			if (ccu->clk_info.rcpu4_base < 0) {
+ 				rt_kprintf("get rcpu4 error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu5_base = (void *)dtb_node_get_addr_index(compatible_node, 8);
++			ccu->clk_info.rcpu5_base = (void *)dtb_node_get_addr_index(compatible_node, 9);
+ 			if (ccu->clk_info.rcpu5_base < 0) {
+ 				rt_kprintf("get rcpu5 error\n");
+ 				return -RT_ERROR;
+ 			}
+ 
+-			ccu->clk_info.rcpu6_base = (void *)dtb_node_get_addr_index(compatible_node, 9);
++			ccu->clk_info.rcpu6_base = (void *)dtb_node_get_addr_index(compatible_node, 10);
+ 			if (ccu->clk_info.rcpu6_base < 0) {
+ 				rt_kprintf("get rcpu6 error\n");
+ 				return -RT_ERROR;
+@@ -1149,3 +1159,54 @@ int spacemit_ccu_init(void)
+ 
+ 	return 0;
+ }
++
++/*
++ * spacemit_ccu_get_clk_by_name - resolve a registered CCU clock by name.
++ *
++ * Used by the RPMI clock service (k3-os0_clk.c) to forward RPMI requests
++ * to real clock control without OF-node/index coupling. The name is the
++ * ABI: it matches both the CCU clock table and the RPMI clock name served
++ * to Linux via RPMI CLOCK_GET_INFO.
++ */
++struct clk *spacemit_ccu_get_clk_by_name(const char *name)
++{
++	struct spacemit_ccu *ccu = &spacemit_ccu_k3;
++	struct clk_hw_onecell_data *cells = ccu->clk_cells;
++	struct clk_hw *hw;
++	int i;
++
++	if (!cells || !name)
++		return RT_NULL;
++
++	for (i = 0; i < cells->num; i++) {
++		hw = cells->hws[i];
++		if (hw && hw->init && hw->init->name &&
++		    !rt_strcmp(hw->init->name, name))
++			return clk_hw_get_clk(hw, name);
++	}
++
++	return RT_NULL;
++}
++
++/*
++ * spacemit_ccu_clk_is_enabled - query the hardware enable state of a
++ * registered CCU clock.
++ *
++ * The RT-Thread clk framework has no clk_is_enabled(), but the CCU clock
++ * ops implement is_enabled() by reading the gate bit back from hardware
++ * (e.g. the CLK_RES_CTRL enable bits). Used by the RPMI clock service to
++ * report real state instead of assuming enabled.
++ */
++rt_bool_t spacemit_ccu_clk_is_enabled(struct clk *clk)
++{
++	struct clk_hw *hw;
++
++	if (!clk)
++		return RT_FALSE;
++
++	hw = __clk_get_hw(clk);
++	if (!hw || !hw->init || !hw->init->ops || !hw->init->ops->is_enabled)
++		return RT_TRUE;
++
++	return hw->init->ops->is_enabled(hw) ? RT_TRUE : RT_FALSE;
++}
+diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
+index 525baf97c..48fb5f412 100644
+--- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
++++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
+@@ -110,6 +110,7 @@
+ 
+ /* RPMU register offsets */
+ #define RCPU5_AON_PER_CLK_RST_CTRL	0x2C
++
+ #define RCPU5_TIMER1_CLK_RST		0x4C
+ #define RCPU5_TIMER2_CLK_RST		0x70
+ #define RCPU5_TIMER3_CLK_RST		0x78
+@@ -133,4 +134,10 @@
+ #define RCPU6_PWM8_CLK_RST		0x20
+ #define RCPU6_PWM9_CLK_RST		0x24
+ 
+-#endif /* _CCU_SPACEMIT_K3_H_ */
++struct clk;
++
++/* RPMI clock service helpers (ccu-spacemit-k3.c) */
++struct clk *spacemit_ccu_get_clk_by_name(const char *name);
++rt_bool_t spacemit_ccu_clk_is_enabled(struct clk *clk);
++
++#endif /* _CCU_SPACEMIT_K3_H_ */
+\ No newline at end of file
+diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
+index 0ec46bce9..1b14e511e 100644
+--- a/bsp/spacemit/platform/rt24/k3.dtsi
++++ b/bsp/spacemit/platform/rt24/k3.dtsi
+@@ -84,6 +84,7 @@
+ 		ccu: ccu@c0880000 {
+ 			compatible = "spacemit,rcpu-ccu-k3";
+ 			reg = <0xd4050000 0x209c>,
++				<0xd4015000 0x1000>,	/* APBC */
+ 				<0xd4282800 0x400>,
+ 				<0xd4090000 0x1000>,
+ 				<0xc0880000 0x1000>,
