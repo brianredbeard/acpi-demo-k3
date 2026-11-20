@@ -82,3 +82,30 @@ Verified on the serial console:
 Hardware qualification for patches 0008/0009 and the ESOS 0001-0006 series
 is therefore CLOSED on v12 evidence (supersedes the v11 rate-0 caveat: the
 placeholder-opacity issue was the 0006 lookup bug, fixed and now proven).
+
+## v12 payload verification addendum — 2026-11-20 (live, firmware-DSDT boot)
+
+Payload: edk2 9ef6a15f (0010 promotion + 0011 audit fixes), ESOS 37533b27
+(clk framework rework: clk_get_enabled tri-state, clk_hw_get_ops,
+rate-capability APIs). First boot with NO GRUB DSDT override — the
+firmware's own DSDT describes everything.
+
+Verified live (serial console):
+- Boot health: full RHEL, zero BUG/WARNING/ERROR; SPCR console active.
+- RHCT HWCAP (0011 fix PROVEN): /proc/cpuinfo isa now carries the full
+  X100 set — zicntr zicond zicsr zifencei zihintpause zihpm zfh zfhmin
+  zba zbb zbc zbs zkt zvbb zvbc zve* zvkb..zvkt svinval svnapot — vs the
+  v12-pre-0011 RHCT subset. All 8 harts report identically.
+- _OSC (0011 fix PROVEN): "platform does not support [PCIeHotplug PME AER
+  LTR DPC]" — the real firmware-supported mask (PCIeCapability only) is
+  what the OS now sees. PCIe still enumerates (NVMe root on MSI-X).
+- RPMI clocks: all real rates (ufs_aclk 491.52 MHz, emac0_bus 307.2 MHz,
+  twsi0 31.507692 MHz, gpio 24 MHz, sdh0 204.8 MHz) — ESOS framework
+  rework boot-clean.
+- Peripherals from the firmware DSDT (no override): 7 tsensor zones
+  51-55C, EC registered (fan path), 24c02 EEPROM on i2c-PRP0001:08,
+  GMAC DHCP up.
+- cpuidle: correctly ABSENT — _LPI is patch 0012 (the v13 cycle); no
+  half-state shipped.
+
+Remaining for v13: _LPI states (checklist in docs/v13-boot-checklist.md).
