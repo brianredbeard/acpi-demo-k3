@@ -47,6 +47,15 @@ The edk2-platforms worktree also carries uncommitted design/validation docs
 (`docs/k3-maintained-efi/acpi-*.md`) and further validated-but-unexported
 peripheral state; exporting those is follow-on work.
 
+## v12 hardware validation (2026-11-20)
+
+`pico-acpi-v12` flashed and verified: full RHEL boot with the
+firmware-baked DSDT (no GRUB override), all peripherals enumerated
+(serial/NVMe/GMAC/GPIO/I2C+EEPROM/eSPI+EC+PWM+fan/tsensor), MPXY+RCLK
+transport live with all 13 RPMI clocks at real hardware rates
+(ufs_aclk 491.52 MHz), RHCT ISA complete (HWCAP correct), _OSC real
+mask, processor objects bound (8x acpi_processor).
+
 ## Provenance
 
 The ACPI integration work is user-authored, derived from DT research and
