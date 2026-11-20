@@ -1,0 +1,168 @@
+[  OK  ] Started fstrim.timer - Discard unused filesystem blocks once a week.
+[  OK  ] Started fwupd-refresh.timer - Refresh fwupd metadata regularly.
+[  OK  ] Started logrotate.timer - Daily rotation of log files.
+[  OK  ] Started plocate-updatedb.timer - Update the plocate database daily.
+[  OK  ] Started raid-check.timer - Weekly RAID setup health check.
+[  OK  ] Started systemd-tmpfiles-clean.tim…y Cleanup of Temporary Directories.
+[  OK  ] Started unbound-anchor.timer - dai…f the root trust anchor for DNSSEC.
+[  OK  ] Reached target paths.target - Path Units.
+[  OK  ] Reached target timers.target - Timer Units.
+[  OK  ] Listening on avahi-daemon.socket -…DNS/DNS-SD Stack Activation Socket.
+         Starting cockpit.socket - Cockpit Web Service Socket...
+[  OK  ] Listening on cups.socket - CUPS Scheduler.
+[  OK  ] Listening on dbus.socket - D-Bus System Message Bus Socket.
+[  OK  ] Listening on iscsid.socket - Open-iSCSI iscsid Socket.
+[  OK  ] Listening on iscsiuio.socket - Open-iSCSI iscsiuio Socket.
+[  OK  ] Listening on sshd-unix-local.socke…temd-ssh-generator, AF_UNIX Local).
+[  OK  ] Listening on sssd-kcm.socket - SSS…ros Cache Manager responder socket.
+[  OK  ] Listening on systemd-hostnamed.socket - Hostname Service Socket.
+[  OK  ] Listening on virtinterfaced.socket - libvirt interface daemon socket.
+[  OK  ] Listening on virtinterfaced-admin.…virt interface daemon admin socket.
+[  OK  ] Listening on virtinterfaced-ro.soc… interface daemon read-only socket.
+[  OK  ] Listening on virtlockd.socket - libvirt locking daemon socket.
+[  OK  ] Listening on virtlockd-admin.socke…ibvirt locking daemon admin socket.
+[  OK  ] Listening on virtlogd.socket - libvirt logging daemon socket.
+[  OK  ] Listening on virtlogd-admin.socket…ibvirt logging daemon admin socket.
+[  OK  ] Listening on virtnetworkd.socket - libvirt network daemon socket.
+[  OK  ] Listening on virtnetworkd-admin.so…ibvirt network daemon admin socket.
+[  OK  ] Listening on virtnetworkd-ro.socke…rt network daemon read-only socket.
+[  OK  ] Listening on virtnodedevd.socket - libvirt nodedev daemon socket.
+[  OK  ] Listening on virtnodedevd-admin.so…ibvirt nodedev daemon admin socket.
+[  OK  ] Listening on virtnodedevd-ro.socke…rt nodedev daemon read-only socket.
+[  OK  ] Listening on virtnwfilterd.socket - libvirt nwfilter daemon socket.
+[  OK  ] Listening on virtnwfilterd-admin.s…bvirt nwfilter daemon admin socket.
+[  OK  ] Listening on virtnwfilterd-ro.sock…t nwfilter daemon read-only socket.
+[  OK  ] Listening on virtproxyd.socket - libvirt proxy daemon socket.
+[  OK  ] Listening on virtproxyd-admin.sock… libvirt proxy daemon admin socket.
+[  OK  ] Listening on virtproxyd-ro.socket …virt proxy daemon read-only socket.
+[  OK  ] Listening on virtqemud.socket - libvirt QEMU daemon socket.
+[  OK  ] Listening on virtqemud-admin.socke…- libvirt QEMU daemon admin socket.
+[  OK  ] Listening on virtqemud-ro.socket -…bvirt QEMU daemon read-only socket.
+[  OK  ] Listening on virtsecretd.socket - libvirt secret daemon socket.
+[  OK  ] Listening on virtsecretd-admin.soc…libvirt secret daemon admin socket.
+[  OK  ] Listening on virtsecretd-ro.socket…irt secret daemon read-only socket.
+[  OK  ] Listening on virtstoraged.socket - libvirt storage daemon socket.
+[  OK  ] Listening on virtstoraged-admin.so…ibvirt storage daemon admin socket.
+[  OK  ] Listening on virtstoraged-ro.socke…rt storage daemon read-only socket.
+         Starting dbus-broker.service - D-Bus System Message Bus...
+[  OK  ] Listening on cockpit.socket - Cockpit Web Service Socket.
+[  OK  ] Reached target sockets.target - Socket Units.
+[  OK  ] Started dbus-broker.service - D-Bus System Message Bus.
+[  OK  ] Reached target basic.target - Basic System.
+         Starting avahi-daemon.service - Avahi mDNS/DNS-SD Stack...
+         Starting chronyd.service - NTP client/server...
+         Starting dracut-shutdown.service -…store /run/initramfs on shutdown...
+[  OK  ] Started firewalld.service - firewalld - dynamic firewall daemon.
+[  OK  ] Reached target network-pre.target - Preparation for Network.
+         Starting NetworkManager.service - Network Manager...
+         Starting foomaticrip-upgrade.servi…talled printers for foomatic-rip...
+[  OK  ] Started irqbalance.service - irqbalance daemon.
+[  OK  ] Started libstoragemgmt.service - libstoragemgmt plug-in server daemon.
+         Starting lm_sensors.service - Hardware Monitoring Sensors...
+         Starting polkit.service - Authorization Manager...
+         Starting rtkit-daemon.service - Re…imeKit Scheduling Policy Service...
+         Starting smartd.service - Self Mon…orting Technology (SMART) Daemon...
+[  OK  ] Reached target sshd-keygen.target.
+[  OK  ] Reached target nss-user-lookup.target - User and Group Name Lookups.
+         Starting accounts-daemon.service - Accounts Service...
+         Starting switcheroo-control.servic…Switcheroo Control Proxy service...
+         Starting systemd-logind.service - User Login Management...
+         Starting systemd-machined.service …d Container Registration Service...
+         Starting udisks2.service - Disk Manager...
+         Starting upower.service - Daemon for power management...
+[  OK  ] Started chronyd.service - NTP client/server.
+[  OK  ] Started smartd.service - Self Moni…eporting Technology (SMART) Daemon.
+[  OK  ] Started systemd-logind.service - User Login Management.
+[  OK  ] Finished dracut-shutdown.service - Restore /run/initramfs on shutdown.
+[  OK  ] Finished foomaticrip-upgrade.servi…nstalled printers for foomatic-rip.
+[  OK  ] Started rtkit-daemon.service - RealtimeKit Scheduling Policy Service.
+[  OK  ] Finished lm_sensors.service - Hardware Monitoring Sensors.
+[  OK  ] Started switcheroo-control.service - Switcheroo Control Proxy service.
+[  OK  ] Started systemd-machined.service -…and Container Registration Service.
+         Starting systemd-hostnamed.service - Hostname Service...
+         Starting systemd-userdbd.service - User Database Manager...
+[  OK  ] Started systemd-userdbd.service - User Database Manager.
+[  OK  ] Started systemd-hostnamed.service - Hostname Service.
+[  OK  ] Started avahi-daemon.service - Avahi mDNS/DNS-SD Stack.
+[  OK  ] Listening on systemd-rfkill.socket…ll Switch Status /dev/rfkill Watch.
+[   58.900901] spacemit-dwmac PRP0001:05 enaprp1i5: Register MEM_TYPE_PAGE_POOL RxQ-0
+         Starting NetworkManager-dispatcher…anager Script Dispatcher Service...
+[  OK  ] Started polkit.service - Authorization Manager.
+[   58.944201] spacemit-dwmac PRP0001:05 enaprp1i5: PHY [stmmac-0:00] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[   58.965266] spacemit-dwmac PRP0001:05 enaprp1i5: No Safety Features support found
+[  OK  ] Started accounts-daemon.service[   58.974557] spacemit-dwmac PRP0001:05 enaprp1i5: Invalid PTP clock rate
+ - Accounts Service.
+[   58.985440] spacemit-dwmac PRP0001:05 enaprp1i5: PTP init failed
+[   58.993526] spacemit-dwmac PRP0001:05 enaprp1i5: configuring for phy/rgmii-id link mode
+[  OK  ] Started upower.service - Daemon for power management.
+[  OK  ] Started NetworkManager-dispatcher.… Manager Script Dispatcher Service.
+[  OK  ] Started NetworkManager.service - Network Manager.
+[  OK  ] Started udisks2.service - Disk Manager.
+[  OK  ] Reached target network.target - Network.
+         Starting ModemManager.service - Modem Manager...
+         Starting NetworkManager-wait-onlin…ce - Network Manager Wait Online...
+         Starting cups.service - CUPS Scheduler...
+         Starting gssproxy.service - GSSAPI Proxy Daemon...
+         Starting sshd.service - OpenSSH server daemon...
+         Starting tuned.service - Dynamic System Tuning Daemon...
+[   59.571844] NET: Registered PF_QIPCRTR protocol family
+[  OK  ] Started gssproxy.service - GSSAPI Proxy Daemon.
+[  OK  ] Started cups.service - CUPS Scheduler.
+[  OK  ] Started sshd.service - OpenSSH server daemon.
+[  OK  ] Started ModemManager.service - Modem Manager.
+[  OK  ] Reached target nfs-client.target - NFS client services.
+[  OK  ] Reached target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Reached target remote-cryptsetup.target - Remote Encrypted Volumes.
+[  OK  ] Started tuned.service - Dynamic System Tuning Daemon.
+         Starting tuned-ppd.service - PPD-to-TuneD API Translation Daemon...
+[  OK  ] Started tuned-ppd.service - PPD-to-TuneD API Translation Daemon.
+[   62.145606] spacemit-dwmac PRP0001:05 enaprp1i5: Link is Up - 1Gbps/Full - flow control off
+[  OK  ] Finished NetworkManager-wait-onlin…vice - Network Manager Wait Online.
+[  OK  ] Reached target network-online.target - Network is Online.
+         Starting cockpit-issue.service - Cockpit issue updater service...
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+         Starting kdump.service - Crash recovery kernel arming...
+         Starting rpc-statd-notify.service - Notify NFS peers of a restart...
+         Starting rsyslog.service - System Logging Service...
+         Starting systemd-user-sessions.service - Permit User Sessions...
+         Starting virtqemud.service - libvirt QEMU daemon...
+[  OK  ] Started rpc-statd-notify.service - Notify NFS peers of a restart.
+[  OK  ] Started rsyslog.service - System Logging Service.
+[  OK  ] Started virtqemud.service - libvirt QEMU daemon.
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+[  OK  ] Started atd.service - Deferred execution scheduler.
+[  OK  ] Started crond.service - Command Scheduler.
+         Starting gdm.service - GNOME Display Manager...
+[  OK  ] Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[  OK  ] Reached target getty.target - Login Prompts.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Finished cockpit-issue.service - Cockpit issue updater service.
+[  OK  ] Started gdm.service - GNOME Display Manager.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+         Starting systemd-update-utmp-runle…- Record Runlevel Change in UTMP...
+[  OK  ] Finished systemd-update-utmp-runle…e - Record Runlevel Change in UTMP.
+
+Red Hat Enterprise Linux 10.3 (Coughlan)
+Kernel 6.12.0-dbg1 on riscv64
+
+Web console: https://localhost:9090/ or https://192.168.137.146:9090/
+
+localhost login: root
+Password:
+Last login: Fri Nov 20 12:08:03 on ttyS0
+[root@localhost ~]# rpmi-hsm: hart 0 suspend type 0x80000000 failed: -2
+rpmi-hsm: hart 6 suspend type 0x91000000 failed: -2
+rpmi-hsm: hart 1 suspend type 0xdeadbeef failed: -3
+rpmi-hsm: hart 3 suspend type 0xb1000000 failed: -3
+
+[root@localhost ~]#
+[root@localhost ~]# cat /sys/kernel/sbi_suspend_test/iters /sys/kernel/sbi_suspend_test/canary
+2333
+0x0000c0ffeec0ffee
+[root@localhost ~]#
+[root@localhost ~]# cat /sys/kernel/sbi_suspend_test/iters /sys/kernel/sbi_suspend_test/canary; dmesg | grep -cE 'lockup|NMI'
+10015
+0x0000c0ffeec0ffee
+0
+[root@localhost ~]# rpmi-hsm: hart 5 suspend type 0x90000000 failed: -2
+

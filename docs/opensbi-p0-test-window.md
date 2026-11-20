@@ -66,3 +66,65 @@ Phase C — regression:
 Single-partition reflash of the v12 opensbi.bin (d3f49a8c...); the
 bundle flow already supports region-exact replacement. GRUB retains
 the previous kernel entry; the kernel is untouched by this cycle.
+
+---
+
+## RESULTS (v16 cycle, 2026-11-20, payload fw_dynamic f98436f8...)
+
+Board: K3 Pico-ITX, kernel 6.12.0-dbg1, module sbi_suspend_test_v16
+(result_raw + valid S-mode resume_addr). Console log:
+docs/v16-phaseABC-console-log.txt.
+
+### Phase A — rejection semantics: ALL PASS
+
+| type | result_raw | mapped | system | console diagnostic |
+|---|---|---|---|---|
+| 0x80000000 (non-ret default) | -1 SBI_EFAIL (v16 translation) | -524 | alive | hart 0: failed: -2 |
+| 0x91000000 (platform, F6) | -2 SBI_ENOTSUPP (passthrough) | -524 | alive | hart 6: failed: -2 |
+| 0xdeadbeef (bogus) | -3 SBI_EINVAL | -22 | alive | hart 1: failed: -3 |
+| 0xb1000000 (cluster) | -3 SBI_EINVAL | -22 | alive | hart 3: failed: -3 |
+
+Interrupts deliver after every rejection (ping/timer/IPI counters
+live); canary 0xC0FFEEC0FFEE intact throughout; zero lockups.
+
+The distinction is by design: the two DEFAULT types fail outright
+(EFAIL for non-retentive so sbi_hsm never runs the generic
+fallback), platform-defined types pass ENOTSUPP through, unknown
+types are EINVAL before any hardware change.
+
+### Phase B — type-0 qualification: PASS (8 of 9 criteria)
+
+6. Per-hart type-0 suspend+IPI wake: PASS on all 8 harts (0-7,
+   including CPU4 and CPU7 — both prior wedge harts). result=0,
+   canary intact on each.
+7. UART + timer wake: PASS. UART: write on pinned CPU returned on
+   serial input. Timer: elapsed 1016ms of a 1000ms sleep + ~16ms
+   round trip with network quiet — wfi returned on the deadline.
+8. 10k soak: PASS. 10,005 total iterations, result=0, canary
+   intact, zero lockups/NMI in dmesg, console clean throughout.
+9. Virtualization (guest interrupt delivery across suspend):
+   NOT RUN — no qemu/guest image on the board. Deferred until a
+   guest is available; KVM device (/dev/kvm) is present.
+
+### Phase C — regression: PASS
+
+10. 0x90000000 -> result_raw=-2 (SBI_ENOTSUPP). The F6 fix proven:
+    previously this returned "success" with an undefined resume
+    contract. System alive, canary intact.
+11. Boot health: thermal zones live (56C/53C), ufs_aclk 491.52 MHz
+    (ACPI clock truth), GMAC up (test ssh link), at24 EEPROM
+    detected, load normal. Nothing regressed vs the v12 checklist.
+
+### Verdict
+
+The OpenSBI P0 batch (explicit dispatch, genuine type-0 WFI, error
+propagation, P0-4 context fixes, dispatch hoist, ENOTSUPP-fallback
+translation) is HARDWARE-QUALIFIED. Type 0 is a safe retentive
+idle state on every hart. All non-retentive types fail safely
+with correct SBI error codes and zero side effects.
+
+Path to _LPI restoration: type 0 qualifies as LPI index 0 (WFI).
+The qualified suspend state for index 1 still needs the
+arch_get_idle_state_flags kernel override plus a genuinely
+retentive hardware state beyond plain WFI (or index 1 stays
+unimplemented and only WFI is advertised).
