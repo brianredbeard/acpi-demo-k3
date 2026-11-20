@@ -31,6 +31,10 @@
         {
           "file": "patches/esos/0006-ccu-k3-fix-name-lookup-after-regist.patch",
           "sha256": "8688ee260fefcbbbc31f159d4ad1e2bdc67cc40b4f9094b080cb9ea5d941101d"
+        },
+        {
+          "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
+          "sha256": "6c4bcf3ce26866ba21ce8a2c746876ebe5172f4bb3149cb7c0783cdc88abe897"
         }
       ],
       "configs": [
