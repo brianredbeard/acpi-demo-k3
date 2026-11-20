@@ -14,11 +14,11 @@
         },
         {
           "file": "patches/esos/0002-ccu-apbc-base-and-clk-name-lookup.patch",
-          "sha256": "6a9f4a9ca812c2b44bea09c5aa3286baad69694903036a82ada84088e3a6223f"
+          "sha256": "ba0483941a2183e09d55659ba078e965072fa8c021cb859a538e9bab25f847d2"
         },
         {
           "file": "patches/esos/0003-rpmi-clk-wire-service-to-ccu.patch",
-          "sha256": "b0b0b530b8901fd89141e008fe33279d4c47287ec12dedd65b8d840b83fdcd08"
+          "sha256": "1316d3832eb188652b6776a3ec09296ece490a83b8e253e8686bf671ae7c0bbd"
         },
         {
           "file": "patches/esos/0004-ccu-k3-port-RPMI-consumer-clocks.patch",

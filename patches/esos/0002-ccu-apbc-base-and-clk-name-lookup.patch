@@ -1,5 +1,43 @@
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Subject: [PATCH] clk: ccu-k3: APBC base, framework-owned clock queries
+
+clk: ccu-k3: APBC base, framework-owned clock queries
+
+Add the APBC reg index to the CCU DT node and shift the probe mapping
+(mpmu=0, apbc=1, apmu=2, apbs=3, rcpu=4, rcpu1..6=5..10); handle
+BASE_TYPE_APBC in ccu_common_init (was falling through to the RCPU
+base).
+
+Add spacemit_ccu_get_clk_by_name() for the RPMI clock service. The
+lookup matches the clock name from hw->init->name BEFORE registration
+or hw->core->name AFTER: __clk_register() deliberately sets
+hw->init = NULL once the clock is registered, so an init-only match
+silently fails for every registered clock.
+
+Add spacemit_ccu_clk_is_enabled() delegating to the new framework
+clk_get_enabled(): the registered is_enabled op reads the gate bit
+from hardware under the enable lock. The earlier implementation
+checked hw->init (NULL post-registration) and fell back to reporting
+every clock enabled - the gate state was fictitious. A missing
+is_enabled op now maps to the conservative "enabled" (fail-safe
+against re-enabling shared parents), and provider errors report
+enabled rather than success.
+
+Framework additions (components/drivers/clk/clk.c + the public
+clk-provider.h):
+  - clk_hw_get_ops(hw): core->ops post-registration, init->ops
+    before; the only public way to reach registered ops.
+  - clk_get_enabled(clk, *enabled): tri-state contract. 0 = hardware
+    gate state; -RT_ENOSYS = no is_enabled op (no gate to read);
+    provider errors propagate. A missing callback must NOT silently
+    become "hardware verified enabled".
+  - clk_has_local_set_rate(clk): capability probe only - does this
+    clock own a local rate op. Does not establish that a rate change
+    is safe for shared parents; callers apply their own policy.
+
+---
 diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
-index 4d6ee9ac6..b01af56f3 100644
+index 4d6ee9a..58e4042 100644
 --- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
 +++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
 @@ -997,6 +997,9 @@ int ccu_common_init(struct clk_hw * hw, struct spacemit_k1x_clk *clk_info)
@@ -84,7 +122,7 @@ index 4d6ee9ac6..b01af56f3 100644
  			if (ccu->clk_info.rcpu6_base < 0) {
  				rt_kprintf("get rcpu6 error\n");
  				return -RT_ERROR;
-@@ -1149,3 +1159,54 @@ int spacemit_ccu_init(void)
+@@ -1149,3 +1159,60 @@ int spacemit_ccu_init(void)
  
  	return 0;
  }
@@ -121,26 +159,32 @@ index 4d6ee9ac6..b01af56f3 100644
 + * spacemit_ccu_clk_is_enabled - query the hardware enable state of a
 + * registered CCU clock.
 + *
-+ * The RT-Thread clk framework has no clk_is_enabled(), but the CCU clock
-+ * ops implement is_enabled() by reading the gate bit back from hardware
-+ * (e.g. the CLK_RES_CTRL enable bits). Used by the RPMI clock service to
-+ * report real state instead of assuming enabled.
++ * Delegates to the framework clk_get_enabled(): the registered CCU
++ * is_enabled op reads the gate bit back from hardware (e.g. the
++ * CLK_RES_CTRL enable bits) under the enable lock. Used by the RPMI
++ * clock service to report real state instead of assuming enabled.
 + */
 +rt_bool_t spacemit_ccu_clk_is_enabled(struct clk *clk)
 +{
-+	struct clk_hw *hw;
++	rt_bool_t enabled = RT_FALSE;
 +
 +	if (!clk)
 +		return RT_FALSE;
 +
-+	hw = __clk_get_hw(clk);
-+	if (!hw || !hw->init || !hw->init->ops || !hw->init->ops->is_enabled)
-+		return RT_TRUE;
++	/*
++	 * Framework query: registered is_enabled op under the enable
++	 * lock. -RT_ENOSYS (no hardware gate to read) maps to the
++	 * conservative "enabled" so Linux does not re-enable a shared
++	 * parent; anything with a gate is read back from hardware.
++	 * Provider errors also report enabled (fail-safe).
++	 */
++	if (clk_get_enabled(clk, &enabled) == 0)
++		return enabled;
 +
-+	return hw->init->ops->is_enabled(hw) ? RT_TRUE : RT_FALSE;
++	return RT_TRUE;
 +}
 diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
-index 525baf97c..48fb5f412 100644
+index 525baf9..48fb5f4 100644
 --- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
 +++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.h
 @@ -110,6 +110,7 @@
@@ -165,7 +209,7 @@ index 525baf97c..48fb5f412 100644
 +#endif /* _CCU_SPACEMIT_K3_H_ */
 \ No newline at end of file
 diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
-index 0ec46bce9..1b14e511e 100644
+index 0ec46bc..1b14e51 100644
 --- a/bsp/spacemit/platform/rt24/k3.dtsi
 +++ b/bsp/spacemit/platform/rt24/k3.dtsi
 @@ -84,6 +84,7 @@
@@ -176,3 +220,117 @@ index 0ec46bce9..1b14e511e 100644
  				<0xd4282800 0x400>,
  				<0xd4090000 0x1000>,
  				<0xc0880000 0x1000>,
+diff --git a/components/drivers/clk/clk.c b/components/drivers/clk/clk.c
+index 2d6494f..951de20 100644
+--- a/components/drivers/clk/clk.c
++++ b/components/drivers/clk/clk.c
+@@ -358,6 +358,22 @@ const char *clk_hw_get_name(const struct clk_hw *hw)
+ 	return hw->core->name;
+ }
+ 
++/*
++ * clk_hw_get_ops - fetch the ops of a clk_hw.
++ *
++ * Counterpart of clk_hw_get_name() for the ops: __clk_register() NULLs
++ * hw->init after copying, so the durable ops live in core->ops for a
++ * registered clock and in init->ops before registration. Providers must
++ * use this accessor rather than touching hw->init (gone after
++ * registration) or hw->core (private).
++ */
++const struct clk_ops *clk_hw_get_ops(const struct clk_hw *hw)
++{
++	if (!hw)
++		return NULL;
++	return hw->core ? hw->core->ops : hw->init->ops;
++}
++
+ static struct clk_hw *
+ __of_clk_get_hw_from_provider(struct of_clk_provider *provider,
+                               struct fdt_phandle_args *clkspec)
+@@ -2068,6 +2084,65 @@ rt_uint64_t clk_get_rate(struct clk *clk)
+ 	return rate;
+ }
+ 
++/*
++ * clk_get_enabled - query the hardware enable state of a clock.
++ *
++ * Framework-owned counterpart of clk_get_rate() for gate state. The
++ * registered provider's is_enabled callback is invoked under the
++ * enable lock (it reads a hardware gate bit). Outcomes:
++ *   0            : *enabled reflects the hardware gate state
++ *   -RT_EINVAL   : NULL clk
++ *   -RT_ENOSYS   : this clock has no is_enabled op (no hardware gate
++ *                  to read); the caller decides its policy - a missing
++ *                  callback must NOT silently become "verified enabled"
++ *   provider err : is_enabled failed
++ */
++int clk_get_enabled(struct clk *clk, rt_bool_t *enabled)
++{
++	const struct clk_ops *ops;
++	struct clk_hw *hw;
++	int ret;
++
++	if (!clk || !enabled)
++		return -RT_EINVAL;
++
++	clk_prepare_lock();
++	hw = __clk_get_hw(clk);
++	ops = clk_hw_get_ops(hw);
++	if (!ops || !ops->is_enabled) {
++		clk_prepare_unlock();
++		return -RT_ENOSYS;
++	}
++	ret = ops->is_enabled(hw);
++	clk_prepare_unlock();
++
++	if (ret < 0)
++		return ret;
++	*enabled = ret ? RT_TRUE : RT_FALSE;
++
++	return 0;
++}
++
++/*
++ * clk_has_local_set_rate - capability probe: does this clock implement
++ * a local rate-setting op (divider/mux owner) rather than only gates?
++ *
++ * Reports capability ONLY. It does not establish that a rate change is
++ * safe for shared parents - callers apply their own permission policy
++ * (e.g. the RPMI service only allows rates on clocks whose shared-
++ * parent behavior is qualified).
++ */
++rt_bool_t clk_has_local_set_rate(struct clk *clk)
++{
++	const struct clk_ops *ops;
++
++	if (!clk)
++		return RT_FALSE;
++
++	ops = clk_hw_get_ops(__clk_get_hw(clk));
++	return (ops && ops->set_rate) ? RT_TRUE : RT_FALSE;
++}
++
+ static int __clk_set_parent(struct clk_core *core, struct clk_core *parent,
+                             unsigned char p_index)
+ {
+diff --git a/components/drivers/include/drivers/clk-provider.h b/components/drivers/include/drivers/clk-provider.h
+index 316601c..e7a7a22 100644
+--- a/components/drivers/include/drivers/clk-provider.h
++++ b/components/drivers/include/drivers/clk-provider.h
+@@ -447,6 +447,16 @@ struct clk_ops {
+ const char *__clk_get_name(const struct clk *clk);
+ struct clk_hw *__clk_get_hw(struct clk *clk);
+ const char *clk_hw_get_name(const struct clk_hw *hw);
++/*
++ * Framework-owned runtime queries. The provider ops live in the
++ * private clk_core after registration; these are the only public way
++ * to reach them. clk_get_enabled distinguishes enabled/disabled from
++ * unavailable (-RT_ENOSYS: no is_enabled op) and provider errors.
++ * clk_has_local_set_rate is a capability probe only.
++ */
++int clk_get_enabled(struct clk *clk, rt_bool_t *enabled);
++rt_bool_t clk_has_local_set_rate(struct clk *clk);
++const struct clk_ops *clk_hw_get_ops(const struct clk_hw *hw);
+ rt_uint64_t clk_hw_get_rate(const struct clk_hw *hw);
+ void clk_disable_unprepare(struct clk *clk);
+ int clk_prepare_enable(struct clk *clk);

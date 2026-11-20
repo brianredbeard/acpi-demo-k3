@@ -22,21 +22,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 def build_fixture():
-    """Prepare the locked ESOS sources (all 5 patches) into a fresh
-    fixture directory using meta.prepare; cached in TMPDIR keyed by the
-    manifest hash so repeated runs don't re-clone."""
+    """Prepare the locked ESOS sources (all patches in the manifest)
+    into a fixture directory using meta.prepare; cached in TMPDIR
+    keyed by the manifest hash so repeated runs don't re-clone.
+
+    Repository transport: the K3_ESOS_CACHE environment variable may
+    point at a local ESOS Git cache (development convenience); without
+    it the locked HTTPS remote is used, so a clean clone works
+    anywhere with network access. The pinned revision and patch
+    hashes are enforced either way.
+    """
     import meta
     lock = ROOT / 'sources.lock.json'
     manifest_sha = meta.digest(lock)
     fixture = Path(tempfile.gettempdir()) / f'k3-rpmi-clk-fixture-{manifest_sha[:16]}'
-    marker = fixture / '.prepared.json.tmp'
     if not (fixture / 'prepared.json').exists():
         if fixture.exists():
             import shutil
             shutil.rmtree(fixture)
+        repositories = {}
+        cache = os.environ.get('K3_ESOS_CACHE')
+        if cache:
+            repositories = {'esos': cache}
         # Only the ESOS pair is needed for this test.
-        meta.prepare(lock, fixture, select={'esos'}, repositories={
-            'esos': '/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/esos-reset-handoff'})
+        meta.prepare(lock, fixture, select={'esos'}, repositories=repositories)
     return fixture / 'esos/bsp/spacemit/drivers/rpmi/k3'
 
 SOURCE = build_fixture()
@@ -51,7 +60,7 @@ typedef uint64_t rpmi_uint64_t;
 typedef int rt_bool_t; typedef int rt_err_t; typedef int rt_int32_t; typedef long rt_size_t;
 #define RT_TRUE 1
 #define RT_FALSE 0
-#define RT_EOK 0
+#define RT_NULL NULL
 #define RT_ERROR 1
 #define RT_WAITING_FOREVER -1
 enum rpmi_error { RPMI_SUCCESS=0, RPMI_ERR_FAILED=1, RPMI_ERR_NOTSUPP=2,
@@ -112,20 +121,69 @@ static struct clk *spacemit_ccu_get_clk_by_name(const char *n){
     return NULL;
 }
 static void rt_kprintf(const char *f, ...) { (void)f; }
-/* clk_hw shims: set_rate gating probes hw->init->ops->set_rate.
- * twsi (mux/div clock) HAS set_rate; sdh and everything else do not,
+/* clk_hw shims modeling the REAL RT-Thread clk core registration state:
+ * __clk_register() NULLs hw->init after copying, leaving core->name as
+ * the durable name (clk_hw_get_name reads core->name). The shim clocks
+ * are 'registered' (init NULLed, core populated) so the lookup path
+ * under test is the post-registration one — the state the service
+ * actually runs in. The 0006 bug (init-only matching) shipped because
+ * an earlier shim kept init alive; do not restore init-based lookup.
+ * set_rate gating probes init->ops pre-registration or core->ops after;
+ * twsi (mux/div clock) HAS set_rate, sdh (gate-only) does not,
  * exercising the no-propagation guard. */
-struct clk_ops { int (*set_rate)(void *, unsigned long, unsigned long); };
+/* clk_hw shims modeling the REAL RT-Thread clk core registration state:
+ * __clk_register() NULLs hw->init after copying, leaving core->name and
+ * core->ops as the durable name/ops. The shim clocks are 'registered'
+ * (init NULLed, core populated) so the code under test runs in the
+ * post-registration state — the state the service actually runs in.
+ * The 0006 bug (init-only matching) shipped because an earlier shim
+ * kept init alive; do not restore init-based lookup.
+ * twsi (mux/div clock) HAS set_rate and a gate with is_enabled; sdh
+ * (gate-only) has is_enabled but no set_rate — exercising both the
+ * capability probe and the gate readback. */
+struct clk_ops {
+    int (*set_rate)(void *, unsigned long, unsigned long);
+    int (*is_enabled)(void *);
+};
 struct clk_init_data { const char *name; const struct clk_ops *ops; };
-struct clk_hw { const struct clk_init_data *init; };
+struct clk_core { const char *name; const struct clk_ops *ops; };
+struct clk_hw { const struct clk_init_data *init; struct clk_core *core; };
 static int stub_set_rate(void *hw, unsigned long r, unsigned long p){ (void)hw;(void)r;(void)p; return 0; }
-static const struct clk_ops ops_with_set_rate = { stub_set_rate };
-static const struct clk_ops ops_gate_only = { NULL };
-static const struct clk_init_data twsi_init = { "twsi0_clk", &ops_with_set_rate };
+static int twsi_is_enabled_shim(void *hw){ (void)hw; return twsi.enabled; }
+static int sdh_is_enabled_shim(void *hw){ (void)hw; return sdh.enabled; }
+static const struct clk_ops ops_mux_div_gate = { stub_set_rate, twsi_is_enabled_shim };
+static const struct clk_ops ops_gate_only = { NULL, sdh_is_enabled_shim };
+static const struct clk_init_data twsi_init = { "twsi0_clk", &ops_mux_div_gate };
 static const struct clk_init_data sdh_init = { "sdh0_clk", &ops_gate_only };
-static struct clk_hw twsi_hw = { &twsi_init }, sdh_hw = { &sdh_init };
+static struct clk_core twsi_core = { "twsi0_clk", &ops_mux_div_gate };
+static struct clk_core sdh_core = { "sdh0_clk", &ops_gate_only };
+static struct clk_hw twsi_hw = { NULL, &twsi_core }, sdh_hw = { NULL, &sdh_core };
+static const char *clk_hw_get_name(const struct clk_hw *hw){
+    return hw->core ? hw->core->name : (hw->init ? hw->init->name : NULL);
+}
+/* Framework API shims with the REAL contracts:
+ * clk_get_enabled: 0 = gate state in *enabled; -RT_ENOSYS = no
+ * is_enabled op (NOT "verified enabled"); provider errors propagate.
+ * clk_has_local_set_rate: capability only. */
 static struct clk_hw *__clk_get_hw(struct clk *c){
     return c == &twsi ? &twsi_hw : &sdh_hw;
+}
+static const struct clk_ops *clk_hw_get_ops(const struct clk_hw *hw){
+    if (!hw) return NULL;
+    return hw->core ? hw->core->ops : (hw->init ? hw->init->ops : NULL);
+}
+static int clk_get_enabled(struct clk *c, rt_bool_t *enabled){
+    const struct clk_ops *ops;
+    struct clk_hw *hw;
+    if (!c || !enabled) return -3; /* -RT_EINVAL */
+    hw = __clk_get_hw(c);
+    ops = clk_hw_get_ops(hw);
+    if (!ops || !ops->is_enabled) return -88; /* -RT_ENOSYS */
+    return ops->is_enabled(hw) ? (*enabled = RT_TRUE, 0) : (*enabled = RT_FALSE, 0);
+}
+static rt_bool_t clk_has_local_set_rate(struct clk *c){
+    const struct clk_ops *ops = clk_hw_get_ops(__clk_get_hw(c));
+    return (ops && ops->set_rate) ? RT_TRUE : RT_FALSE;
 }
 typedef uint64_t rt_uint64_t;
 '''
@@ -180,6 +238,15 @@ int main(void){
       twsi.enabled = 1; reported_rate = 31400000;
       require(spacemit_get_state_and_rate(NULL, 1, &st, &rate)==RPMI_SUCCESS, "state read ok");
       require(st==RPMI_CLK_STATE_ENABLED, "state read from hardware gate");
+      /* gate readback is REAL: flip the hardware bit, read again */
+      twsi.enabled = 0;
+      require(spacemit_get_state_and_rate(NULL, 1, &st, NULL)==RPMI_SUCCESS,
+              "state read after gate flip ok");
+      require(st==RPMI_CLK_STATE_DISABLED,
+              "gate flip is visible in reported state (not fictitious enabled)");
+      twsi.enabled = 1;
+      require(spacemit_get_state_and_rate(NULL, 1, &st, &rate)==RPMI_SUCCESS
+              && st==RPMI_CLK_STATE_ENABLED, "state restored to enabled");
       require(rate==31400000, "rate read via clk_get_rate");
       require(spacemit_get_state_and_rate(NULL, 1, &st, NULL)==RPMI_SUCCESS,
               "state-only read (rate NULL) succeeds");

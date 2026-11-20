@@ -1,11 +1,12 @@
-From 9047e0f0d0d295406fa49dec2bbcc0e1ff829779 Mon Sep 17 00:00:00 2001
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Date: Thu, 19 Nov 2026 19:20:18 -0800
 Subject: [PATCH] rpmi: clk: wire the K3 RPMI clock service to the CCU
+
+rpmi: clk: wire the K3 RPMI clock service to the CCU
 
 Replace the rproc-only stub service with real CCU-backed clocks:
 lazy name resolution against the CCU clock table, hardware gate
-readback for state, real rates, per-request errors.
+readback for state (via the framework clk_get_enabled), real rates,
+per-request errors.
 
 librpmi calls get_state_and_rate with either output NULL
 (rpmi_clock_get_state passes rate==NULL, rpmi_clock_get_rate passes
@@ -24,17 +25,24 @@ the RPMI GET_SUPPORTED_RATES linear path serves min/max/step from
 rate_array[0..2], leaking adjacent memory into Linux
 clk_set_rate_range). k3-rpmi-clk-ids.h is the append-only ABI shared
 with the CCU name table.
----
- bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c     | 326 +++++++++++++++---
- .../drivers/rpmi/k3/k3-rpmi-clk-ids.h         |  65 ++++
- 2 files changed, 351 insertions(+), 40 deletions(-)
- create mode 100644 bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
 
+The set_rate gating uses the framework capability probe
+clk_has_local_set_rate(clk): only clocks owning a local rate op
+(divider/mux) accept rate changes; gate-only clocks are refused so
+a request cannot propagate into a shared parent (e.g. axi_clk ->
+APMU_ACLK_CLK_CTRL). This is capability only - per-clock permission
+(shared-parent qualification) remains a separate policy. The
+previous implementation dereferenced hw->init->ops (init is NULL
+after registration - the 0006 trap) and then hw->core->ops
+(private to the clk framework, not compilable against the public
+header).
+
+---
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
-index 0ad48f7..4dece87 100644
+index 0ad48f7..cb4821b 100644
 --- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
-@@ -4,82 +4,331 @@
+@@ -4,82 +4,333 @@
   * SPDX-License-Identifier: Apache-2.0
   */
  
@@ -346,13 +354,15 @@ index 0ad48f7..4dece87 100644
 +		return RPMI_ERR_NOTSUPP;
 +
 +	/*
-+	 * Only allow rate changes on clocks that own a divider/mux.
-+	 * Gate clocks have no .set_rate; letting the request through
-+	 * would make the CCU framework propagate it to the shared parent
-+	 * (e.g. axi_clk -> APMU_ACLK_CLK_CTRL), reprogramming a bus
-+	 * clock shared by unrelated peripherals.
++	 * Capability probe via the framework: only clocks that own a
++	 * local rate op (divider/mux) may change rates. Gate-only
++	 * clocks are refused so the request cannot propagate into a
++	 * shared parent (e.g. axi_clk -> APMU_ACLK_CLK_CTRL),
++	 * reprogramming a bus clock shared by unrelated peripherals.
++	 * This is capability ONLY - per-clock permission (shared-parent
++	 * qualification) remains a policy decision for later.
 +	 */
-+	if (!__clk_get_hw(clk)->init->ops->set_rate)
++	if (!clk_has_local_set_rate(clk))
 +		return RPMI_ERR_NOTSUPP;
 +
 +	if (clk_set_rate(clk, (rt_uint64_t)rate))
@@ -403,7 +413,7 @@ index 0ad48f7..4dece87 100644
  };
  
  static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
-@@ -90,11 +339,8 @@ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
+@@ -90,11 +341,8 @@ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
  
  static rt_int32_t k3_os0_clk_init(void)
  {
@@ -486,6 +496,3 @@ index 0000000..5e71e84
 +};
 +
 +#endif /* _K3_RPMI_CLK_IDS_H_ */
--- 
-2.56.1
-
