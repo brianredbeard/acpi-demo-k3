@@ -96,3 +96,23 @@ Expected evidence on the fixed boot:
   support-mask line reflecting 0x80)
 - /sys/devices/system/cpu/cpu0/cpuidle/ with LPI-0/LPI-1/LPI-2
 - the checklist items 3-5 as originally written
+
+## Addendum 2: _OSC buffer contract fix (supersedes the first fix)
+
+The first \\_SB._OSC implementation (b1a2bd8b) had a buffer overrun:
+the platform _OSC from acpi_bus_osc_negotiate_platform_control() passes
+u32 capbuf[2] — DWORD[0] Query/Status, DWORD[1] Support, NO Control
+DWORD. Creating CDW3 at offset 8 reads past the 8-byte buffer
+(AE_AML_BUFFER_LIMIT on every evaluation), which would have broken the
+handshake this method exists to perform.
+
+Fixed in cfe7bc63 / regenerated patch 0012: the \\_SB._OSC creates only
+CDW1/CDW2 and handles both handshake passes (query pass with
+OSC_QUERY_ENABLE set, then the direct pass). The PCI0 _OSC legitimately
+keeps CDW3 — pci_root.c passes capbuf[OSC_CXL_CAPABILITY_DWORDS=5].
+
+Current artifact: fitimage/MUSE-Pico.itb sha256
+0d0f407d4feddb7beddd6c364b2e334e0eb23f138b8fafc88c3918011cc271e6.
+
+Expected evidence unchanged from Addendum 1 (PCLPI 0x80 confirmed,
+LPI-0/1/2, usage soak, wake sources).
