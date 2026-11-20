@@ -1,8 +1,40 @@
+From 9047e0f0d0d295406fa49dec2bbcc0e1ff829779 Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 19:20:18 -0800
+Subject: [PATCH] rpmi: clk: wire the K3 RPMI clock service to the CCU
+
+Replace the rproc-only stub service with real CCU-backed clocks:
+lazy name resolution against the CCU clock table, hardware gate
+readback for state, real rates, per-request errors.
+
+librpmi calls get_state_and_rate with either output NULL
+(rpmi_clock_get_state passes rate==NULL, rpmi_clock_get_rate passes
+state==NULL); each output is guarded independently, including the
+legacy rproc branch. Unresolved clocks return deterministic
+placeholder state/rate instead of NOTSUPP because
+rpmi_clock_tree_init aborts the entire clock group if
+get_state_and_rate fails for any published clock. Metadata refresh
+on late resolution is tracked by an explicit was_unresolved entry
+flag: published unresolved entries carry rate_count==1 with a
+placeholder array, so rate_count==0 can never signal the transition.
+set_state/set_rate still return NOTSUPP for unresolved clocks
+(per-request errors, not init-fatal). All ids are published as
+DISCRETE with a non-empty rate array (never single-rate LINEAR:
+the RPMI GET_SUPPORTED_RATES linear path serves min/max/step from
+rate_array[0..2], leaking adjacent memory into Linux
+clk_set_rate_range). k3-rpmi-clk-ids.h is the append-only ABI shared
+with the CCU name table.
+---
+ bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c     | 326 +++++++++++++++---
+ .../drivers/rpmi/k3/k3-rpmi-clk-ids.h         |  65 ++++
+ 2 files changed, 351 insertions(+), 40 deletions(-)
+ create mode 100644 bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
+
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
-index 0ad48f76f..adc3c1f2b 100644
+index 0ad48f7..4dece87 100644
 --- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
-@@ -4,82 +4,297 @@
+@@ -4,82 +4,331 @@
   * SPDX-License-Identifier: Apache-2.0
   */
  
@@ -35,6 +67,7 @@ index 0ad48f76f..adc3c1f2b 100644
 +struct k3_rpmi_clk_entry {
 +	struct clk      *clk;      /* resolved CCU clock (lazy)          */
 +	rpmi_uint64_t    rate;     /* boot rate (snapshot for gates)     */
++	rt_bool_t        was_unresolved; /* published as unresolved at init */
 +};
  
 -static rpmi_uint64_t rproc_new_rate = 500000000;
@@ -78,12 +111,16 @@ index 0ad48f76f..adc3c1f2b 100644
 +		e->rate = (rpmi_uint64_t)clk_get_rate(e->clk);
 +
 +		/*
-+		 * If the clock was published as unavailable at service init
++		 * If the clock was published as unresolved at service init
 +		 * (CCU not up yet / table entry added later), refresh the
-+		 * metadata now -- the service group reads cdata by pointer, so
-+		 * Linux sees the rates on its next get_info/query.
++		 * metadata now -- the service group reads cdata by pointer,
++		 * so Linux sees the real rate on its next get_info/query.
++		 * Tracked by an explicit entry flag: published unresolved
++		 * entries carry rate_count == 1 (a placeholder array), so
++		 * rate_count can never signal this transition.
 +		 */
-+		if (k3_os0_clk_data[clock_id].rate_count == 0) {
++		if (e->was_unresolved ||
++		    k3_os0_clk_data[clock_id].rate_count == 0) {
 +			k3_os0_clk_data[clock_id] = (struct rpmi_clock_data){
 +				.parent_id = -1,
 +				.transition_latency_ms = 1,
@@ -92,7 +129,10 @@ index 0ad48f76f..adc3c1f2b 100644
 +				.rate_count = 1,
 +				.clock_rate_array = &e->rate,
 +			};
++			e->was_unresolved = RT_FALSE;
 +		}
++	} else {
++		e->was_unresolved = RT_TRUE;
 +	}
 +
 +	return e->clk;
@@ -216,20 +256,46 @@ index 0ad48f76f..adc3c1f2b 100644
 -	return 0;
 +	if (clock_id >= K3_RPMI_CLK_COUNT)
 +		return RPMI_ERR_INVALID_PARAM;
++
++	/*
++	 * librpmi calls this with either output NULL (rpmi_clock_get_state
++	 * passes rate == NULL; rpmi_clock_get_rate passes state == NULL)
++	 * and rpmi_clock_tree_init calls it with both set during group
++	 * creation. Guard each output independently; the legacy branch
++	 * included.
++	 */
 +	if (clock_id == K3_RPMI_CLK_RPROC) {
-+		*state = RPMI_CLK_STATE_ENABLED;
-+		*rate  = 500000000;
++		if (state)
++			*state = RPMI_CLK_STATE_ENABLED;
++		if (rate)
++			*rate  = 500000000;
 +		return RPMI_SUCCESS;
 +	}
 +
 +	clk = k3_rpmi_clk_resolve(clock_id);
-+	if (!clk)
-+		return RPMI_ERR_NOTSUPP;
++	if (!clk) {
++		/*
++		 * Unresolved clocks must still succeed here: group init
++		 * (rpmi_clock_tree_init) aborts the ENTIRE clock service
++		 * group if this fails for any published clock, and Linux
++		 * clk-rpmi tears down the whole provider on GET_STATE /
++		 * GET_RATE failure. Report deterministic placeholder values;
++		 * state-changing and rate-setting ops still return NOTSUPP
++		 * until the clock resolves.
++		 */
++		if (state)
++			*state = RPMI_CLK_STATE_DISABLED;
++		if (rate)
++			*rate = k3_rpmi_unresolved_rate;
++		return RPMI_SUCCESS;
++	}
 +
 +	/* read the gate bit back from hardware via the CCU clock ops */
-+	*state = spacemit_ccu_clk_is_enabled(clk) ?
-+		 RPMI_CLK_STATE_ENABLED : RPMI_CLK_STATE_DISABLED;
-+	*rate  = (rpmi_uint64_t)clk_get_rate(clk);
++	if (state)
++		*state = spacemit_ccu_clk_is_enabled(clk) ?
++			 RPMI_CLK_STATE_ENABLED : RPMI_CLK_STATE_DISABLED;
++	if (rate)
++		*rate = (rpmi_uint64_t)clk_get_rate(clk);
 +	return RPMI_SUCCESS;
  }
  
@@ -337,7 +403,7 @@ index 0ad48f76f..adc3c1f2b 100644
  };
  
  static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
-@@ -90,11 +305,8 @@ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
+@@ -90,11 +339,8 @@ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
  
  static rt_int32_t k3_os0_clk_init(void)
  {
@@ -351,7 +417,7 @@ index 0ad48f76f..adc3c1f2b 100644
  INIT_DEVICE_EXPORT(k3_os0_clk_init);
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h b/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
 new file mode 100644
-index 000000000..5e71e84b3
+index 0000000..5e71e84
 --- /dev/null
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
 @@ -0,0 +1,65 @@
@@ -420,3 +486,6 @@ index 000000000..5e71e84b3
 +};
 +
 +#endif /* _K3_RPMI_CLK_IDS_H_ */
+-- 
+2.56.1
+

@@ -18,7 +18,7 @@
         },
         {
           "file": "patches/esos/0003-rpmi-clk-wire-service-to-ccu.patch",
-          "sha256": "f456573063cfe8b81e28b92c439bdc153894057a67c2610dd0e36153ce72d25c"
+          "sha256": "b0b0b530b8901fd89141e008fe33279d4c47287ec12dedd65b8d840b83fdcd08"
         },
         {
           "file": "patches/esos/0004-ccu-k3-port-RPMI-consumer-clocks.patch",

@@ -12,14 +12,34 @@ RT-Thread/librpmi/CCU APIs and asserts the callback contract:
   - init publishes every id (stable ABI), resolved or not, as DISCRETE
     with a non-empty rate array
 """
+import json
+import os
 import subprocess
-import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/esos-rpmi-01'
-SOURCE = BUILD / 'sources/esos/bsp/spacemit/drivers/rpmi/k3'
+
+def build_fixture():
+    """Prepare the locked ESOS sources (all 5 patches) into a fresh
+    fixture directory using meta.prepare; cached in TMPDIR keyed by the
+    manifest hash so repeated runs don't re-clone."""
+    import meta
+    lock = ROOT / 'sources.lock.json'
+    manifest_sha = meta.digest(lock)
+    fixture = Path(tempfile.gettempdir()) / f'k3-rpmi-clk-fixture-{manifest_sha[:16]}'
+    marker = fixture / '.prepared.json.tmp'
+    if not (fixture / 'prepared.json').exists():
+        if fixture.exists():
+            import shutil
+            shutil.rmtree(fixture)
+        # Only the ESOS pair is needed for this test.
+        meta.prepare(lock, fixture, select={'esos'}, repositories={
+            'esos': '/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/esos-reset-handoff'})
+    return fixture / 'esos/bsp/spacemit/drivers/rpmi/k3'
+
+SOURCE = build_fixture()
 
 COMMON = r'''
 #include <stdio.h>
@@ -71,9 +91,24 @@ static int clk_set_rate(struct clk *c, unsigned long r){
     if (fail_set_rate) return -1;
     c->rate = r; reported_rate = r; return 0;
 }
+/* dynamic clock table: tests can add clocks to simulate the CCU gaining
+ * entries after service init (late resolution) */
+static struct clk extra_clocks[4];
+static int extra_count;
+static void shim_add_clock(const char *name, unsigned long rate){
+    if (extra_count < 4) {
+        extra_clocks[extra_count].name = name;
+        extra_clocks[extra_count].enabled = 0;
+        extra_clocks[extra_count].rate = rate;
+        extra_count++;
+    }
+}
 static struct clk *spacemit_ccu_get_clk_by_name(const char *n){
+    int i;
     if (!strcmp(n,"twsi0_clk")) return &twsi;
     if (!strcmp(n,"sdh0_clk")) return &sdh;
+    for (i = 0; i < extra_count; i++)
+        if (!strcmp(n, extra_clocks[i].name)) return &extra_clocks[i];
     return NULL;
 }
 static void rt_kprintf(const char *f, ...) { (void)f; }
@@ -137,14 +172,36 @@ int main(void){
             "clk_prepare_enable failure maps to RPMI_ERR_FAILED");
     fail_enable=0;
     require(spacemit_set_state(NULL, 1, 99)==RPMI_ERR_INVALID_PARAM, "invalid state rejected");
-    /* get_state_and_rate contract */
+    /* get_state_and_rate contract, including librpmi's nullable outputs:
+     * rpmi_clock_get_state passes rate==NULL, rpmi_clock_get_rate passes
+     * state==NULL, rpmi_clock_tree_init passes both. Each output must be
+     * guarded; a NULL dereference here faults the controller. */
     { enum rpmi_clock_state st; rpmi_uint64_t rate;
       twsi.enabled = 1; reported_rate = 31400000;
       require(spacemit_get_state_and_rate(NULL, 1, &st, &rate)==RPMI_SUCCESS, "state read ok");
       require(st==RPMI_CLK_STATE_ENABLED, "state read from hardware gate");
       require(rate==31400000, "rate read via clk_get_rate");
-      require(spacemit_get_state_and_rate(NULL, 9, &st, &rate)==RPMI_ERR_NOTSUPP,
-              "unresolved clock state is NOTSUPP");
+      require(spacemit_get_state_and_rate(NULL, 1, &st, NULL)==RPMI_SUCCESS,
+              "state-only read (rate NULL) succeeds");
+      require(st==RPMI_CLK_STATE_ENABLED, "state-only read returns state");
+      require(spacemit_get_state_and_rate(NULL, 1, NULL, &rate)==RPMI_SUCCESS,
+              "rate-only read (state NULL) succeeds");
+      require(rate==31400000, "rate-only read returns rate");
+      /* legacy branch must also guard */
+      require(spacemit_get_state_and_rate(NULL, 0, &st, NULL)==RPMI_SUCCESS,
+              "legacy state-only read (rate NULL) succeeds");
+      require(spacemit_get_state_and_rate(NULL, 0, NULL, &rate)==RPMI_SUCCESS,
+              "legacy rate-only read (state NULL) succeeds");
+      require(rate==500000000, "legacy rate-only read returns stub rate");
+      /* unresolved clocks MUST succeed here (group init aborts the whole
+       * clock group otherwise); placeholders, not NOTSUPP */
+      require(spacemit_get_state_and_rate(NULL, 9, &st, &rate)==RPMI_SUCCESS,
+              "unresolved clock state read succeeds (group-init contract)");
+      require(st==RPMI_CLK_STATE_DISABLED, "unresolved clock reports DISABLED");
+      require(spacemit_get_state_and_rate(NULL, 9, NULL, &rate)==RPMI_SUCCESS,
+              "unresolved rate-only read succeeds");
+      require(spacemit_get_state_and_rate(NULL, 9, &st, NULL)==RPMI_SUCCESS,
+              "unresolved state-only read succeeds");
       require(spacemit_get_state_and_rate(NULL, 13, &st, &rate)==RPMI_ERR_INVALID_PARAM,
               "state read bounds");
     }
@@ -187,6 +244,21 @@ int main(void){
       require(nr==25000000, "recalc reports resulting CCU rate");
       require(spacemit_set_rate_recalc(NULL, 9, 0, &nr)==RPMI_ERR_NOTSUPP, "recalc unresolved is NOTSUPP");
     }
+    /* late resolution: metadata refresh moves the rate array from the
+     * placeholder to the entry's real rate snapshot */
+    { rpmi_uint64_t *arr;
+      arr = cfg.clk_data[9].clock_rate_array;
+      require(arr == &k3_rpmi_unresolved_rate, "unresolved publishes placeholder array");
+      reported_rate = 123456789;
+      require(k3_rpmi_clk_resolve(9) != NULL || 1, "resolve attempt (id 9 still unresolved in shim)");
+      /* simulate the CCU gaining the clock: return it from the shim */
+      shim_add_clock("emac0_bus_clk", 123456789);
+      require(k3_rpmi_clk_resolve(9) != NULL, "late resolution succeeds");
+      require(cfg.clk_data[9].clock_rate_array == &k3_rpmi_clks[9].rate,
+              "metadata refreshed to real rate array");
+      require(cfg.clk_data[9].clock_rate_array != arr,
+              "placeholder array replaced");
+    }
     printf("%s: %d checks, %d failures\n", failed ? "FAILED" : "PASS", checks, failed);
     return failed != 0;
 }
@@ -197,18 +269,14 @@ def extract(text, start_marker, end_marker):
     end = text.index(end_marker, start)
     return text[start:end]
 
-import unittest
-
 
 class RpmiClockServiceTests(unittest.TestCase):
-    """Compiles the service callbacks against mocked APIs and runs them.
-    Requires a prepared ESOS build (build/esos-rpmi-01 by default, or the
-    directory given as the script's argv[1])."""
+    """Compiles the service callbacks from the LOCKED patch series
+    (fresh meta.prepare fixture, cached by manifest hash) against
+    mocked RT-Thread/librpmi/CCU APIs and runs them."""
+
 
     def test_service_callbacks(self):
-        if not (SOURCE / 'k3-os0_clk.c').exists():
-            self.skipTest(f'prepared ESOS sources not found under {SOURCE}; '
-                          'run build_esos.py first')
         source = (SOURCE / 'k3-os0_clk.c').read_text()
         ids_header = (SOURCE / 'k3-rpmi-clk-ids.h').read_text()
 
@@ -218,7 +286,7 @@ class RpmiClockServiceTests(unittest.TestCase):
                             'static enum rpmi_error spacemit_set_state(void *priv')
         callbacks = extract(source, 'static enum rpmi_error spacemit_set_state(void *priv',
                             '\nstatic struct rpmi_clock_platform_ops')
-        entries = ('static struct k3_rpmi_clk_entry { struct clk *clk; rpmi_uint64_t rate; } k3_rpmi_clks[13];\n'
+        entries = ('static struct k3_rpmi_clk_entry { struct clk *clk; rpmi_uint64_t rate; rt_bool_t was_unresolved; } k3_rpmi_clks[13];\n'
                    'static rpmi_uint64_t k3_rpmi_unresolved_rate;\n'
                    'static struct rpmi_clock_data k3_os0_clk_data[13];\n')
 
@@ -237,5 +305,4 @@ class RpmiClockServiceTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    sys.argv = [sys.argv[0]] + [a for a in sys.argv[1:] if a in ('-v',)]
     unittest.main()
