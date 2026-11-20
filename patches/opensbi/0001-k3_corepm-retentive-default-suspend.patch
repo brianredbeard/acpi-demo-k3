@@ -79,3 +79,32 @@ delivery.
 +	 path deleted; k3_hsm_cleanup_wake() documents the P0-5
 +	 entry/cleanup pairings]
 +void spacemit_devote_pwrdown_core(uint32_t hartid)  [F1/F4 inverse]
+
+HARDWARE-VALIDATED FIXES (v14/v15 phase-A wedges; docs/v14-phaseA-findings.md):
+
+Dispatch hoist (v15): type validation moved to the TOP of
+__rpmi_hsm_suspend, before the pending-check + IRQ mask + IMSIC
+save. Previously a rejected type returned with FI interrupts
+masked and IMSIC half-saved. Zero CSR/PMU writes on rejection
+(disassembly-verified). Necessary but not sufficient alone.
+
+ENOTSUPP fallback translation (v16): sbi_hsm_hart_suspend()
+consumes SBI_ENOTSUPP from a DEFAULT suspend type as a request to
+run the GENERIC implementation (plain wfi), then for
+non-retentive types jumps to the warm-boot entry to simulate
+resume — on this platform re-running K3 PMA/L2/snoop init with
+MIE cleared and parking the hart permanently (hard lockup, no
+NMI; both v14 hart 4 and v15 hart 7 wedged exactly this way).
+The wrapper now translates ENOTSUPP + NON_RET_DEFAULT into
+SBI_EFAIL so the ecall fails outright. Platform-defined types
+pass ENOTSUPP through unchanged (the generic fallback only
+applies to the two default types).
+
+--- a/lib/utils/hsm/fdt_hsm_rpmi.c  (v16 addition)
+@@ static int rpmi_hsm_suspend(u32 type, ulong resume_addr)
+ 	rc = __rpmi_hsm_suspend(type);
+ 	if (rc)
+ 		sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d\n", ...);
++	if (rc == SBI_ENOTSUPP && type == SBI_HSM_SUSPEND_NON_RET_DEFAULT)
++		return SBI_EFAIL;
+ 	return rc;
