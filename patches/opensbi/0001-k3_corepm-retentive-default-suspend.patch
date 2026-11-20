@@ -108,3 +108,66 @@ applies to the two default types).
 +	if (rc == SBI_ENOTSUPP && type == SBI_HSM_SUSPEND_NON_RET_DEFAULT)
 +		return SBI_EFAIL;
  	return rc;
+
+CLUSTER-RETENTIVE ROUTING (v21, P1 activation):
+
+New platform type K3_HSM_SUSP_CLUSTER_RET (0x11000000, retentive bit
+clear — in-place resume, no warmboot contract). The type is routed
+through RPMI_HSM_SRV_HART_SUSPEND (k3_rpmi_hsm_route_suspend in
+fdt_hsm_rpmi.c: per-hart chan from the rpmi-hsm probe, inline
+advertised-type check against the ESOS suspend table, synchronous
+bounded request) so the ESOS ownership gate DRIVES the decision:
+
+  deny  (RPMI_ERR_DENIED / timeout / unknown type / transport)
+        -> error to the SBI caller, ZERO hardware change
+  grant (domain COMMITTED)
+        -> vote + WFI + devote on the affected hart; no cache, snoop,
+           or IMSIC operations — full architectural retention
+
+ESOS side: rcpu DT gains the cluster-retentive@18 idle-state
+(sbi-suspend-param 0x11000000) so the service table accepts the type;
+no ESOS code change (the existing P1 prepare gate + bounded
+k3_domain_request_sleep run on receipt).
+
+NOT advertised in _LPI until hardware-qualified (P0-6 principle);
+the test module drives it first.
+
+--- a/lib/utils/hsm/fdt_hsm_rpmi.c  (v21 addition)
+@@ K3 branch
++int k3_rpmi_hsm_route_suspend(u32 type, ulong resume_addr)
++{
++	struct rpmi_hsm_hart_susp_req req;
++	struct rpmi_hsm_hart_susp_resp resp;
++	struct rpmi_hsm *rpmi = rpmi_hsm_get_pointer(current_hartid());
++	int i;
++
++	if (!rpmi || !rpmi->chan)
++		return SBI_ENODEV;
++	for (i = 0; i < rpmi->susp->num_states; i++)
++		if (rpmi->susp->states[i].suspend_param == type)
++			break;
++	if (i >= rpmi->susp->num_states)
++		return SBI_ENOTSUPP;
++	req.hartid = current_hartid();
++	req.suspend_type = type;
++	req.resume_addr_lo = resume_addr;
++	req.resume_addr_hi = (u64)resume_addr >> 32;
++	return rpmi_normal_request_with_status(...);
++}
+
+--- a/platform/generic/spacemit/k3_corepm.c  (v21 addition)
+@@ dispatch (after the type-0 WFI early return)
++	if (type == K3_HSM_SUSP_CLUSTER_RET) {
++		int rc = k3_rpmi_hsm_route_suspend(type, 0);
++		if (rc)
++			return rc;
++		spacemit_vote_powrdown_core(current_hartid());
++		wfi();
++		spacemit_devote_pwrdown_core(current_hartid());
++		return 0;
++	}
+
+Disassembly-verified: the 0x11000000 branch calls the routing before
+any CSR read or MMIO write; a nonzero routing return exits through
+the epilogue with no mhartid read and no vote; only success reaches
+csrr mhartid -> vote -> wfi -> devote.
