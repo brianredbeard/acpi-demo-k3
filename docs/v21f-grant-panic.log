@@ -1,0 +1,188 @@
+[  OK  ] Listening on virtinterfaced-admin.…virt interface daemon admin socket.
+[  OK  ] Listening on virtinterfaced-ro.soc… interface daemon read-only socket.
+[  OK  ] Listening on virtlockd.socket - libvirt locking daemon socket.
+[  OK  ] Listening on virtlockd-admin.socke…ibvirt locking daemon admin socket.
+[  OK  ] Listening on virtlogd.socket - libvirt logging daemon socket.
+[  OK  ] Listening on virtlogd-admin.socket…ibvirt logging daemon admin socket.
+[  OK  ] Listening on virtnetworkd.socket - libvirt network daemon socket.
+[  OK  ] Listening on virtnetworkd-admin.so…ibvirt network daemon admin socket.
+[  OK  ] Listening on virtnetworkd-ro.socke…rt network daemon read-only socket.
+[  OK  ] Listening on virtnodedevd.socket - libvirt nodedev daemon socket.
+[  OK  ] Listening on virtnodedevd-admin.so…ibvirt nodedev daemon admin socket.
+[  OK  ] Listening on virtnodedevd-ro.socke…rt nodedev daemon read-only socket.
+[  OK  ] Listening on virtnwfilterd.socket - libvirt nwfilter daemon socket.
+[  OK  ] Listening on virtnwfilterd-admin.s…bvirt nwfilter daemon admin socket.
+[  OK  ] Listening on virtnwfilterd-ro.sock…t nwfilter daemon read-only socket.
+[  OK  ] Listening on virtproxyd.socket - libvirt proxy daemon socket.
+[  OK  ] Listening on virtproxyd-admin.sock… libvirt proxy daemon admin socket.
+[  OK  ] Listening on virtproxyd-ro.socket …virt proxy daemon read-only socket.
+[  OK  ] Listening on virtqemud.socket - libvirt QEMU daemon socket.
+[  OK  ] Listening on virtqemud-admin.socke…- libvirt QEMU daemon admin socket.
+[  OK  ] Listening on virtqemud-ro.socket -…bvirt QEMU daemon read-only socket.
+[  OK  ] Listening on virtsecretd.socket - libvirt secret daemon socket.
+[  OK  ] Listening on virtsecretd-admin.soc…libvirt secret daemon admin socket.
+[  OK  ] Listening on virtsecretd-ro.socket…irt secret daemon read-only socket.
+[  OK  ] Listening on virtstoraged.socket - libvirt storage daemon socket.
+[  OK  ] Listening on virtstoraged-admin.so…ibvirt storage daemon admin socket.
+[  OK  ] Listening on virtstoraged-ro.socke…rt storage daemon read-only socket.
+         Starting dbus-broker.service - D-Bus System Message Bus...
+[  OK  ] Started dbus-broker.service - D-Bus System Message Bus.
+[  OK  ] Listening on cockpit.socket - Cockpit Web Service Socket.
+[  OK  ] Reached target sockets.target - Socket Units.
+[  OK  ] Reached target basic.target - Basic System.
+         Starting avahi-daemon.service - Avahi mDNS/DNS-SD Stack...
+         Starting chronyd.service - NTP client/server...
+         Starting dracut-shutdown.service -…store /run/initramfs on shutdown...
+[  OK  ] Started firewalld.service - firewalld - dynamic firewall daemon.
+[  OK  ] Reached target network-pre.target - Preparation for Network.
+         Starting NetworkManager.service - Network Manager...
+         Starting foomaticrip-upgrade.servi…talled printers for foomatic-rip...
+[  OK  ] Started irqbalance.service - irqbalance daemon.
+[  OK  ] Started libstoragemgmt.service - libstoragemgmt plug-in server daemon.
+         Starting lm_sensors.service - Hardware Monitoring Sensors...
+         Starting polkit.service - Authorization Manager...
+         Starting rtkit-daemon.service - Re…imeKit Scheduling Policy Service...
+         Starting smartd.service - Self Mon…orting Technology (SMART) Daemon...
+[  OK  ] Reached target sshd-keygen.target.
+[  OK  ] Reached target nss-user-lookup.target - User and Group Name Lookups.
+         Starting accounts-daemon.service - Accounts Service...
+         Starting switcheroo-control.servic…Switcheroo Control Proxy service...
+         Starting systemd-logind.service - User Login Management...
+         Starting systemd-machined.service …d Container Registration Service...
+         Starting udisks2.service - Disk Manager...
+         Starting upower.service - Daemon for power management...
+[  OK  ] Started chronyd.service - NTP client/server.
+[  OK  ] Started smartd.service - Self Moni…eporting Technology (SMART) Daemon.
+[  OK  ] Started systemd-logind.service - User Login Management.
+[  OK  ] Finished dracut-shutdown.service - Restore /run/initramfs on shutdown.
+[  OK  ] Finished foomaticrip-upgrade.servi…nstalled printers for foomatic-rip.
+[  OK  ] Started rtkit-daemon.service - RealtimeKit Scheduling Policy Service.
+[  OK  ] Started switcheroo-control.service - Switcheroo Control Proxy service.
+[  OK  ] Started systemd-machined.service -…and Container Registration Service.
+[  OK  ] Finished lm_sensors.service - Hardware Monitoring Sensors.
+         Starting systemd-hostnamed.service - Hostname Service...
+         Starting systemd-userdbd.service - User Database Manager...
+[  OK  ] Started systemd-userdbd.service - User Database Manager.
+[  OK  ] Started avahi-daemon.service - Avahi mDNS/DNS-SD Stack.
+[  OK  ] Started systemd-hostnamed.service - Hostname Service.
+[  OK  ] Listening on systemd-rfkill.socket…ll Switch Status /dev/rfkill Watch.
+[   59.856499] spacemit-dwmac PRP0001:05 enaprp1i5: Register MEM_TYPE_PAGE_POOL RxQ-0
+         Starting NetworkManager-dispatcher…anager Script Dispatcher Service...
+[   59.891457] spacemit-dwmac PRP0001:05 enaprp1i5: PHY [stmmac-0:00] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[  OK  ] Started polkit.service - Authorization Manager.
+[   59.911422] spacemit-dwmac PRP0001:05 enaprp1i5: No Safety Features support found
+[  OK  ] Started accounts-daemon.service[   59.924418] spacemit-dwmac PRP0001:05 enaprp1i5: Invalid PTP clock rate
+ - Accounts Service.
+[   59.935997] spacemit-dwmac PRP0001:05 enaprp1i5: PTP init failed
+[   59.944087] spacemit-dwmac PRP0001:05 enaprp1i5: configuring for phy/rgmii-id link mode
+[  OK  ] Started upower.service - Daemon for power management.
+[  OK  ] Started udisks2.service - Disk Manager.
+[  OK  ] Started NetworkManager-dispatcher.… Manager Script Dispatcher Service.
+[  OK  ] Started NetworkManager.service - Network Manager.
+[  OK  ] Reached target network.target - Network.
+         Starting ModemManager.service - Modem Manager...
+         Starting NetworkManager-wait-onlin…ce - Network Manager Wait Online...
+         Starting cups.service - CUPS Scheduler...
+         Starting gssproxy.service - GSSAPI Proxy Daemon...
+         Starting sshd.service - OpenSSH server daemon...
+         Starting tuned.service - Dynamic System Tuning Daemon...
+[  OK  ] Started cups.service - CUPS Sch[   60.296139] NET: Registered PF_QIPCRTR protocol family
+eduler.
+[  OK  ] Started sshd.service - OpenSSH server daemon.
+[  OK  ] Started gssproxy.service - GSSAPI Proxy Daemon.
+[  OK  ] Started ModemManager.service - Modem Manager.
+[  OK  ] Reached target nfs-client.target - NFS client services.
+[  OK  ] Reached target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Reached target remote-cryptsetup.target - Remote Encrypted Volumes.
+[  OK  ] Started tuned.service - Dynamic System Tuning Daemon.
+         Starting tuned-ppd.service - PPD-to-TuneD API Translation Daemon...
+[  OK  ] Started tuned-ppd.service - PPD-to-TuneD API Translation Daemon.
+[   63.112844] spacemit-dwmac PRP0001:05 enaprp1i5: Link is Up - 1Gbps/Full - flow control off
+[  OK  ] Finished NetworkManager-wait-onlin…vice - Network Manager Wait Online.
+[  OK  ] Reached target network-online.target - Network is Online.
+         Starting cockpit-issue.service - Cockpit issue updater service...
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+         Starting kdump.service - Crash recovery kernel arming...
+         Starting rpc-statd-notify.service - Notify NFS peers of a restart...
+         Starting rsyslog.service - System Logging Service...
+         Starting systemd-user-sessions.service - Permit User Sessions...
+         Starting virtqemud.service - libvirt QEMU daemon...
+[  OK  ] Started rsyslog.service - System Logging Service.
+[  OK  ] Started rpc-statd-notify.service - Notify NFS peers of a restart.
+[  OK  ] Started virtqemud.service - libvirt QEMU daemon.
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+[  OK  ] Started atd.service - Deferred execution scheduler.
+[  OK  ] Started crond.service - Command Scheduler.
+         Starting gdm.service - GNOME Display Manager...
+[  OK  ] Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[  OK  ] Reached target getty.target - Login Prompts.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Finished cockpit-issue.service - Cockpit issue updater service.
+[  OK  ] Started gdm.service - GNOME Display Manager.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+         Starting systemd-update-utmp-runle…- Record Runlevel Change in UTMP...
+[  OK  ] Finished systemd-update-utmp-runle…e - Record Runlevel Change in UTMP.
+
+Red Hat Enterprise Linux 10.3 (Coughlan)
+Kernel 6.12.0-dbg1 on riscv64
+
+Web console: https://localhost:9090/ or https://192.168.137.146:9090/
+
+localhost login: root
+Password:
+Last login: Fri Nov 20 23:21:50 on ttyS0
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]# root
+bash: root: command not found...
+[root@localhost ~]# redhat
+bash: redhat: command not found...
+[root@localhost ~]# [   91.572912] BUG: Bad rss-counter state mm:00000000c292b240 type:MM_ANONPAGES val:23
+[   91.580784]  non-slab/vmalloc memory
+[   91.584406] list_del corruption. next->prev should be ffffffd9ffad1a40, but was ffffffd9ffab4c10. (next=ffffffff955f95b0)
+[   91.595537] ------------[ cut here ]------------
+[   91.595539] kernel BUG at lib/list_debug.c:65!
+[   91.595542] Kernel BUG [#1]
+[   91.595545] Modules linked in: sbi_suspend_test(OE) snd_seq_dummy snd_hrtimer snd_seq snd_timer snd_seq_device snd soundcore nft_fib_inet n
+ft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6 nft_reject nft_ct nft_chain_nat nf_nat qrtr nf_conntrack nf_def
+rag_ipv6 nf_defrag_ipv4 rfkill nf_tables sd_mod sg ufs_spacemit(OE) ufshcd_pltfrm vfat ufshcd_core fat at24 governor_simpleondemand rpmb_core
+fuse loop xfs realtek nvme_tcp dwmac_spacemit(OE) stmmac_platform nvme_fabrics stmmac nvme dwc3 nvme_core pcs_xpcs i2c_k1(OE) phylink gpio_spa
+cemit_k1(OE) gpio_generic k3_tsensor(OE) nvme_keyring udc_core rtc_efi nvme_auth sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sy
+sfs cxgb4i cxgb4 tls libcxgbi libcxgb iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath i2c_dev dm_mod nfnetlink
+[   91.595647] CPU: 0 UID: 42 PID: 1589 Comm: gnome-shell Tainted: G           OE      ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[   91.595653] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+[   91.595655] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/20/2026
+[   91.595657] epc : __list_del_entry_valid_or_report+0xe6/0x110
+[   91.595666]  ra : __list_del_entry_valid_or_report+0xe6/0x110
+[   91.595670] epc : ffffffff9397ae0e ra : ffffffff9397ae0e sp : ffffffc60319b9a0
+[   91.595672]  gp : ffffffff9571f920 tp : ffffffd640702180 t0 : 6c65645f7473696c
+[   91.595674]  t1 : 000000000000006c t2 : 206c65645f747369 s0 : ffffffc60319b9d0
+[   91.595677]  s1 : ffffffd9ffad1a40 a0 : 000000000000006d a1 : ffffffff955aac08
+[   91.595680]  a2 : 0000000200000020 a3 : ffffffff95aceac8 a4 : 0000000000000000
+[   91.595682]  a5 : 0000000000000000 a6 : 0000000000000001 a7 : 00000000002bffa8
+[   91.595684]  s2 : ffffffff955f95b0 s3 : ffffffd9ffab4c10 s4 : ffffffd9ffad1a40
+[   91.595686]  s5 : 0000000000001000 s6 : ffffffd9ffad1a40 s7 : 000000000000000a
+[   91.595688]  s8 : ffffffff955f9598 s9 : 0000000200000022 s10: 000000003b9aca00
+[   91.595691]  s11: ffffffff955f95b0 t3 : ffffffff95928f07 t4 : ffffffff95928f07
+[   91.595693]  t5 : ffffffff95928f08 t6 : ffffffc60319b7a8
+[   91.595695] status: 0000000200000100 badaddr: ffffffff9397ae0e cause: 0000000000000003
+[   91.595698] [<ffffffff9397ae0e>] __list_del_entry_valid_or_report+0xe6/0x110
+[   91.595702] [<ffffffff9374792e>] kfence_guarded_alloc+0x6e/0x400
+[   91.595708] [<ffffffff937481bc>] __kfence_alloc+0x1c4/0x1e4
+[   91.595713] [<ffffffff93718340>] kmem_cache_alloc_noprof+0x3be/0x554
+[   91.595717] [<ffffffff937a30b4>] getname_flags.part.0+0x2a/0x162
+[   91.595722] [<ffffffff937a808e>] getname+0x22/0x40
+[   91.595725] [<ffffffff9379d006>] vfs_fstatat+0x74/0x78
+[   91.595730] [<ffffffff9379d04e>] __do_sys_newfstatat+0x44/0x76
+[   91.595734] [<ffffffff9379d0ca>] __riscv_sys_newfstatat+0x16/0x1e
+[   91.595738] [<ffffffff93f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[   91.595744] [<ffffffff93f784b8>] handle_exception+0x160/0x16c
+[   91.595753] Code: 86ca 85d2 0517 0126 0513 e125 b097 ffa8 80e7 9220 (9002) 85aa
+[   91.595757] ---[ end trace 0000000000000000 ]---
+[   91.595760] Kernel panic - not syncing: Fatal exception in interrupt
+[   91.595763] SMP: stopping secondary CPUs
+[   92.554100] SMP: failed to stop secondary CPUs 0,5
+[   92.554104] Kernel Offset: 0x13400000 from 0xffffffff80000000
+

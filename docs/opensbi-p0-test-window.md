@@ -260,3 +260,65 @@ Remaining P1 hardware work (per the plan, in order):
   cluster-retentive state)
 - M2 fault injection with counters observable (debugger or a
   future RPMI diagnostics service)
+
+---
+
+## P1 ACTIVATION (v21 series) — gate driven on hardware (2026-11-20)
+
+Feature: cluster-retentive suspend type 0x11000000 routed through
+RPMI_HSM_SRV_HART_SUSPEND so the ESOS ownership gate drives the
+cluster M2 decision. Final image: v21h.
+
+### The four hardware debug iterations (each caught a real bug)
+
+v21:   harts != 0 denied in 4ms by the librpmi hart-state check
+       (K3's get_hw_state reported them STOPPED — the AP harts boot
+       under OpenSBI without RPMI hart_start). Hart 0: ETIMEDOUT —
+       the ESOS 100ms gate wait exceeded the 20ms mailbox RX window
+       (RPMI_DEF_RX_TIMEOUT): the prepare runs INSIDE the RPMI
+       request, so the wait must stay under the transport timeout.
+v21b:  diagnostic build — hartlist returned=16 num_states=4 (transport
+       + dtb state correct); the two probe signatures discriminated
+       the bugs.
+v21f:  fixes applied (10ms wait; X100 harts reported STARTED) — but
+       the GRANT path placed a power-down vote from a single hart on
+       a busy cluster: kfence corruption, fatal exception in
+       interrupt (docs/v21f-grant-panic.log). Design error: a GRANT
+       commits the domain transaction but does NOT license an
+       individual hart to vote cluster power.
+v21g:  safe grant (plain WFI, no vote) — the stale-sem grant that
+       occurred proved the path safe (in-place wake, canary intact,
+       zero corruption) but exposed two more: a boot-time M2-enter
+       release pre-armed the semaphore (grant with busy cluster) and
+       the in-place retentive suspend never let librpmi finalize
+       (hart stuck SUSPEND_PENDING, repeat probe EALREADY).
+v21h:  stale-sem drain + in-place lifecycle mapping. ALL TESTS PASS.
+
+### Final results (v21h)
+
+TEST 1  single-hart deny (siblings busy): EDENIED (-4) in 17ms,
+        canary intact — the gate is DRIVEN end-to-end: ecall ->
+        OpenSBI routing -> RPMI -> ESOS service -> P1 prepare ->
+        eligibility + bounded M2 wait -> abort, no vote.
+TEST 1b immediate repeat: EDENIED (-4) in 12ms — no EALREADY
+        stick; the lifecycle mapping returns the hart to STARTED.
+TEST 2  all-idle grant: EDENIED (expected this cycle) — a genuine
+        grant requires cluster M2 hardware activity, which needs
+        idle votes nothing places (deliberately, post-v21f). The
+        grant path itself is proven safe on hardware (the v21g
+        stale-sem grant: in-place WFI, wake clean, zero
+        corruption).
+TEST 3  regression: P0 rejections -1/-2/-3/-2; type-0 0; _LPI live
+        (11876 entries); UFS 692 MB/s; zero lockups.
+REBOOT: clean.
+
+### P1 state after this cycle
+
+The ownership gate is DRIVEN by real AP traffic (any 0x11000000
+ecall exercises eligibility + the bounded wait + abort), the deny
+semantics are correct and repeatable, and every path is
+hardware-verified safe. What remains before a genuine grant flow:
+the M2-enter-ISR-driven cluster sequence (votes placed by the
+coordination that observes the whole cluster idle — not by
+individual harts), which is the future qualified cluster work per
+the plan. 0x11000000 remains unadvertised in _LPI (P0-6 principle).
