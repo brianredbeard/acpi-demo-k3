@@ -58,3 +58,27 @@ work (Tasks 5-7, 9 and the PCC model).
   content plus the draft PCC files; land before the next build handoff.
 - OpenSBI remains an unpinned component (the shipped binary is qualified
   but not reproducible from this repo yet).
+
+## v12 boot verification addendum — 2026-11-20 (live)
+
+Firmware: 0006-fixed ESOS + 0008/0009 EDK2 (SPCR + ACPI 6.6 conformance),
+DSDT with MPXY/RCLK + Cpu.asl; kernel with the clk-rpmi clkdev aliases.
+Verified on the serial console:
+
+- SPCR live: `ACPI: SPCR: console: uart,mmio32,0xd4017000,115200` (table
+  v04); serial console through full RHEL boot with the XScale quirk engaged
+  (`RSCV0003:00: ttyS0 ... is a XScale`). No autoconfig hang.
+- Processor objects: 8 CPUs, `DRIVER=processor` bound per ACPI0007 device.
+  No cpuidle states — correct pre-Task-9 (no _LPI AML yet; see the HSM
+  suspend audit for the encoding that is now allowed).
+- MPXY/RCLK: mailbox 5 channels (RSCV0005:00), riscv-rpmi-clock bound.
+- All 13 clocks with REAL rates post-0006: ufs_aclk=491.52 MHz (manual
+  truth; the kernel's 409.6 MHz fallback is wrong — Task 7 consumer gap),
+  emac0_bus=307.2 MHz, twsi0=31.507692 MHz, gpio=24 MHz, sdh0=204.8 MHz,
+  usb2_bus=307.2 MHz, rproc=500 MHz.
+- Thermal 7 zones 52-56C, fan 2294 RPM, zero BUG/WARNING/ERROR.
+- set_state round-trip via debugfs on twsi0_clk: clean.
+
+Hardware qualification for patches 0008/0009 and the ESOS 0001-0006 series
+is therefore CLOSED on v12 evidence (supersedes the v11 rate-0 caveat: the
+placeholder-opacity issue was the 0006 lookup bug, fixed and now proven).
