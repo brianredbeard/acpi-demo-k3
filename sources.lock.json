@@ -104,6 +104,10 @@
         {
           "file": "patches/edk2-platforms/0010-Platform-Spacemit-K3-DSDT-v12-promote-the-qualified.patch",
           "sha256": "027032825e923b949617b298600ffa27d0dc89ff3b244ce1e6376c39da1c6075"
+        },
+        {
+          "file": "patches/edk2-platforms/0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch",
+          "sha256": "5eca5361dc683be1dfd2c8f0b53b6492e149cfe7d511d2fb9acbca698e47d5f2"
         }
       ],
       "configs": [],
