@@ -54,3 +54,19 @@ GRUB retains the previous kernel entry; the firmware payload is a single
 edk2.bin replacement — reflash v12's edk2 if `_LPI` wedges the boot (the
 `_LPI` object failing to parse is non-fatal to boot; a bad suspend state
 entry is not, so the first CPU_NR idle entry is the risk point).
+
+## v13 flash artifact (ready)
+
+`fitimage/MUSE-Pico/MUSE-Pico.itb` — sha256
+`27f40cb4c47dc205fb7d975020ea22fcdb80e6a8e932af241eb9ecf15e535aa3`,
+size 3248128. Built from the maintained tree at `3faadd7b` (series
+0001-0012 = the flashed v12 payload's edk2 content + 0012 `_LPI` only).
+ESOS/OpenSBI/FSBL/agent unchanged from the live v12 payload — the ONLY
+delta is edk2.bin. The built FV verifies 8x `_LPI` (both states, correct
+FFH addresses).
+
+v12-boot status of the checklist: items 1, 2, 6, 7 CLOSED live (zero
+errors; full RHCT HWCAP; _OSC truthful mask with PCIe intact; all
+peripherals + real clock rates from the firmware DSDT, no GRUB
+override). Remaining on the v13 boot: items 3-5 (cpuidle states, usage
+soak, wake sources, tick broadcast) — the `_LPI`-specific checks.
