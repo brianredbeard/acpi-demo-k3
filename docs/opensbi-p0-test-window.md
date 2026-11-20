@@ -178,3 +178,43 @@ ownership model per the original plan).
 
 No lockups, no M2/ownership console errors, thermal/clock/GMAC
 unregressed (checked post-boot).
+
+---
+
+## v18 (_LPI restoration) cycle results — 2026-11-20
+
+Payload: pico-acpi-v18. EDK2-only change: Cpu.asl LPI_STATES restored
+(maintained-tree commit a56c27ff, built with -D ACPI_ENABLE=TRUE).
+ESOS rolled back to the byte-identical v12 image (v17 regression);
+OpenSBI at hardware-qualified v16.
+
+### Results: ALL PASS
+
+1. States exposed: /sys/devices/system/cpu/cpu*/cpuidle/state{0,1}
+   = LPI-0 "WFI" (index-0 special path) and LPI-1 "SBI_WFI"
+   (FFH (1<<60)|0 -> SBI HSM suspend type 0). No 'Invalid LPI
+   entry method' / 'Invalid SBI power state' warnings — the FFH
+   encoding validated by the kernel probe.
+2. Idle residency: state1 entry counts and time accumulate on all
+   CPUs from a cold boot (~4.6k entries / ~104s per CPU within 2
+   minutes). The full chain LPI -> acpi_processor_ffh_lpi_enter ->
+   CPU_PM_CPU_IDLE_ENTER_RETENTION_PARAM -> riscv_sbi_hart_suspend(0)
+   -> SBI HSM suspend -> OpenSBI wfi is LIVE.
+3. Timer wake from state1: 1003ms measured for a 1000ms sleep on a
+   pinned CPU.
+4. CPU hotplug (cpu2 off/on) with LPI active: works.
+5. Zero lockups/BUGs in dmesg (the only 'lockup|BUG' grep hits are
+   the benign 'SGI XFS' and 'debug' substring matches).
+6. REBOOT: clean — completes through the RPMI sysreset path and
+   re-boots to login. This validates BOTH the v12 ESOS rollback
+   (the v17 hang is gone) and that _LPI idle does not break the
+   shutdown path.
+
+### Milestone
+
+_LPI is RESTORED in the firmware for the first time since it was
+pulled in v13: a two-state cpuidle ladder (WFI + qualified SBI
+retentive default) on every hart, with the suspend-ownership plan's
+ordering intact (cluster/non-retentive states remain unexposed
+pending the ESOS P1 model being driven by real AP traffic and a
+qualified non-retentive resume contract).
