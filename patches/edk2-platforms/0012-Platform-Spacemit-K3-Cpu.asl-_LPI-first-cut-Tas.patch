@@ -1,7 +1,7 @@
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH 12/12] Platform/Spacemit/K3: Cpu.asl _LPI first cut (Task 9)
+Subject: [PATCH 12/12] Platform/Spacemit/K3: Cpu.asl _LPI first cut + \_SB platform _OSC (Task 9)
 
-Platform/Spacemit/K3: Cpu.asl _LPI first cut (Task 9)
+Platform/Spacemit/K3: Cpu.asl _LPI first cut + \_SB platform _OSC (Task 9)
 
 Add _LPI to every ACPI0007 processor device: two non-retentive
 platform states per the FFH spec and the HSM suspend audit
@@ -16,13 +16,22 @@ Both use the proven PMU vote + WFI + in-place-resume mechanism from
 k3_corepm.c; the kernel's RISC-V LPI backend requires >1 flattened
 state, so both are exposed. Package layout per ACPI 6.5 _LPI:
 {MinResidency, WakeLatency, Count, StatePkgs...} (iASL-validated).
-Latencies are the vendor DT values - measure before freezing. Tick
-broadcast under local-timer-stop must be verified on hardware.
+Latencies are the vendor DT values - measure before freezing.
 
-Validation: full RELEASE build; built DSDT decodes 8x _LPI with both
-states and correct FFH addresses. Hardware verification pending (the
-v13 boot: cpuidle states present, usage counts increasing, wake
-sources intact).
+Add the \\_SB platform-wide _OSC (UUID 0811B06E-...) confirming
+PCLPI (0x80) ONLY: acpi_processor_get_lpi_info() gates _LPI parsing
+on osc_pc_lpi_support_confirmed, which is set exclusively by this
+handshake. Without it, _LPI is silently ignored (pr_debug-only
+failure) - root cause of the first v13 boot showing _LPI in the
+DSDT, processor devices bound, and no cpuidle. PR3/S3, GED,
+hotplug-OST are not confirmed (no power resources / GPE wiring);
+unknown UUIDs return _OSC failure.
+
+Validation: full RELEASE build; built DSDT decodes 8x _LPI (both
+states, correct FFH addresses) and the \\_SB _OSC with the PCLPI
+mask. Hardware verification: the NEXT boot cycle (expect 'platform
+_OSC: OS control mask' with 0x80, cpuidle LPI-0/1/2 states, usage
+counts increasing, wake-source integrity per the v13 checklist).
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 index 492b4792..f4eac68c 100644
@@ -294,3 +303,50 @@ index 492b4792..f4eac68c 100644
 +    CPU_DEVICE (CPU7, 7)
 +  } // Device (CL01)
 +}
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+index d97da1e5..8ea52ce5 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
++++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+@@ -19,6 +19,42 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+   include ("Cpu.asl")
+ 
+   Scope (_SB) {
++    /*
++     * Platform-wide _OSC (UUID 0811B06E-4A27-44F9-8D60-3CBBC22E7B48).
++     * The kernel requests LPI support (OSC_SB_PCLPI_SUPPORT, bit 7/0x80)
++     * during the platform _OSC handshake; without this acknowledgement
++     * acpi_processor_get_lpi_info() returns -EOPNOTSUPP and _LPI states
++     * are never parsed (the silent no-cpuidle failure).
++     *
++     * Firmware confirms ONLY the capabilities it actually provides:
++     * PCLPI (0x80, backed by _LPI on every ACPI0007 + SBI HSM suspend).
++     * All other requested bits are cleared (unsupported by this
++     * firmware), which is the honest response.
++     */
++    Name (SBP, 0)   /* _SB _OSC Support (confirmed) */
++    Method (_OSC, 4, NotSerialized)
++    {
++      CreateDWordField (Arg3, 0, CDW1)   /* Return Value (Status) */
++      CreateDWordField (Arg3, 4, CDW2)   /* Support Field */
++      CreateDWordField (Arg3, 8, CDW3)   /* Control Field */
++
++      /* Platform-wide capabilities UUID */
++      If (LEqual (Arg0, ToUUID ("0811B06E-4A27-44F9-8D60-3CBBC22E7B48")))
++      {
++        /* Firmware-supported capabilities (PCLPI only) */
++        And (CDW2, 0x80, SBP)
++        Store (SBP, CDW2)
++        Store (0, CDW3)
++        Return (Arg3)
++      }
++
++      /* Unknown UUID: unsupported */
++      Store (1, CDW1)   /* _OSC_FAILURE */
++      And (CDW2, 0, CDW2)
++      And (CDW3, 0, CDW3)
++      Return (Arg3)
++    }
++
+     Device (IC00)
+     {
+       Name (_HID, "RSCV0002")

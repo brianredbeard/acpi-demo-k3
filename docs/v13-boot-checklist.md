@@ -70,3 +70,29 @@ errors; full RHCT HWCAP; _OSC truthful mask with PCIe intact; all
 peripherals + real clock rates from the firmware DSDT, no GRUB
 override). Remaining on the v13 boot: items 3-5 (cpuidle states, usage
 soak, wake sources, tick broadcast) — the `_LPI`-specific checks.
+
+## Addendum: first v13 boot failed silently — root cause + fix
+
+Symptom: _LPI present in the DSDT (24 strings), processor devices bound
+(ACPI0007, firmware_node paths resolve), but NO cpuidle directory and zero
+LPI-related dmesg. Config verified on the running kernel:
+ACPI_PROCESSOR_IDLE=y, RISCV_SBI_CPUIDLE=y, ffh_lpi_probe present in
+kallsyms.
+
+Root cause: acpi_processor_get_lpi_info() gates ALL _LPI parsing on
+osc_pc_lpi_support_confirmed, which is set only by the platform-wide _OSC
+handshake (Linux acpi_bus_osc_support at \_SB, UUID 0811B06E-...,
+OSC_SB_PCLPI_SUPPORT = 0x80). The DSDT had no \_SB._OSC, so the handshake
+failed and the whole path bailed with -EOPNOTSUPP before touching _LPI —
+and the resulting "No ACPI power information" is pr_debug, invisible at
+default loglevel.
+
+Fix (patch 0012 amended, maintained b1a2bd8b): \_SB._OSC confirming
+PCLPI (0x80) only. Unknown UUIDs return _OSC failure; PR3/GED/hotplug-OST
+not confirmed (not provided by this firmware).
+
+Expected evidence on the fixed boot:
+- dmesg: "ACPI: \_SB_: platform _OSC: OS control mask [00000080]" (or the
+  support-mask line reflecting 0x80)
+- /sys/devices/system/cpu/cpu0/cpuidle/ with LPI-0/LPI-1/LPI-2
+- the checklist items 3-5 as originally written
