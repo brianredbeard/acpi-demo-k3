@@ -27,10 +27,14 @@ ESOS/OpenSBI/FSBL/agent: unchanged from the qualified v11/v12 payloads.
    zba zbb zbc zbs zkt zvbb... svinval svnapot` (the 0011 fix; the v12 boot
    showed only the RHCT subset). Also `dmesg | grep -i 'riscv: base ISA'`.
 3. **_LPI / cpuidle** — the new milestone:
-   - `ls /sys/devices/system/cpu/cpu0/cpuidle/` exists with states
-     `LPI-0` (safe) and `LPI-1`/`LPI-2` (CPU_NR/CLUSTER_NR)
+   - `ls /sys/devices/system/cpu/cpu0/cpuidle/` exists with TWO
+     states: `LPI-0` (= CPU_NR) and `LPI-1` (= CLUSTER_NR). The LPI
+     path does NOT insert a synthetic WFI/safe state — index 0 is the
+     first flattened state (processor_idle.c setup_lpi_states names
+     LPI-i for every flattened state i; safe_state_index is simply
+     the last one registered)
    - `cat /sys/devices/system/cpu/cpu*/cpuidle/state*/name` — expect
-     `LPI-0`, `LPI-1`, `LPI-2` on all 8 CPUs
+     `LPI-0`, `LPI-1` on all 8 CPUs
    - `dmesg | grep -iE 'LPI|cpuidle'` — no `Invalid LPI entry method`,
      no `acpi_cpu_init_idle` failure
    - Soak: `sleep 60 && cat /sys/devices/system/cpu/cpu*/cpuidle/state*/usage`
@@ -137,3 +141,20 @@ verified: 8x correct addresses, no bad form, _LPI count 8.
 
 Gate status after three fixes: _OSC presence → _OSC buffer contract →
 FFH encoding. The next boot is the first where all three are correct.
+
+## Addendum 4: state Flags must be ENABLED; acceptance criteria corrected
+
+Audit finding: the state packages carried Flags=0. flatten_lpi_states()
+skips any state without ACPI_LPI_STATE_FLAGS_ENABLED (bit 0), so both
+states would have been dropped at flatten (zero states -> the backend's
+count>1 check fails -ENODEV -> still no cpuidle). Fixed (maintained
+4649f3cf, patch 0012): Flags=1 on both states; built AML verified
+(One in both state packages).
+
+Acceptance criteria corrected: the checklist previously expected
+"LPI-0 (safe), LPI-1, LPI-2" — three states. The kernel's LPI path
+names LPI-i for every FLATTENED state starting at index 0 and inserts
+no synthetic safe/WFI state (unlike the C-state path's ACPI_IDLE_STATE_START
+behavior). With two _LPI states, expect exactly `LPI-0` (= CPU_NR) and
+`LPI-1` (= CLUSTER_NR). Gate count now four: _OSC presence, _OSC buffer
+contract, FFH encoding, state Flags.

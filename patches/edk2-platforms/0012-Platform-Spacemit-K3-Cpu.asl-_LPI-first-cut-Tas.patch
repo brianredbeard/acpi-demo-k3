@@ -12,39 +12,41 @@ platform states per the FFH spec and the HSM suspend audit
 - CLUSTER_NR: FFH address (1<<60)|0x91000000 = 0x1000000091000000,
   min-residency 2700us, wake 1100us
 
-The RISC-V FFH encoding is (1ULL<<60) | sbi_suspend_param with
-bits[59:32] reserved zero - the suspend param lives in the LOW 32
-bits (matching the CPPC FFH convention 0x1000000000000005 = (1<<60)|5
-already in this file). An earlier 0x19-prefixed form put the param in
-the reserved bits; acpi_cpu_init_idle's RISCV_FFH_LPI_RSVD_MASK check
-rejected every state ("Invalid FFH LPI data" on all 8 CPUs).
+Every state package carries Flags bit 0 (ENABLED): flatten_lpi_states
+skips states without ACPI_LPI_STATE_FLAGS_ENABLED, so Flags=0 would
+flatten to zero states and the backend count>1 check would fail with
+-ENODEV.
 
-Both states use the proven PMU vote + WFI + in-place-resume mechanism
-from k3_corepm.c; the kernel's RISC-V LPI backend requires >1
-flattened state, so both are exposed. Package layout per ACPI 6.5
-_LPI: {MinResidency, WakeLatency, Count, StatePkgs...} (iASL-
-validated). Latencies are the vendor DT values - measure before
-freezing.
+The RISC-V FFH encoding is (1ULL<<60)|sbi_suspend_param with
+bits[59:32] reserved zero - the param lives in the LOW 32 bits (the
+CPPC FFH convention already in this file). Both states use the proven
+PMU vote + WFI + in-place-resume mechanism from k3_corepm.c; the
+kernel's RISC-V LPI backend requires >1 flattened state, so both are
+exposed. Package layout per ACPI 6.5 _LPI: {MinResidency,
+WakeLatency, Count, StatePkgs...} (iASL-validated; states are
+10-element packages with the FFH Register at index 6). Latencies are
+vendor DT values - measure before freezing. NOTE: the kernel's LPI
+naming starts at index 0 with the FIRST flattened state (no inserted
+safe/WFI state on this path): expect LPI-0=CPU_NR, LPI-1=CLUSTER_NR.
 
 Add the \\_SB platform-wide _OSC (UUID 0811B06E-...) confirming
 PCLPI (0x80) ONLY: acpi_processor_get_lpi_info() gates _LPI parsing
-on osc_pc_lpi_support_confirmed, set exclusively by this handshake -
-without it _LPI is silently ignored (root cause of the first v13
-boot). The buffer is 2 DWORDs (u32 capbuf[2]: Query/Status,
-Support - NO Control DWORD; a CDW3 at offset 8 would raise
-AE_AML_BUFFER_LIMIT). The method handles both handshake passes.
-PR3/S3, GED, hotplug-OST not confirmed; unknown UUIDs fail.
-(PCI0's _OSC keeps CDW3: pci_root.c passes capbuf[5].)
+on osc_pc_lpi_support_confirmed, set exclusively by this handshake.
+The buffer is 2 DWORDs (u32 capbuf[2]: Query/Status, Support - NO
+Control DWORD; a CDW3 at offset 8 would raise AE_AML_BUFFER_LIMIT).
+The method handles both handshake passes. PR3/S3, GED, hotplug-OST
+not confirmed; unknown UUIDs fail. (PCI0's _OSC keeps CDW3:
+pci_root.c passes capbuf[5].)
 
-Validation: full RELEASE build; built DSDT decodes 8x _LPI with the
-correct FFH addresses and the \\_SB _OSC (2-DWORD contract, PCLPI
-mask). Hardware: the _OSC gate is CONFIRMED working live (boot
-showed 'OS control mask [00000080]'); the encoding fix addresses the
-'Invalid FFH LPI data' seen on that boot. Next cycle expects
-LPI-0/1/2, usage counts, wake sources per the v13 checklist.
+Validation: full RELEASE build; built DSDT decompiles 8x _LPI with
+Flags=One, correct FFH addresses, and the \\_SB _OSC. Hardware gates
+closed so far (live evidence): _OSC presence (OS control mask
+[00000080]), buffer contract, FFH encoding rejection. Next cycle is
+the first with all four gates (presence, buffer, encoding, flags)
+correct.
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-index 492b4792..3984b148 100644
+index 492b4792..7d304375 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 @@ -1,106 +1,159 @@
@@ -185,7 +187,7 @@ index 492b4792..3984b148 100644
 +    Package () {                \
 +      950,                      /* MinResidency (us) */ \
 +      500,                      /* WakeLatency (us) */ \
-+      0,                        /* Flags */ \
++      1,                        /* Flags: BIT(0) enabled */ \
 +      0,                        /* ArchFlags */ \
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
@@ -200,7 +202,7 @@ index 492b4792..3984b148 100644
 +    Package () {                \
 +      2700,                     /* MinResidency (us) */ \
 +      1100,                     /* WakeLatency (us) */ \
-+      0,                        /* Flags */ \
++      1,                        /* Flags: BIT(0) enabled */ \
 +      0,                        /* ArchFlags */ \
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
