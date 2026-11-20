@@ -7,43 +7,44 @@ Add _LPI to every ACPI0007 processor device: two non-retentive
 platform states per the FFH spec and the HSM suspend audit
 (task9-hsm-suspend-audit-2026-11-20.md):
 
-- CPU_NR: FFH address (1<<60)|0x90000000, min-residency 950us,
-  wake 500us
-- CLUSTER_NR: FFH address (1<<60)|0x91000000, min-residency 2700us,
-  wake 1100us
+- CPU_NR: FFH address (1<<60)|0x90000000 = 0x1000000090000000,
+  min-residency 950us, wake 500us
+- CLUSTER_NR: FFH address (1<<60)|0x91000000 = 0x1000000091000000,
+  min-residency 2700us, wake 1100us
 
-Both use the proven PMU vote + WFI + in-place-resume mechanism from
-k3_corepm.c; the kernel's RISC-V LPI backend requires >1 flattened
-state, so both are exposed. Package layout per ACPI 6.5 _LPI:
-{MinResidency, WakeLatency, Count, StatePkgs...} (iASL-validated).
-Latencies are the vendor DT values - measure before freezing.
+The RISC-V FFH encoding is (1ULL<<60) | sbi_suspend_param with
+bits[59:32] reserved zero - the suspend param lives in the LOW 32
+bits (matching the CPPC FFH convention 0x1000000000000005 = (1<<60)|5
+already in this file). An earlier 0x19-prefixed form put the param in
+the reserved bits; acpi_cpu_init_idle's RISCV_FFH_LPI_RSVD_MASK check
+rejected every state ("Invalid FFH LPI data" on all 8 CPUs).
+
+Both states use the proven PMU vote + WFI + in-place-resume mechanism
+from k3_corepm.c; the kernel's RISC-V LPI backend requires >1
+flattened state, so both are exposed. Package layout per ACPI 6.5
+_LPI: {MinResidency, WakeLatency, Count, StatePkgs...} (iASL-
+validated). Latencies are the vendor DT values - measure before
+freezing.
 
 Add the \\_SB platform-wide _OSC (UUID 0811B06E-...) confirming
 PCLPI (0x80) ONLY: acpi_processor_get_lpi_info() gates _LPI parsing
-on osc_pc_lpi_support_confirmed, set exclusively by this handshake.
-Without it, _LPI is silently ignored (pr_debug-only failure) - root
-cause of the first v13 boot showing _LPI in the DSDT, processor
-devices bound, and no cpuidle.
+on osc_pc_lpi_support_confirmed, set exclusively by this handshake -
+without it _LPI is silently ignored (root cause of the first v13
+boot). The buffer is 2 DWORDs (u32 capbuf[2]: Query/Status,
+Support - NO Control DWORD; a CDW3 at offset 8 would raise
+AE_AML_BUFFER_LIMIT). The method handles both handshake passes.
+PR3/S3, GED, hotplug-OST not confirmed; unknown UUIDs fail.
+(PCI0's _OSC keeps CDW3: pci_root.c passes capbuf[5].)
 
-The platform _OSC buffer is 2 DWORDs (u32 capbuf[2] in
-acpi_bus_osc_negotiate_platform_control): DWORD[0] Query/Status,
-DWORD[1] Support - there is NO Control DWORD, so the method creates
-only CDW1/CDW2 (a CDW3 at offset 8 would raise AE_AML_BUFFER_LIMIT
-on every evaluation). The method handles both handshake passes
-(query pass with OSC_QUERY_ENABLE, then the direct pass). PR3/S3,
-GED, hotplug-OST are not confirmed; unknown UUIDs return _OSC
-failure with cleared fields. (The PCI0 _OSC keeps CDW3: pci_root.c
-passes capbuf[OSC_CXL_CAPABILITY_DWORDS=5].)
-
-Validation: full RELEASE build; built DSDT decodes 8x _LPI (both
-states, correct FFH addresses) and the \\_SB _OSC with the PCLPI
-mask and 2-DWORD-only field access. Hardware verification: the next
-boot cycle (expect the platform _OSC control-mask line reflecting
-0x80, cpuidle LPI-0/1/2 states, usage counts, wake sources per the
-v13 checklist).
+Validation: full RELEASE build; built DSDT decodes 8x _LPI with the
+correct FFH addresses and the \\_SB _OSC (2-DWORD contract, PCLPI
+mask). Hardware: the _OSC gate is CONFIRMED working live (boot
+showed 'OS control mask [00000080]'); the encoding fix addresses the
+'Invalid FFH LPI data' seen on that boot. Next cycle expects
+LPI-0/1/2, usage counts, wake sources per the v13 checklist.
 ---
 diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
-index 492b4792..f4eac68c 100644
+index 492b4792..3984b148 100644
 --- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 +++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Cpu.asl
 @@ -1,106 +1,159 @@
@@ -189,7 +190,7 @@ index 492b4792..f4eac68c 100644
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
 +      ResourceTemplate () {     \
-+        Register (FFixedHW, 64, 0, 0x1900000000000000, 4) \
++        Register (FFixedHW, 64, 0, 0x1000000090000000, 4) \
 +      },                        \
 +      0,                        /* Residency Counter Address */ \
 +      0,                        /* Usage Counter Address */ \
@@ -204,7 +205,7 @@ index 492b4792..f4eac68c 100644
 +      0,                        /* ResidencyCounterFreq */ \
 +      0,                        /* EnabledParentState */ \
 +      ResourceTemplate () {     \
-+        Register (FFixedHW, 64, 0, 0x1910000000000000, 4) \
++        Register (FFixedHW, 64, 0, 0x1000000091000000, 4) \
 +      },                        \
 +      0,                        /* Residency Counter Address */ \
 +      0,                        /* Usage Counter Address */ \

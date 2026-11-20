@@ -116,3 +116,24 @@ Current artifact: fitimage/MUSE-Pico.itb sha256
 
 Expected evidence unchanged from Addendum 1 (PCLPI 0x80 confirmed,
 LPI-0/1/2, usage soak, wake sources).
+
+## Addendum 3: FFH address encoding fix
+
+The second boot (with the _OSC fixes) confirmed the handshake works —
+dmesg: `platform _OSC: OS control mask [00000080]` (PCLPI acknowledged,
+_LPI parsing enabled) — but then: `ACPI: CPUx: Invalid FFH LPI data` on
+all 8 CPUs.
+
+Root cause: the FFH addresses were malformed. The RISC-V FFH LPI
+encoding is (1ULL<<60) | sbi_suspend_param with bits[59:32] RESERVED
+ZERO — the param goes in the LOW 32 bits (same convention as the CPPC
+FFH registers already in Cpu.asl: 0x1000000000000005 = (1<<60)|5). The
+0x19-prefixed form put the param in the reserved field, and
+acpi_cpu_init_idle's RISCV_FFH_LPI_RSVD_MASK check rejected every state.
+
+Fixed (maintained e0fcedf5, patch 0012 regenerated): CPU_NR =
+0x1000000090000000, CLUSTER_NR = 0x1000000091000000. Built DSDT
+verified: 8x correct addresses, no bad form, _LPI count 8.
+
+Gate status after three fixes: _OSC presence → _OSC buffer contract →
+FFH encoding. The next boot is the first where all three are correct.

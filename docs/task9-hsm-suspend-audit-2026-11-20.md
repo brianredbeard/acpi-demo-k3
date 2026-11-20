@@ -64,7 +64,7 @@ the vote model assumes the rcpu participates in cluster transitions
 
 1. **Only non-retentive platform states exist.** ACPI 6.6 `_LPI` entries
    would encode, per the FFH spec, `Address = (1ULL << 60) | suspend_type`,
-   i.e. `0x1900000000000000`, `0x1910000000000000`, `0x1920000000000000`
+   i.e. `0x1000000090000000`, `0x1000000091000000`, `0x1000000092000000`
    (bits [63:60]=1 SBI, [59:32]=0, [31:0]=the param). Linux
    `drivers/acpi/riscv/cpuidle.c` validates exactly this and calls
    `riscv_sbi_hart_suspend` with the low 32 bits.
@@ -95,7 +95,7 @@ the vote model assumes the rcpu participates in cluster transitions
 ## Recommended `_LPI` first cut (for review, not yet written)
 
 - CPU0-7 (`ACPI0007` from Cpu.asl): `_LPI` with the cpu-nonretentive state
-  only (`0x1900000000000000`), measured latencies, no cluster state.
+  only (`0x1000000090000000`), measured latencies, no cluster state.
 - Cluster states and home-screen deferred until M2 coordination + timer
   broadcast are proven under ACPI boots.
 
