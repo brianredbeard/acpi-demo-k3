@@ -1,0 +1,1948 @@
+[    0.053742] SELinux:  Initializing.
+[    0.058157] LSM support for eBPF active
+[    0.062087] landlock: Up and running.
+[    0.065943] Mount-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.073645] Mountpoint-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.082989] ASID allocator using 16 bits (65536 entries)
+[    0.088459] rcu: Hierarchical SRCU implementation.
+[    0.093308] rcu: 	Max phase no-delay instances is 1000.
+[    0.098733] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.107244] Remapping and enabling EFI services.
+[    0.112329] smp: Bringing up secondary CPUs ...
+[    0.119103] smp: Brought up 1 node, 8 CPUs
+[    0.123645] Memory: 16203008K/16777216K available (11737K kernel code, 9998K rwdata, 8192K rodata, 7464K init, 1870K bss, 568000K reserved, 0K c
+ma-reserved)
+[    0.139685] devtmpfs: initialized
+[    0.148087] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.158078] posixtimers hash table entries: 4096 (order: 4, 65536 bytes, linear)
+[    0.165613] futex hash table entries: 2048 (131072 bytes on 1 NUMA nodes, total 128 KiB, linear).
+[    0.174828] pinctrl core: initialized pinctrl subsystem
+[    0.180374] SMBIOS 3.6.0 present.
+[    0.183731] DMI: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[    0.190539] DMI: Memory slots populated: 0/0
+[    0.195659] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.202053] DMA: preallocated 2048 KiB GFP_KERNEL pool for atomic allocations
+[    0.209313] audit: initializing netlink subsys (disabled)
+[    0.214875] audit: type=2000 audit(0.150:1): state=initialized audit_enabled=0 res=1
+[    0.215136] thermal_sys: Registered thermal governor 'fair_share'
+[    0.222731] thermal_sys: Registered thermal governor 'step_wise'
+[    0.228944] cpuidle: using governor menu
+[    0.239195] suspend: SBI SUSP extension detected
+[    0.243888] acpiphp: ACPI Hot Plug PCI Controller Driver version: 0.5
+[    0.251375] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.258259] HugeTLB: 16380 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.264977] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.271853] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.278207] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.285086] HugeTLB: 28 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.292952] ACPI: Added _OSI(Module Device)
+[    0.297183] ACPI: Added _OSI(Processor Device)
+[    0.301688] ACPI: Added _OSI(Processor Aggregator Device)
+[    0.308124] ACPI: 1 ACPI AML tables successfully acquired and loaded
+[    0.314870] ACPI: \_SB_: platform _OSC: OS support mask [004c6eee]
+[    0.321340] ACPI: Interpreter enabled
+[    0.325047] ACPI: Using RINTC for interrupt routing
+[    0.330145] ACPI: MCFG table detected, 1 entries
+[    0.338132] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+[    0.344400] acpi PNP0A08:00: _OSC: OS supports [ExtendedConfig ASPM ClockPM Segments MSI EDR HPX-Type3]
+[    0.354089] acpi PNP0A08:00: _OSC: platform does not support [PCIeHotplug PME AER LTR DPC]
+[    0.362663] acpi PNP0A08:00: _OSC: OS now controls [PCIeCapability]
+[    0.369029] acpi PNP0A08:00: MCFG quirk: ECAM at [mem 0x1100000000-0x110fffffff] for [bus 00-ff] with k3_dw_ecam_ops
+[    0.379775] acpi PNP0A08:00: ECAM area [mem 0x1100000000-0x110fffffff] reserved by PNP0C02:00
+[    0.388431] acpi PNP0A08:00: ECAM at [mem 0x1100000000-0x110fffffff] for [bus 00-ff]
+[    0.396397] PCI host bridge to bus 0000:00
+[    0.400550] pci_bus 0000:00: root bus resource [mem 0x1110000000-0x117fffffff window] (bus address [0x10000000-0x7fffffff])
+[    0.411844] pci_bus 0000:00: root bus resource [mem 0x1800000000-0x18ffffffff pref window]
+[    0.420222] pci_bus 0000:00: root bus resource [bus 00-ff]
+[    0.425807] pci 0000:00:00.0: [1dee:5216] type 00 class 0x010802 PCIe Endpoint
+[    0.433164] pci 0000:00:00.0: BAR 0 [mem 0x1120000000-0x1120003fff 64bit]
+[    0.440049] pci 0000:00:00.0: ROM [mem 0xfffe0000-0xffffffff pref]
+[    0.446574] pci 0000:00:00.0: ROM [mem 0x1110000000-0x111001ffff pref]: assigned
+[    0.454083] pci 0000:00:00.0: BAR 0 [mem 0x1110020000-0x1110023fff 64bit]: assigned
+[    0.461852] pci_bus 0000:00: resource 4 [mem 0x1110000000-0x117fffffff window]
+[    0.469174] pci_bus 0000:00: resource 5 [mem 0x1800000000-0x18ffffffff pref window]
+[    0.478568] iommu: Default domain type: Translated
+[    0.483431] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.490173] SCSI subsystem initialized
+[    0.494050] ACPI: bus type USB registered
+[    0.498148] usbcore: registered new interface driver usbfs
+[    0.503719] usbcore: registered new interface driver hub
+[    0.509126] usbcore: registered new device driver usb
+[    0.514319] pps_core: LinuxPPS API ver. 1 registered
+[    0.519360] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.528631] PTP clock support registered
+[    0.532742] EDAC MC: Ver: 3.0.0
+[    0.536180] efivars: Registered efivars operations
+[    0.541691] NetLabel: Initializing
+[    0.545137] NetLabel:  domain hash size = 128
+[    0.549546] NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO
+[    0.555309] NetLabel:  unlabeled traffic allowed by default
+[    0.561095] vgaarb: loaded
+[    0.564010] clocksource: Switched to clocksource riscv_clocksource
+[    0.572167] VFS: Disk quotas dquot_6.6.0
+[    0.576162] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.583330] acpi PNP0C02:00: Could not reserve [mem 0x1100000000-0x110fffffff window]
+[    0.591314] pnp: PnP ACPI init
+[    0.594503] pnp: PnP ACPI: found 0 devices
+[    0.603118] NET: Registered PF_INET protocol family
+[    0.608257] IP idents hash table entries: 262144 (order: 9, 2097152 bytes, linear)
+[    0.622066] tcp_listen_portaddr_hash hash table entries: 8192 (order: 5, 131072 bytes, linear)
+[    0.630855] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.638757] TCP established hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.647173] TCP bind hash table entries: 65536 (order: 9, 2097152 bytes, linear)
+[    0.655143] TCP: Hash tables configured (established 131072 bind 65536)
+[    0.662003] MPTCP token hash table entries: 16384 (order: 7, 393216 bytes, linear)
+[    0.669780] UDP hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.676706] UDP-Lite hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.684200] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.689954] NET: Registered PF_XDP protocol family
+[    0.710845] cpu3: scalar unaligned word access speed is 1.60x byte access speed (fast)
+[    0.710846] cpu2: scalar unaligned word access speed is 1.92x byte access speed (fast)
+[    0.710847] cpu0: scalar unaligned word access speed is 2.13x byte access speed (fast)
+[    0.710847] cpu1: scalar unaligned word access speed is 1.60x byte access speed (fast)
+[    0.710847] cpu7: scalar unaligned word access speed is 1.84x byte access speed (fast)
+[    0.710846] cpu5: scalar unaligned word access speed is 2.45x byte access speed (fast)
+[    0.710847] cpu6: scalar unaligned word access speed is 1.63x byte access speed (fast)
+[    0.710846] cpu4: scalar unaligned word access speed is 2.22x byte access speed (fast)
+[    0.791318] cpu1: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791328] cpu2: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791329] cpu0: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791329] cpu3: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791330] cpu7: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791335] cpu4: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791338] cpu5: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.791338] cpu6: vector unaligned word access speed is 4.13x byte access speed (fast)
+[    0.855566] PCI: CLS 0 bytes, default 64
+[    0.859570] ACPI: bus type thunderbolt registered
+[    0.859664] Trying to unpack rootfs image as initramfs...
+[    0.869814] kvm [1]: hypervisor extension available
+[    0.874764] kvm [1]: highest G-stage page table mode is Sv39x4
+[    0.880673] kvm [1]: VMID 14 bits available
+[    0.886018] kvm [1]: AIA available with 7 guest external interrupts
+[    0.893354] Initialise system trusted keyrings
+[    0.897893] Key type blacklist registered
+[    0.902093] workingset: timestamp_bits=44 max_order=22 bucket_order=0
+[    0.909617] integrity: Platform Keyring initialized
+[    0.914588] integrity: Machine keyring initialized
+[    0.919691] cryptd: max_cpu_qlen set to 1000
+[    0.955968] NET: Registered PF_ALG protocol family
+[    0.960854] Key type asymmetric registered
+[    0.965011] Asymmetric key parser 'x509' registered
+[    0.970929] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 246)
+[    0.978559] io scheduler mq-deadline registered
+[    0.983147] io scheduler kyber registered
+[    0.987234] io scheduler bfq registered
+[    0.993620] atomic64_test: passed
+[    0.997616] riscv-aplic RSCV0002:00: 512 interrupts forwarded to MSI base 0x00000000e0400000
+[    1.009703] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    1.016967] printk: legacy console [ttyS0] disabled
+[    1.022051] RSCV0003:00: ttyS0 at MMIO 0xd4017000 (irq = 11, base_baud = 921600) is a XScale
+[    1.030643] printk: legacy console [ttyS0] enabled
+[    1.030643] printk: legacy console [ttyS0] enabled
+[    1.040344] printk: legacy bootconsole [uart8250] disabled
+[    1.040344] printk: legacy bootconsole [uart8250] disabled
+[    1.052093] ACPI: bus type drm_connector registered
+[    1.058291] rdac: device handler registered
+[    1.062649] hp_sw: device handler registered
+[    1.067004] emc: device handler registered
+[    1.071225] alua: device handler registered
+[    1.076141] usbcore: registered new interface driver usbserial_generic
+[    1.082773] usbserial: USB Serial support registered for generic
+[    1.089019] mousedev: PS/2 mouse device common for all mice
+[    1.095196] EDAC DEVICE0: Giving out device to module Sifive ECC Manager controller sifive_edac.0: DEV sifive_edac.0 (INTERRUPT)
+[    1.107123] hid: raw HID events driver (C) Jiri Kosina
+[    1.112404] usbcore: registered new interface driver usbhid
+[    1.118083] usbhid: USB HID core driver
+[    1.224079] cros_ec_espi PRP0001:01: failed to get EC GpioInt (-517)
+[    1.230520] cros_ec_espi PRP0001:01: couldn't retrieve IRQ number (-517)
+[    1.237324] cros_ec_espi PRP0001:01: Probe failed, cleaning up...
+[    1.244991] riscv-sbi-mpxy-mbox RSCV0005:00: mailbox registered with 5 channels
+[    1.252531] riscv-pmu-sbi: SBI PMU extension is available
+[    1.258025] riscv-pmu-sbi: 16 firmware and 18 hardware counters
+[    1.264984] drop_monitor: Initializing network drop monitor service
+[    1.271484] Initializing XFRM netlink socket
+[    1.275893] NET: Registered PF_INET6 protocol family
+[    1.282189] Segment Routing with IPv6
+[    1.285938] In-situ OAM (IOAM) with IPv6
+[    1.289952] NET: Registered PF_PACKET protocol family
+[    1.295161] mpls_gso: MPLS GSO support
+[    1.304953] registered taskstats version 1
+[    1.311194] Loading compiled-in X.509 certificates
+[    1.318033] Loaded X.509 cert 'Build time autogenerated kernel key: b57f565ce967ef73237e092eb5cdf5c05dbcf312'
+[    1.337081] Demotion targets for Node 0: null
+[    1.341508] page_owner is disabled
+[    1.345654] Key type .fscrypt registered
+[    1.349626] Key type fscrypt-provisioning registered
+[    1.354758] Key type big_key registered
+[   11.789274] Freeing initrd memory: 173308K
+[   11.825919] Key type encrypted registered
+[   11.830001] ima: No TPM chip found, activating TPM-bypass!
+[   11.835577] Loading compiled-in module X.509 certificates
+[   11.841950] Loaded X.509 cert 'Build time autogenerated kernel key: b57f565ce967ef73237e092eb5cdf5c05dbcf312'
+[   11.852023] ima: Allocated hash algorithm: sha256
+[   11.856820] ima: No architecture policies found
+[   11.861476] evm: Initialising EVM extended attributes:
+[   11.866683] evm: security.selinux
+[   11.870035] evm: security.SMACK64 (disabled)
+[   11.874360] evm: security.SMACK64EXEC (disabled)
+[   11.879037] evm: security.SMACK64TRANSMUTE (disabled)
+[   11.884153] evm: security.SMACK64MMAP (disabled)
+[   11.888832] evm: security.apparmor (disabled)
+[   11.893240] evm: security.ima
+[   11.896240] evm: security.capability
+[   11.899861] evm: HMAC attrs: 0x1
+[   11.918387] Running certificate verification RSA selftest
+[   11.925187] Loaded X.509 cert 'Certificate verification self-testing key: f58703bb33ce1b73ee02eccdee5b8817518fe3db'
+[   11.936637] Running certificate verification ECDSA selftest
+[   11.964824] Loaded X.509 cert 'Certificate verification ECDSA self-testing key: 2900bcea1deb7bc8479a84a23d758efdfdd2b2d3'
+[   12.094064] cros_ec_espi PRP0001:01: failed to get EC GpioInt (-517)
+[   12.100510] cros_ec_espi PRP0001:01: couldn't retrieve IRQ number (-517)
+[   12.107316] cros_ec_espi PRP0001:01: Probe failed, cleaning up...
+[   12.214033] cros_ec_espi PRP0001:01: failed to get EC GpioInt (-517)
+[   12.220472] cros_ec_espi PRP0001:01: couldn't retrieve IRQ number (-517)
+[   12.227279] cros_ec_espi PRP0001:01: Probe failed, cleaning up...
+[   12.233851] clk: Not disabling unused clocks
+[   12.238185] PM: genpd: Disabling unused power domains
+[   12.244563] Freeing unused kernel image (initmem) memory: 7464K
+[   12.254162] Checked W+X mappings: passed, no W+X pages found
+[   12.259921] Run /init as init process
+[   12.273148] systemd[1]: System time advanced to built-in epoch: Tue 2026-08-18 00:00:00 UTC
+[   12.332271] systemd[1]: Successfully made /usr/ read-only.
+[   12.354069] systemd[1]: systemd 257-33.el10-g945f55a running in system mode (+PAM +AUDIT +SELINUX -APPARMOR +IMA +IPE +SMACK +SECCOMP -GCRYPT -G
+NUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN -IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT
+-QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF +XKBCOMMON +UTMP +SYSVINIT +LIBARCHIVE)
+[   12.389292] systemd[1]: Detected architecture riscv64.
+[   12.394505] systemd[1]: Running in initrd.
+Booting initrd of Red Hat Enterprise Linux 10.3 (Coughlan) dracut-107-11.el10 (Initramfs).
+[   12.424117] systemd[1]: No hostname configured, using default hostname.
+[   12.430998] systemd[1]: Hostname set to <localhost>.
+[   12.617945] systemd[1]: bpf-restrict-fs: Failed to load BPF object: No such process
+[   12.784283] systemd[1]: Queued start job for default target initrd.target.
+[   12.848100] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[  OK  ] Created slice system-modprobe.slice - Slice /system/modprobe.
+[   12.874185] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[  OK  ] Started systemd-ask-password-conso…equests to Console Directory Watch.
+[   12.904061] systemd[1]: Expecting device dev-disk-by\x2duuid-3c7c2b87\x2d67c7\x2d478b\x2da1bf\x2d3f9dd49803dc.device - /dev/disk/by-uuid/3c7c2b8
+7-67c7-478b-a1bf-3f9dd49803dc...
+         Expecting device dev-disk-by\x2duu…2b87-67c7-478b-a1bf-3f9dd49803dc...
+[   12.944098] systemd[1]: Reached target initrd-usr-fs.target - Initrd /usr File System.
+[  OK  ] Reached target initrd-usr-fs.target - Initrd /usr File System.
+[   12.974075] systemd[1]: Reached target paths.target - Path Units.
+[  OK  ] Reached target paths.target - Path Units.
+[   12.994094] systemd[1]: Reached target slices.target - Slice Units.
+[  OK  ] Reached target slices.target - Slice Units.
+[   13.014088] systemd[1]: Reached target swap.target - Swaps.
+[  OK  ] Reached target swap.target - Swaps.
+[   13.034073] systemd[1]: Reached target timers.target - Timer Units.
+[  OK  ] Reached target timers.target - Timer Units.
+[   13.054233] systemd[1]: Listening on dbus.socket - D-Bus System Message Bus Socket.
+[  OK  ] Listening on dbus.socket - D-Bus System Message Bus Socket.
+[   13.084147] systemd[1]: Listening on iscsid.socket - Open-iSCSI iscsid Socket.
+[  OK  ] Listening on iscsid.socket - Open-iSCSI iscsid Socket.
+[   13.114159] systemd[1]: Listening on iscsiuio.socket - Open-iSCSI iscsiuio Socket.
+[  OK  ] Listening on iscsiuio.socket - Open-iSCSI iscsiuio Socket.
+[   13.144273] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[  OK  ] Listening on systemd-journald-dev-…socket - Journal Socket (/dev/log).
+[   13.174265] systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[  OK  ] Listening on systemd-journald.socket - Journal Sockets.
+[   13.204240] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[  OK  ] Listening on systemd-udevd-control.socket - udev Control Socket.
+[   13.234182] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[  OK  ] Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[   13.264078] systemd[1]: Reached target sockets.target - Socket Units.
+[  OK  ] Reached target sockets.target - Socket Units.
+[   13.286287] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+         Starting kmod-static-nodes.service…eate [   13.295595] systemd[1]: memstrack.service - Memstrack Anylazing Service was skipped because no
+trigger condition checks were met.
+List of Static Device Nodes...
+[   13.314869] systemd[1]: Starting modprobe@dm_multipath.service - Load Kernel Module dm_multipath...
+         Starting modprobe@dm_multipath.ser… Load[   13.334245] systemd[1]: multipathd-configure.service - Device-Mapper Multipath Default Configur
+ation was skipped because of an unmet condition check (ConditionKernelCommandLine=rd.multipath=default).
+ Kernel Module dm_multipath...
+[   13.358021] systemd[1]: systemd-battery-check.service - Check battery level during early boot was skipped because of an unmet condition check (C
+onditionDirectoryNotEmpty=/sys/class/power_supply).
+[   13.388472] systemd[1]: Starting systemd-journald.service - Journal Service...
+         Starting systemd-journald.service - Journa[   13.398548] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+l Service...
+         Starting systemd-modules-load.service - Load Kernel Modules...
+[   13.454231] systemd[1]: systemd-pcrphase-initrd.service - TPM PCR Barrier (initrd) was skipped because of an unmet condition check (ConditionSec
+urity=measured-uki).
+[   13.469249] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
+[  OK  ] Reached target cryptsetup.target   13.477376] i2c_dev: i2c /dev entries driver
+m - Local Encrypted Volumes.
+[   13.485030] systemd-journald[236]: Collecting audit messages is disabled.
+[   13.498554] device-mapper: core: CONFIG_IMA_DISABLE_HTABLE is disabled. Duplicate IMA measurements will not be recorded in the IMA log.
+[   13.511030] device-mapper: uevent: version 1.0.3
+[   13.515977] systemd[1]: Starting systemd-vconsole-setup.service - Virtual Console Setup...
+[   13.516119] device-mapper: ioctl: 4.50.0-ioctl (2025-04-28) initialised: dm-devel@lists.linux.dev
+         Starting systemd-vconsole-setup.service - [   13.535677] systemd[1]: Started systemd-journald.service - Journal Service.
+Virtual Console Setup...
+[  OK  ] Started systemd-journald.service - Journal Service.
+[  OK  ] Finished kmod-static-nodes.service…Create List of Static Device Nodes.
+[  OK  ] Finished modprobe@dm_multipath.ser… - Load Kernel Module dm_multipath.
+[  OK  ] Finished systemd-modules-load.service - Load Kernel Modules.
+         Starting systemd-sysctl.service - Apply Kernel Variables...
+         Starting systemd-tmpfiles-setup-de… Device Nodes in /dev gracefully...
+[  OK  ] Finished systemd-sysctl.service - Apply Kernel Variables.
+[  OK  ] Finished systemd-tmpfiles-setup-de…ic Device Nodes in /dev gracefully.
+         Starting systemd-sysusers.service - Create System Users...
+[  OK  ] Finished systemd-sysusers.service - Create System Users.
+         Starting systemd-tmpfiles-setup-de…eate Static Device Nodes in /dev...
+         Starting systemd-tmpfiles-setup.se…ate System Files and Directories...
+[  OK  ] Finished systemd-tmpfiles-setup-de…Create Static Device Nodes in /dev.
+[  OK  ] Reached target local-fs-pre.target…Preparation for Local File Systems.
+[  OK  ] Reached target local-fs.target - Local File Systems.
+[  OK  ] Finished systemd-tmpfiles-setup.se…reate System Files and Directories.
+[  OK  ] Finished systemd-vconsole-setup.service - Virtual Console Setup.
+         Starting dracut-cmdline.service - dracut cmdline hook...
+[   14.150930] Loading iSCSI transport class v2.0-870.
+[   14.215991] iscsi: registered transport (tcp)
+[   14.290759] libcxgbi:libcxgbi_init_module: Chelsio iSCSI driver library libcxgbi v0.9.1-ko (Apr. 2015)
+[   14.743703] Chelsio T4-T6 iSCSI Driver cxgb4i v0.9.5-ko (Apr. 2015)
+[   14.750253] iscsi: registered transport (cxgb4i)
+[   14.851284] iscsi: registered transport (be2iscsi)
+[   14.856162] In beiscsi_module_init, tt=00000000ba78819d
+[  OK  ] Finished dracut-cmdline.service - dracut cmdline hook.
+         Starting dracut-pre-udev.service - dracut pre-udev hook...
+[   15.554665] RPC: Registered named UNIX socket transport module.
+[   15.560680] RPC: Registered udp transport module.
+[   15.565468] RPC: Registered tcp transport module.
+[   15.570235] RPC: Registered tcp-with-tls transport module.
+[   15.575801] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[  OK  ] Finished dracut-pre-udev.service - dracut pre-udev hook.
+         Starting systemd-udevd.service - R…ager for Device Events and Files...
+[  OK  ] Started systemd-udevd.service - Ru…anager for Device Events and Files.
+         Starting dracut-pre-trigger.service - dracut pre-trigger hook...
+[  OK  ] Finished dracut-pre-trigger.service - dracut pre-trigger hook.
+         Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+         Starting modprobe@configfs.service - Load Kernel Module configfs...
+[  OK  ] Finished systemd-udev-trigger.service - Coldplug All udev Devices.
+[  OK  ] Reached target network.target - Network.
+[   16.440511] k3_tsensor: loading out-of-tree module taints kernel.
+[   16.440568] i2c_k1: loading out-of-tree module taints kernel.
+[   16.446739] k3_tsensor: module verification failed: signature and/or required key missing - tainting kernel
+         Starting dracut-initqueue.service - dracut[   16.471064] gpio gpiochip0: (PRP0001:06): not an immutable chip, please consider fixing it!
+ initqueue hook...
+[   16.485169] Key type psk registered
+[   16.485917] spacemit-gpio PRP0001:06: ACPI gpiochip: 128 pins (4 banks x 32), pin = bank*32+offset
+[  OK  ] Finished modprobe@configfs.service - Load Kernel Module configf[   16.509884] rtc-efi rtc-efi.0: registered as rtc0
+s.
+[   16.520312] rtc-efi rtc-efi.0: setting system clock to 2026-11-20T12:07:18 UTC (1795176438)
+         Mounting sys-kernel-config.mount - Kernel Configuration File System...
+[  OK  ] Mounted sys-kernel-config.mount - Kernel Configuration File System.
+[  OK  ] Reached target sysinit.target - System Initialization.
+[  OK  ] Reached target basic.target - Basic System.
+[   16.627873] xhci-hcd xhci-hcd.2.auto: xHCI Host Controller
+[   16.637249] xhci-hcd xhci-hcd.2.auto: new USB bus registered, assigned bus number 1
+[   16.645520] xhci-hcd xhci-hcd.2.auto: USB3 root hub has no ports
+[   16.651626] xhci-hcd xhci-hcd.2.auto: hcc params 0x0220fe6d hci version 0x110 quirks 0x0000808000000010
+[   16.661242] xhci-hcd xhci-hcd.2.auto: irq 14, io mem 0xc0a00000
+[  OK  ] Stopped systemd-vconsole-setup.serv[   16.667709] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.12
+ice - Virtual Console Setup.
+[   16.668112] nvme 0000:00:00.0: can't derive routing for PCI INT A
+[   16.681382] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[   16.681387] usb usb1: Product: xHCI Host Controller
+[   16.681391] usb usb1: Manufacturer: Linux 6.12.0-dbg1 xhci-hcd
+[   16.681394] usb usb1: SerialNumber: xhci-hcd.2.auto
+[   16.681976] hub 1-0:1.0: USB hub found
+[   16.688645] cros_ec_espi PRP0001:01: Chrome EC device registered
+[   16.690687] nvme 0000:00:00.0: PCI INT A: no GSI
+[   16.699829] hub 1-0:1.0: 1 port detected
+[   16.705313] nvme nvme0: pci function 0000:00:00.0
+         Stopping systemd-vconsole-setup.service - Virtual Console Setup...
+         Starting systemd-vconsole-setup.service - Virtual Console Setup...
+[   16.864054] nvme nvme0: missing or invalid SUBNQN field.
+[   16.882451] nvme nvme0: allocated 64 MiB host memory buffer (16 segments).
+[  OK  ] Finished systemd-vconsole-setup.service - Virtual Console Setup.
+[   17.004028] usb 1-1: new high-speed USB device number 2 using xhci-hcd
+[   17.121399] nvme 0000:00:00.0: can't derive routing for PCI INT A
+[   17.127597] nvme 0000:00:00.0: PCI INT A: no GSI
+[   17.164209] usb 1-1: New USB device found, idVendor=1a40, idProduct=0101, bcdDevice= 1.11
+[   17.172507] usb 1-1: New USB device strings: Mfr=0, Product=1, SerialNumber=0
+[   17.179761] usb 1-1: Product: USB 2.0 Hub
+[   17.243672] hub 1-1:1.0: USB hub found
+[   17.247512] hub 1-1:1.0: 4 ports detected
+[   17.266901] nvme nvme0: 8/0/0 default/read/poll queues
+[   17.278233]  nvme0n1: p1 p2
+[   17.300081] spacemit-dwmac PRP0001:05: User ID: 0x10, Synopsys ID: 0x54
+[   17.306819] spacemit-dwmac PRP0001:05: 	DWMAC4/5
+[   17.311500] spacemit-dwmac PRP0001:05: DMA HW capability register supported
+[   17.318582] spacemit-dwmac PRP0001:05: RX Checksum Offload Engine supported
+[   17.325654] spacemit-dwmac PRP0001:05: TX Checksum insertion supported
+[   17.332276] spacemit-dwmac PRP0001:05: Wake-Up On Lan supported
+[   17.338344] spacemit-dwmac PRP0001:05: TSO supported
+[   17.343376] spacemit-dwmac PRP0001:05: Enable RX Mitigation via HW Watchdog Timer
+[   17.350977] spacemit-dwmac PRP0001:05: device MAC address 50:0a:52:0d:1a:2b
+[   17.358045] spacemit-dwmac PRP0001:05: Enabled L3L4 Flow TC (entries=4)
+[   17.364762] spacemit-dwmac PRP0001:05: Enabled RFS Flow TC (entries=10)
+[   17.371478] spacemit-dwmac PRP0001:05: Enabling HW TC (entries=256, max_off=256)
+[   17.378982] spacemit-dwmac PRP0001:05: SPH feature enabled
+[   17.384547] spacemit-dwmac PRP0001:05: Using 40/40 bits DMA host/device width
+[  OK  ] Found device dev-disk-by\x2duuid-3…ice - HP SSD EX900 Plus 256GB RHEL.
+[  OK  ] Reached target initrd-root-device.target - Initrd Root Device.
+[  OK  ] Finished dracut-initqueue.service - dracut initqueue hook.
+[  OK  ] Reached target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Reached target remote-cryptsetup.target - Remote Encrypted Volumes.
+[   17.652976] RTL8211F Gigabit Ethernet stmmac-0:00: attached PHY driver (mii_bus:phy_addr=stmmac-0:00, irq=POLL)
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+[   17.668894] spacemit-dwmac PRP0001:05 enaprp1i5: renamed from eth0
+         Starting dracut-pre-mount.service - dracut pre-mount hook...
+[  OK  ] Finished dracut-pre-mount.service - dracut pre-mount hook.
+         Starting systemd-fsck-root.service…2b87-67c7-478b-a1bf-3f9dd49803dc...
+[  OK  ] Finished systemd-fsck-root.service…7c2b87-67c7-478b-a1bf-3f9dd49803dc.
+         Mounting sysroot.mount - /sysroot...
+[   49.226213] SGI XFS with ACLs, security attributes, scrub, quota, no debug enabled
+[   49.250779] XFS (nvme0n1p2): Mounting V5 Filesystem 3c7c2b87-67c7-478b-a1bf-3f9dd49803dc
+[   49.283508] XFS (nvme0n1p2): Ending clean mount
+[  OK  ] Mounted sysroot.mount - /sysroot.
+[  OK  ] Reached target initrd-root-fs.target - Initrd Root File System.
+         Starting initrd-parse-etc.service …ints Configured in the Real Root...
+[  OK  ] Finished initrd-parse-etc.service …points Configured in the Real Root.
+[  OK  ] Reached target initrd-fs.target - Initrd File Systems.
+[  OK  ] Reached target initrd.target - Initrd Default Target.
+         Starting dracut-pre-pivot.service …racut pre-pivot and cleanup hook...
+[   49.478259] dracut-pre-pivot[672]: 49.477665 | /etc/multipath.conf does not exist, blacklisting all devices.
+[   49.500211] dracut-pre-pivot[672]: 49.477694 | You can run "/sbin/mpathconf --enable" to create
+[   49.530110] dracut-pre-pivot[672]: 49.477704 | /etc/multipath.conf. See man mpathconf(8) for more details
+[  OK  ] Finished dracut-pre-pivot.service - dracut pre-pivot and cleanup hook.
+[   49.560199] dracut-pre-pivot[672]: 49.478190 | updated bindings file /etc/multipath/bindings
+         Starting initrd-cleanup.service - …ing Up and Shutting Down Daemons...
+[  OK  ] Stopped target network.target - Network.
+[  OK  ] Stopped target remote-cryptsetup.target - Remote Encrypted Volumes.
+[  OK  ] Stopped target timers.target - Timer Units.
+[  OK  ] Closed dbus.socket - D-Bus System Message Bus Socket.
+[  OK  ] Stopped dracut-pre-pivot.service - dracut pre-pivot and cleanup hook.
+[  OK  ] Stopped target initrd.target - Initrd Default Target.
+[  OK  ] Stopped target basic.target - Basic System.
+[  OK  ] Stopped target initrd-root-device.target - Initrd Root Device.
+[  OK  ] Stopped target initrd-usr-fs.target - Initrd /usr File System.
+[  OK  ] Stopped target paths.target - Path Units.
+[  OK  ] Stopped target remote-fs.target - Remote File Systems.
+[  OK  ] Stopped target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Stopped target slices.target - Slice Units.
+[  OK  ] Stopped target sockets.target - Socket Units.
+[  OK  ] Stopped target sysinit.target - System Initialization.
+[  OK  ] Stopped target local-fs.target - Local File Systems.
+[  OK  ] Stopped target local-fs-pre.target…Preparation for Local File Systems.
+[  OK  ] Stopped target swap.target - Swaps.
+[  OK  ] Closed iscsid.socket - Open-iSCSI iscsid Socket.
+[  OK  ] Closed iscsiuio.socket - Open-iSCSI iscsiuio Socket.
+[  OK  ] Stopped dracut-pre-mount.service - dracut pre-mount hook.
+[  OK  ] Stopped target cryptsetup.target - Local Encrypted Volumes.
+[  OK  ] Stopped systemd-ask-password-conso…equests to Console Directory Watch.
+[  OK  ] Stopped dracut-initqueue.service - dracut initqueue hook.
+[  OK  ] Stopped systemd-sysctl.service - Apply Kernel Variables.
+[  OK  ] Stopped systemd-modules-load.service - Load Kernel Modules.
+[  OK  ] Stopped systemd-tmpfiles-setup.ser…reate System Files and Directories.
+[  OK  ] Stopped systemd-udev-trigger.service - Coldplug All udev Devices.
+[  OK  ] Stopped dracut-pre-trigger.service - dracut pre-trigger hook.
+         Stopping systemd-udevd.service - R…ager for Device Events and Files...
+[  OK  ] Stopped systemd-vconsole-setup.service - Virtual Console Setup.
+[  OK  ] Stopped systemd-udevd.service - Ru…anager for Device Events and Files.
+[  OK  ] Finished initrd-cleanup.service - …aning Up and Shutting Down Daemons.
+[  OK  ] Closed systemd-udevd-control.socket - udev Control Socket.
+[  OK  ] Closed systemd-udevd-kernel.socket - udev Kernel Socket.
+[  OK  ] Stopped dracut-pre-udev.service - dracut pre-udev hook.
+[  OK  ] Stopped dracut-cmdline.service - dracut cmdline hook.
+         Starting initrd-udevadm-cleanup-db.service - Cleanup udev Database...
+[  OK  ] Stopped systemd-tmpfiles-setup-dev…Create Static Device Nodes in /dev.
+[  OK  ] Stopped systemd-sysusers.service - Create System Users.
+[  OK  ] Stopped systemd-tmpfiles-setup-dev…ic Device Nodes in /dev gracefully.
+[  OK  ] Stopped kmod-static-nodes.service …Create List of Static Device Nodes.
+[  OK  ] Finished initrd-udevadm-cleanup-db.service - Cleanup udev Database.
+[  OK  ] Reached target initrd-switch-root.target - Switch Root.
+         Starting initrd-switch-root.service - Switch Root...
+[   51.047726] systemd-journald[236]: Received SIGTERM from PID 1 (systemd).
+[   51.353239] audit: type=1404 audit(1795176473.320:2): enforcing=1 old_enforcing=0 auid=4294967295 ses=4294967295 enabled=1 old-enabled=1 lsm=sel
+inux res=1
+[   51.675257] SELinux:  policy capability network_peer_controls=1
+[   51.681268] SELinux:  policy capability open_perms=1
+[   51.686311] SELinux:  policy capability extended_socket_class=1
+[   51.692313] SELinux:  policy capability always_check_network=0
+[   51.698232] SELinux:  policy capability cgroup_seclabel=1
+[   51.703704] SELinux:  policy capability nnp_nosuid_transition=1
+[   51.709703] SELinux:  policy capability genfs_seclabel_symlinks=1
+[   51.715886] SELinux:  policy capability ioctl_skip_cloexec=0
+[   51.721618] SELinux:  policy capability userspace_initial_context=0
+[   51.882844] audit: type=1403 audit(1795176473.850:3): auid=4294967295 ses=4294967295 lsm=selinux res=1
+[   51.909260] systemd[1]: Successfully loaded SELinux policy in 533.282ms.
+[   51.955520] systemd[1]: Relabeled /dev/, /dev/shm/, /run/ in 26.707ms.
+[   51.984071] systemd[1]: systemd 257-33.el10-g945f55a running in system mode (+PAM +AUDIT +SELINUX -APPARMOR +IMA +IPE +SMACK +SECCOMP -GCRYPT -G
+NUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN -IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT
+-QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF +XKBCOMMON +UTMP +SYSVINIT +LIBARCHIVE)
+[   52.019330] systemd[1]: Detected architecture riscv64.
+
+Welcome to Red Hat Enterprise Linux 10.3 (Coughlan)!
+
+[   52.297732] systemd[1]: bpf-restrict-fs: Failed to load BPF object: No such process
+[   52.478815] systemd-rc-local-generator[722]: /etc/rc.d/rc.local is not marked executable, skipping.
+[   53.018020] systemd[1]: initrd-switch-root.service: Deactivated successfully.
+[   53.025768] systemd[1]: Stopped initrd-switch-root.service - Switch Root.
+[  OK  ] Stopped initrd-switch-root.service - Switch Root.
+[   53.057355] systemd[1]: systemd-journald.service: Scheduled restart job, restart counter is at 1.
+[   53.068029] systemd[1]: Created slice machine.slice - Virtual Machine and Container Slice.
+[  OK  ] Created slice machine.slice - Virtual Machine and Container Slice.
+[   53.095537] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[  OK  ] Created slice system-getty.slice - Slice /system/getty.
+[   53.125329] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[  OK  ] Created slice system-serial\x2dget…slice - Slice /system/serial-getty.
+[   53.155302] systemd[1]: Created slice system-sshd\x2dkeygen.slice - Slice /system/sshd-keygen.
+[  OK  ] Created slice system-sshd\x2dkeygen.slice - Slice /system/sshd-keygen.
+[   53.185206] systemd[1]: Created slice user.slice - User and Session Slice.
+[  OK  ] Created slice user.slice - User and Session Slice.
+[   53.214339] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[  OK  ] Started systemd-ask-password-conso…equests to Console Directory Watch.
+[   53.244227] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[  OK  ] Started systemd-ask-password-wall.…d Requests to Wall Directory Watch.
+[   53.288197] systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.
+[  OK  ] Set up automount proc-sys-fs-binfm…ormats File System Automount Point.
+[   53.324089] systemd[1]: Expecting device dev-disk-by\x2duuid-2D9D\x2d0EBA.device - /dev/disk/by-uuid/2D9D-0EBA...
+         Expecting device dev-disk-by\x2duu…ce - /dev/disk/by-uuid/2D9D-0EBA...
+[   53.354062] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+         Expecting device dev-ttyS0.device - /dev/ttyS0...
+[   53.374082] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
+[  OK  ] Reached target cryptsetup.target - Local Encrypted Volumes.
+[   53.404111] systemd[1]: Stopped target initrd-switch-root.target - Switch Root.
+[  OK  ] Stopped target initrd-switch-root.target - Switch Root.
+[   53.434083] systemd[1]: Stopped target initrd-fs.target - Initrd File Systems.
+[  OK  ] Stopped target initrd-fs.target - Initrd File Systems.
+[   53.464071] systemd[1]: Stopped target initrd-root-fs.target - Initrd Root File System.
+[  OK  ] Stopped target initrd-root-fs.target - Initrd Root File System.
+[   53.494084] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+[  OK  ] Reached target integritysetup.targ… Local Integrity Protected Volumes.
+[   53.524166] systemd[1]: Reached target rpc_pipefs.target.
+[  OK  ] Reached target rpc_pipefs.target.
+[   53.544092] systemd[1]: Reached target slices.target - Slice Units.
+[  OK  ] Reached target slices.target - Slice Units.
+[   53.564105] systemd[1]: Reached target swap.target - Swaps.
+[  OK  ] Reached target swap.target - Swaps.
+[   53.584091] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+[  OK  ] Reached target veritysetup.target - Local Verity Protected Volumes.
+[   53.614929] systemd[1]: Listening on dm-event.socket - Device-mapper event daemon FIFOs.
+[  OK  ] Listening on dm-event.socket - Device-mapper event daemon FIFOs.
+[   53.659530] systemd[1]: Listening on lvm2-lvmpolld.socket - LVM2 poll daemon socket.
+[  OK  ] Listening on lvm2-lvmpolld.socket - LVM2 poll daemon socket.
+[   53.688479] systemd[1]: Listening on systemd-coredump.socket - Process Core Dump Socket.
+[  OK  ] Listening on systemd-coredump.socket - Process Core Dump Socket.
+[   53.716767] systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[  OK  ] Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[   53.744438] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[  OK  ] Listening on systemd-initctl.socke…- initctl Compatibility Named Pipe.
+[   53.774126] systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements was skipped because of an unmet condition check (ConditionSecurity=measu
+red-uki).
+[   53.788122] systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy was skipped because of an unmet condition check (ConditionSecurity=measured
+-uki).
+[   53.803616] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[  OK  ] Listening on systemd-udevd-control.socket - udev Control Socket.
+[   53.834758] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[  OK  ] Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[   53.864815] systemd[1]: Listening on systemd-userdbd.socket - User Database Manager Socket.
+[  OK  ] Listening on systemd-userdbd.socket - User Database Manager Socket.
+[   53.897445] systemd[1]: Mounting dev-hugepages.mount - Huge Pages File System...
+         Mounting dev-hugepages.mount - Huge Pages [   53.907455] systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+File System...
+         Mounting dev-mqueue.mount - POSIX Message [   53.946527] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+Queue File System...
+         Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[   54.006166] systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...
+         Mounting sys-kernel-tracing.mount - Kernel[   54.014726] systemd[1]: auth-rpcgss-module.service - Kernel Module supporting RPCSEC_GSS was
+skipped because of an unmet condition check (ConditionPathExists=/etc/krb5.keytab).
+ Trace File System...
+[   54.036306] systemd[1]: fips-crypto-policy-overlay.service - Bind-mount FIPS crypto-policy in FIPS mode was skipped because of an unmet conditio
+n check (ConditionKernelCommandLine=fips=1).
+[   54.055756] systemd[1]: iscsi-starter.service was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/var/lib/iscsi/nodes).
+[   54.072383] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+         Starting kmod-static-nodes.service…eate List of Static Device Nodes...
+[   54.107448] systemd[1]: Starting lvm2-monitor.service - Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling...
+         Starting lvm2-monitor.service - Mo…ing d[   54.122424] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+meventd or progress polling...
+         Starting modprobe@configfs.service - Load [   54.156452] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+Kernel Module configfs...
+         Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+[   54.197086] systemd[1]: Starting modprobe@dm_multipath.service - Load Kernel Module dm_multipath...
+[   54.216914] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+
+         Starting modprobe@drm.service - Load Kernel Module drm...
+[   54.257100] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+         Starting modprobe@efi_pstore.servi… - Load Kernel Module efi_pstore...
+[   54.297212] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+         Starting modprobe@fuse.service - Load Kern[   54.307436] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
+el Module fuse...
+         Starting modprobe@loop.service - Load Kern[   54.334637] systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info
+was skipped because of an unmet condition check (ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc
+67).
+el Module loop...
+[   54.367601] systemd[1]: Starting systemd-journald.service - Journal Service...
+         Starting systemd-journald.service - Journal Service...
+[   54.387743] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[   54.409633] loop: module loaded
+         Starting systemd-modules-load.service - Load Kernel Modules...
+[   54.416989] systemd[1]: Starting systemd-network-generator.service - Generate network units from Kernel command line...
+         Starting systemd-network-generator…k uni[   54.444344] systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement was skipped
+ because of an unmet condition check (ConditionSecurity=measured-uki).
+ts from Kernel command line...
+[   54.467399] fuse: init (API version 7.41)
+[   54.472497] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[   54.477432] systemd-journald[756]: Collecting audit messages is disabled.
+         Starting systemd-remount-fs.servic…unt R[   54.494383] systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup was skipped beca
+use of an unmet condition check (ConditionSecurity=measured-uki).
+oot and Kernel File Systems...
+[   54.517439] systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[   54.547271] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+
+         Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[   54.593772] systemd[1]: Started systemd-journald.service - Journal Service.
+[  OK  ] Started systemd-journald.service - Journal Service.
+[  OK  ] Mounted dev-hugepages.mount - Huge Pages File System.
+[  OK  ] Mounted dev-mqueue.mount - POSIX Message Queue File System.
+[  OK  ] Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[  OK  ] Mounted sys-kernel-tracing.mount - Kernel Trace File System.
+[  OK  ] Finished kmod-static-nodes.service…Create List of Static Device Nodes.
+[  OK  ] Finished lvm2-monitor.service - Mo…using dmeventd or progress polling.
+[  OK  ] Finished modprobe@configfs.service - Load Kernel Module configfs.
+[  OK  ] Finished modprobe@dm_mod.service - Load Kernel Module dm_mod.
+[  OK  ] Finished modprobe@dm_multipath.ser… - Load Kernel Module dm_multipath.
+[  OK  ] Finished modprobe@drm.service - Load Kernel Module drm.
+[  OK  ] Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[  OK  ] Finished modprobe@fuse.service - Load Kernel Module fuse.
+[  OK  ] Finished modprobe@loop.service - Load Kernel Module loop.
+[  OK  ] Finished systemd-modules-load.service - Load Kernel Modules.
+[  OK  ] Finished systemd-network-generator…ork units from Kernel command line.
+[  OK  ] Finished systemd-remount-fs.servic…mount Root and Kernel File Systems.
+[  OK  ] Finished systemd-udev-load-credent…- Load udev Rules from Credentials.
+[  OK  ] Finished systemd-udev-trigger.service - Coldplug All udev Devices.
+         Mounting sys-fs-fuse-connections.mount - FUSE Control File System...
+         Starting systemd-journal-flush.ser…sh Journal to Persistent Storage...
+         Starting systemd-random-seed.service - Load/Save OS Random Seed...
+[   55.174709] systemd-journald[756]: Received client request to flush runtime journal.
+         Starting systemd-repart.service - Repartition Root Disk...
+         Starting systemd-sysctl.service - Apply Kernel Variables...
+         Starting systemd-tmpfiles-setup-de… Device Nodes in /dev gracefully...
+[  OK  ] Mounted sys-fs-fuse-connections.mount - FUSE Control File System.
+[  OK  ] Finished systemd-journal-flush.ser…lush Journal to Persistent Storage.
+[  OK  ] Finished systemd-random-seed.service - Load/Save OS Random Seed.
+[  OK  ] Finished systemd-repart.service - Repartition Root Disk.
+[  OK  ] Finished systemd-sysctl.service - Apply Kernel Variables.
+[  OK  ] Finished systemd-tmpfiles-setup-de…ic Device Nodes in /dev gracefully.
+         Starting systemd-growfs-root.service - Grow Root File System...
+         Starting systemd-tmpfiles-setup-de…eate Static Device Nodes in /dev...
+[  OK  ] Finished systemd-growfs-root.service - Grow Root File System.
+[  OK  ] Finished systemd-tmpfiles-setup-de…Create Static Device Nodes in /dev.
+         Starting systemd-udevd.service - R…ager for Device Events and Files...
+[  OK  ] Started systemd-udevd.service - Ru…anager for Device Events and Files.
+         Starting modprobe@configfs.service - Load Kernel Module configfs...
+[  OK  ] Reached target local-fs-pre.target…Preparation for Local File Systems.
+[  OK  ] Listening on systemd-importd.socke…Disk Image Download Service Socket.
+         Mounting boot-efi.mount - /boot/efi...
+[  OK  ] Finished modprobe@configfs.service - Load Kernel Module configfs.
+[   55.930746] at24 i2c-PRP0001:08: supply vcc not found, using dummy regulator
+[   55.942366] at24 i2c-PRP0001:08: 256 byte 24c02 EEPROM, read-only
+         Starting systemd-vconsole-setup.service - Virtual Console Setup...
+[   56.059008] FAT-fs (nvme0n1p1): Volume was not properly unmounted. Some data may be corrupt. Please run fsck.
+[  OK  ] Mounted boot-efi.mount - /boot/efi.
+[  OK  ] Reached target local-fs.target - Local File Systems.
+[  OK  ] Listening on systemd-bootctl.socket - Boot Entries Service Socket.
+[  OK  ] Listening on systemd-sysext.socket… System Extension Image Management.
+         Starting systemd-tmpfiles-setup.se…ate System Files and Directories...
+[  OK  ] Finished systemd-vconsole-setup.service - Virtual Console Setup.
+[  OK  ] Finished systemd-tmpfiles-setup.se…reate System Files and Directories.
+         Starting auditd.service - Security Audit Logging Service...
+[  OK  ] Started auditd.service - Security Audit Logging Service.
+         Starting audit-rules.service - Load Audit Rules...
+         Starting systemd-update-utmp.servi…ord System Boot/Shutdown in UTMP...
+[  OK  ] Finished systemd-update-utmp.servi…ecord System Boot/Shutdown in UTMP.
+[  OK  ] Finished audit-rules.service - Load Audit Rules.
+[  OK  ] Reached target sysinit.target - System Initialization.
+[  OK  ] Started cups.path - CUPS Scheduler.
+[  OK  ] Started dnf-makecache.timer - dnf makecache --timer.
+[  OK  ] Started fstrim.timer - Discard unused filesystem blocks once a week.
+[  OK  ] Started fwupd-refresh.timer - Refresh fwupd metadata regularly.
+[  OK  ] Started logrotate.timer - Daily rotation of log files.
+[  OK  ] Started plocate-updatedb.timer - Update the plocate database daily.
+[  OK  ] Started raid-check.timer - Weekly RAID setup health check.
+[  OK  ] Started systemd-tmpfiles-clean.tim…y Cleanup of Temporary Directories.
+[  OK  ] Started unbound-anchor.timer - dai…f the root trust anchor for DNSSEC.
+[  OK  ] Reached target paths.target - Path Units.
+[  OK  ] Reached target timers.target - Timer Units.
+[  OK  ] Listening on avahi-daemon.socket -…DNS/DNS-SD Stack Activation Socket.
+         Starting cockpit.socket - Cockpit Web Service Socket...
+[  OK  ] Listening on cups.socket - CUPS Scheduler.
+[  OK  ] Listening on dbus.socket - D-Bus System Message Bus Socket.
+[  OK  ] Listening on iscsid.socket - Open-iSCSI iscsid Socket.
+[  OK  ] Listening on iscsiuio.socket - Open-iSCSI iscsiuio Socket.
+[  OK  ] Listening on sshd-unix-local.socke…temd-ssh-generator, AF_UNIX Local).
+[  OK  ] Listening on sssd-kcm.socket - SSS…ros Cache Manager responder socket.
+[  OK  ] Listening on systemd-hostnamed.socket - Hostname Service Socket.
+[  OK  ] Listening on virtinterfaced.socket - libvirt interface daemon socket.
+[  OK  ] Listening on virtinterfaced-admin.…virt interface daemon admin socket.
+[  OK  ] Listening on virtinterfaced-ro.soc… interface daemon read-only socket.
+[  OK  ] Listening on virtlockd.socket - libvirt locking daemon socket.
+[  OK  ] Listening on virtlockd-admin.socke…ibvirt locking daemon admin socket.
+[  OK  ] Listening on virtlogd.socket - libvirt logging daemon socket.
+[  OK  ] Listening on virtlogd-admin.socket…ibvirt logging daemon admin socket.
+[  OK  ] Listening on virtnetworkd.socket - libvirt network daemon socket.
+[  OK  ] Listening on virtnetworkd-admin.so…ibvirt network daemon admin socket.
+[  OK  ] Listening on virtnetworkd-ro.socke…rt network daemon read-only socket.
+[  OK  ] Listening on virtnodedevd.socket - libvirt nodedev daemon socket.
+[  OK  ] Listening on virtnodedevd-admin.so…ibvirt nodedev daemon admin socket.
+[  OK  ] Listening on virtnodedevd-ro.socke…rt nodedev daemon read-only socket.
+[  OK  ] Listening on virtnwfilterd.socket - libvirt nwfilter daemon socket.
+[  OK  ] Listening on virtnwfilterd-admin.s…bvirt nwfilter daemon admin socket.
+[  OK  ] Listening on virtnwfilterd-ro.sock…t nwfilter daemon read-only socket.
+[  OK  ] Listening on virtproxyd.socket - libvirt proxy daemon socket.
+[  OK  ] Listening on virtproxyd-admin.sock… libvirt proxy daemon admin socket.
+[  OK  ] Listening on virtproxyd-ro.socket …virt proxy daemon read-only socket.
+[  OK  ] Listening on virtqemud.socket - libvirt QEMU daemon socket.
+[  OK  ] Listening on virtqemud-admin.socke…- libvirt QEMU daemon admin socket.
+[  OK  ] Listening on virtqemud-ro.socket -…bvirt QEMU daemon read-only socket.
+[  OK  ] Listening on virtsecretd.socket - libvirt secret daemon socket.
+[  OK  ] Listening on virtsecretd-admin.soc…libvirt secret daemon admin socket.
+[  OK  ] Listening on virtsecretd-ro.socket…irt secret daemon read-only socket.
+[  OK  ] Listening on virtstoraged.socket - libvirt storage daemon socket.
+[  OK  ] Listening on virtstoraged-admin.so…ibvirt storage daemon admin socket.
+[  OK  ] Listening on virtstoraged-ro.socke…rt storage daemon read-only socket.
+         Starting dbus-broker.service - D-Bus System Message Bus...
+[  OK  ] Listening on cockpit.socket - Cockpit Web Service Socket.
+[  OK  ] Reached target sockets.target - Socket Units.
+[  OK  ] Started dbus-broker.service - D-Bus System Message Bus.
+[  OK  ] Reached target basic.target - Basic System.
+         Starting avahi-daemon.service - Avahi mDNS/DNS-SD Stack...
+         Starting chronyd.service - NTP client/server...
+         Starting dracut-shutdown.service -…store /run/initramfs on shutdown...
+[  OK  ] Started firewalld.service - firewalld - dynamic firewall daemon.
+[  OK  ] Reached target network-pre.target - Preparation for Network.
+         Starting NetworkManager.service - Network Manager...
+         Starting foomaticrip-upgrade.servi…talled printers for foomatic-rip...
+[  OK  ] Started irqbalance.service - irqbalance daemon.
+[  OK  ] Started libstoragemgmt.service - libstoragemgmt plug-in server daemon.
+         Starting lm_sensors.service - Hardware Monitoring Sensors...
+         Starting polkit.service - Authorization Manager...
+         Starting rtkit-daemon.service - Re…imeKit Scheduling Policy Service...
+         Starting smartd.service - Self Mon…orting Technology (SMART) Daemon...
+[  OK  ] Reached target sshd-keygen.target.
+[  OK  ] Reached target nss-user-lookup.target - User and Group Name Lookups.
+         Starting accounts-daemon.service - Accounts Service...
+         Starting switcheroo-control.servic…Switcheroo Control Proxy service...
+         Starting systemd-logind.service - User Login Management...
+         Starting systemd-machined.service …d Container Registration Service...
+         Starting udisks2.service - Disk Manager...
+         Starting upower.service - Daemon for power management...
+[  OK  ] Started chronyd.service - NTP client/server.
+[  OK  ] Started smartd.service - Self Moni…eporting Technology (SMART) Daemon.
+[  OK  ] Started systemd-logind.service - User Login Management.
+[  OK  ] Finished dracut-shutdown.service - Restore /run/initramfs on shutdown.
+[  OK  ] Finished foomaticrip-upgrade.servi…nstalled printers for foomatic-rip.
+[  OK  ] Started rtkit-daemon.service - RealtimeKit Scheduling Policy Service.
+[  OK  ] Finished lm_sensors.service - Hardware Monitoring Sensors.
+[  OK  ] Started switcheroo-control.service - Switcheroo Control Proxy service.
+[  OK  ] Started systemd-machined.service -…and Container Registration Service.
+         Starting systemd-hostnamed.service - Hostname Service...
+         Starting systemd-userdbd.service - User Database Manager...
+[  OK  ] Started systemd-userdbd.service - User Database Manager.
+[  OK  ] Started systemd-hostnamed.service - Hostname Service.
+[  OK  ] Started avahi-daemon.service - Avahi mDNS/DNS-SD Stack.
+[  OK  ] Listening on systemd-rfkill.socket…ll Switch Status /dev/rfkill Watch.
+         Starting NetworkManager-dispatcher…anager Script Dispatcher Service...
+[   59.108513] spacemit-dwmac PRP0001:05 enaprp1i5: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   59.144121] spacemit-dwmac PRP0001:05 enaprp1i5: PHY [stmmac-0:00] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[  OK  ] Started polkit.service - Authorization Manager.
+[   59.164147] spacemit-dwmac PRP0001:05 enaprp1i5: No Safety Features support found
+[   59.172630] spacemit-dwmac PRP0001:05 enaprp1i5: Invalid PTP clock rate
+[   59.179388] spacemit-dwmac PRP0001:05 enaprp1i5: PTP init failed
+[   59.185520] spacemit-dwmac PRP0001:05 enaprp1i5: configuring for phy/rgmii-id link mode
+[  OK  ] Started accounts-daemon.service - Accounts Service.
+[  OK  ] Started NetworkManager-dispatcher.… Manager Script Dispatcher Service.
+[  OK  ] Started upower.service - Daemon for power management.
+[  OK  ] Started udisks2.service - Disk Manager.
+[  OK  ] Started NetworkManager.service - Network Manager.
+[  OK  ] Reached target network.target - Network.
+         Starting ModemManager.service - Modem Manager...
+         Starting NetworkManager-wait-onlin…ce - Network Manager Wait Online...
+         Starting cups.service - CUPS Scheduler...
+         Starting gssproxy.service - GSSAPI Proxy Daemon...
+         Starting sshd.service - OpenSSH server daemon...
+         Starting tuned.service - Dynamic System Tuning Daemon...
+[  OK  ] Started cups.service - CUPS Scheduler.
+[   59.567206] NET: Registered PF_QIPCRTR protocol family
+[  OK  ] Started gssproxy.service - GSSAPI Proxy Daemon.
+[  OK  ] Started sshd.service - OpenSSH server daemon.
+[  OK  ] Started ModemManager.service - Modem Manager.
+[  OK  ] Reached target nfs-client.target - NFS client services.
+[  OK  ] Reached target remote-fs-pre.targe…reparation for Remote File Systems.
+[  OK  ] Reached target remote-cryptsetup.target - Remote Encrypted Volumes.
+[  OK  ] Started tuned.service - Dynamic System Tuning Daemon.
+         Starting tuned-ppd.service - PPD-to-TuneD API Translation Daemon...
+[  OK  ] Started tuned-ppd.service - PPD-to-TuneD API Translation Daemon.
+[   62.385509] spacemit-dwmac PRP0001:05 enaprp1i5: Link is Up - 1Gbps/Full - flow control off
+[  OK  ] Finished NetworkManager-wait-onlin…vice - Network Manager Wait Online.
+[  OK  ] Reached target network-online.target - Network is Online.
+         Starting cockpit-issue.service - Cockpit issue updater service...
+[  OK  ] Reached target remote-fs.target - Remote File Systems.
+         Starting kdump.service - Crash recovery kernel arming...
+         Starting rpc-statd-notify.service - Notify NFS peers of a restart...
+         Starting rsyslog.service - System Logging Service...
+         Starting systemd-user-sessions.service - Permit User Sessions...
+         Starting virtqemud.service - libvirt QEMU daemon...
+[  OK  ] Started rpc-statd-notify.service - Notify NFS peers of a restart.
+[  OK  ] Started rsyslog.service - System Logging Service.
+[  OK  ] Finished systemd-user-sessions.service - Permit User Sessions.
+[  OK  ] Started virtqemud.service - libvirt QEMU daemon.
+[  OK  ] Started atd.service - Deferred execution scheduler.
+[  OK  ] Started crond.service - Command Scheduler.
+         Starting gdm.service - GNOME Display Manager...
+[  OK  ] Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[  OK  ] Reached target getty.target - Login Prompts.
+[  OK  ] Reached target multi-user.target - Multi-User System.
+[  OK  ] Finished cockpit-issue.service - Cockpit issue updater service.
+[  OK  ] Started gdm.service - GNOME Display Manager.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+         Starting systemd-update-utmp-runle…- Record Runlevel Change in UTMP...
+[  OK  ] Finished systemd-update-utmp-runle…e - Record Runlevel Change in UTMP.
+
+Red Hat Enterprise Linux 10.3 (Coughlan)
+Kernel 6.12.0-dbg1 on riscv64
+
+Web console: https://localhost:9090/ or https://192.168.137.146:9090/
+
+localhost login: root
+Password:
+Last login: Fri Nov 20 12:08:03 on ttyS0
+[root@localhost ~]#
+[root@localhost ~]#
+[root@localhost ~]# rpmi-hsm: hart 7 suspend type 0x80000000 failed: -2
+[  108.233111] watchdog: CPU6: Watchdog detected hard LOCKUP on cpu 7
+[  108.239388] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  108.239471] Sending NMI from CPU 6 to CPUs 7:
+
+Message from syslogd@localhost at Nov 20 12:12:34 ...
+ kernel:watchdog: CPU6: Watchdog detected hard LOCKUP on cpu 7
+[  124.233865] watchdog: BUG: soft lockup - CPU#5 stuck for 22s! [kworker/5:1:84]
+[  124.233871] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  124.233942] CPU: 5 UID: 0 PID: 84 Comm: kworker/5:1 Tainted: G           OE      ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  124.233948] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+[  124.233950] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  124.233953] Workqueue: events bpf_prog_free_deferred
+[  124.233962] epc : smp_call_function_many_cond+0x446/0x618
+[  124.233971]  ra : smp_call_function_many_cond+0x114/0x618
+[  124.233975] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc60076bb70
+[  124.233978]  gp : ffffffffb871f920 tp : ffffffd6028fa180 t0 : ffffffd9ffbd0b90
+[  124.233981]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60076bc60
+[  124.233983]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  124.233986]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17640
+[  124.233989]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  124.233991]  s2 : ffffffd9ffbd0b40 s3 : ffffffd9ffbd0b48 s4 : 00000000000004b5
+[  124.233994]  s5 : ffffffffb642d6d0 s6 : ffffffffb85f6380 s7 : 0000000000000000
+[  124.233997]  s8 : 0000000000000005 s9 : 0000000000000000 s10: 0000000000000000
+[  124.233999]  s11: 0000000000000001 t3 : 0000000000000008 t4 : ffffffd601fc1448
+[  124.234002]  t5 : 0000000000000000 t6 : 0000000000000024
+[  124.234004] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  124.234008] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  124.234014] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  124.234019] [<ffffffffb642d7ca>] flush_icache_all+0x42/0x5a
+[  124.234024] [<ffffffffb641f218>] patch_text_set_nosync+0x6e/0x78
+[  124.234029] [<ffffffffb643024c>] bpf_arch_text_invalidate+0x2a/0x4a
+[  124.234034] [<ffffffffb65dcc80>] bpf_prog_pack_free+0xde/0x22e
+[  124.234038] [<ffffffffb65dcf7e>] bpf_jit_binary_pack_free+0x16/0x44
+[  124.234042] [<ffffffffb64302ba>] bpf_jit_free+0x4e/0x9c
+[  124.234046] [<ffffffffb65dc5a4>] bpf_prog_free_deferred+0x13a/0x158
+[  124.234050] [<ffffffffb647d586>] process_one_work+0x146/0x33e
+[  124.234055] [<ffffffffb647df5e>] worker_thread+0x134/0x27e
+[  124.234058] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  124.234063] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  124.234068] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+[  136.234438] watchdog: BUG: soft lockup - CPU#1 stuck for 22s! [sshd-session:1614]
+[  136.234446] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  136.234521] CPU: 1 UID: 0 PID: 1614 Comm: sshd-session Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  136.234528] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  136.234530] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  136.234533] epc : smp_call_function_many_cond+0x154/0x618
+[  136.234541]  ra : smp_call_function_many_cond+0x114/0x618
+[  136.234545] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc601dab600
+[  136.234549]  gp : ffffffffb871f920 tp : ffffffd9f0db8000 t0 : ffffffd9ffb4cb90
+[  136.234551]  t1 : 000000000000009a t2 : 0000000000000000 s0 : ffffffc601dab6f0
+[  136.234554]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  136.234557]  a2 : 0000000000000005 a3 : 0000000000000001 a4 : ffffffd9ffc175c0
+[  136.234559]  a5 : 0000000000000011 a6 : 0000000000000002 a7 : ffffffffffffffff
+[  136.234562]  s2 : ffffffd9ffb4cb40 s3 : ffffffd9ffb4cb48 s4 : 0000000000000002
+[  136.234564]  s5 : ffffffffb642d3d0 s6 : 0000000000003000 s7 : 0000000000000000
+[  136.234567]  s8 : 0000000000000001 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  136.234570]  s11: 0000000000000001 t3 : ffffffffffffffff t4 : ffffffd6012b4730
+[  136.234572]  t5 : 0000000000000000 t6 : ffffffd6045d8068
+[  136.234575] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  136.234578] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  136.234584] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  136.234589] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  136.234593] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  136.234597] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  136.234603] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  136.234609] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  136.234613] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  136.234618] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  136.234621] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  136.234625] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  136.234629] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  136.234634] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  136.234639] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  136.234644] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  140.234610] watchdog: BUG: soft lockup - CPU#4 stuck for 22s! [systemd-journal:756]
+[  140.234616] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  140.234684] CPU: 4 UID: 0 PID: 756 Comm: systemd-journal Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  140.234691] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  140.234693] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  140.234695] epc : smp_call_function_many_cond+0x154/0x618
+[  140.234703]  ra : smp_call_function_many_cond+0x114/0x618
+[  140.234707] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc60136ba20
+[  140.234710]  gp : ffffffffb871f920 tp : ffffffd6029053c0 t0 : ffffffd9ffbafb90
+[  140.234713]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60136bb10
+[  140.234716]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  140.234718]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17620
+[  140.234721]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  140.234723]  s2 : ffffffd9ffbafb40 s3 : ffffffd9ffbafb48 s4 : 0000000000000005
+[  140.234726]  s5 : ffffffffb642d3d0 s6 : 0000000000001000 s7 : 0000000000000000
+[  140.234728]  s8 : 0000000000000004 s9 : 0000000000001000 s10: 0000000000000000
+[  140.234731]  s11: 0000000000000001 t3 : 0000000000000000 t4 : 0000000000000000
+[  140.234733]  t5 : 0000000000000000 t6 : ffffffd9f3cee000
+[  140.234736] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  140.234739] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  140.234744] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  140.234749] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  140.234753] [<ffffffffb642d4fe>] flush_tlb_page+0x18/0x20
+[  140.234757] [<ffffffffb66e29a6>] ptep_clear_flush+0x50/0x5c
+[  140.234762] [<ffffffffb66cda52>] wp_page_copy+0x28a/0x542
+[  140.234767] [<ffffffffb66cddac>] do_wp_page+0xa2/0x4b8
+[  140.234772] [<ffffffffb66d32e4>] handle_pte_fault+0x168/0x17c
+[  140.234777] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  140.234782] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  140.234787] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  140.234792] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  140.234797] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  144.234784] watchdog: BUG: soft lockup - CPU#6 stuck for 52s! [NetworkManager:927]
+[  144.234788] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  144.234861] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  144.234867] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  144.234869] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  144.234872] epc : smp_call_function_many_cond+0x446/0x618
+[  144.234881]  ra : smp_call_function_many_cond+0x114/0x618
+[  144.234885] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc6011e3960
+[  144.234888]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  144.234891]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  144.234894]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  144.234896]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  144.234899]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  144.234901]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  144.234904]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  144.234907]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  144.234909]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  144.234912]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  144.234914] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  144.234917] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  144.234923] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  144.234928] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  144.234933] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  144.234936] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  144.234940] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  144.234945] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  144.234950] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  144.234953] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  144.234957] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  144.234961] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  144.234966] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  149.054994] rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:
+[  149.061173] rcu: 	7-...0: (1 GPs behind) idle=2814/1/0x4000000000000000 softirq=1824/1824 fqs=2499
+[  149.070262] rcu: 	(detected by 5, t=6003 jiffies, g=2301, q=815 ncpus=8)
+[  149.077061] Sending NMI from CPU 5 to CPUs 7:
+[  159.077067] rcu: rcu_preempt kthread starved for 999 jiffies! g2301 f0x0 RCU_GP_DOING_FQS(6) ->state=0x0 ->cpu=0
+[  159.091792] rcu: 	Unless rcu_preempt kthread gets sufficient CPU time, OOM is now expected behavior.
+[  159.101048] rcu: RCU grace-period kthread stack dump:
+[  159.106162] task:rcu_preempt     state:I stack:0     pid:16    tgid:16    ppid:2      task_flags:0x208040 flags:0x00000000
+[  159.117367] Call Trace:
+[  159.119836] [<ffffffffb6f6fa16>] __schedule+0x298/0x86a
+[  159.125134] [<ffffffffb6f7000a>] schedule+0x22/0x94
+[  159.130079] [<ffffffffb6f759f2>] schedule_timeout+0x7e/0xfc
+[  159.135731] [<ffffffffb64fbcc2>] rcu_gp_fqs_loop+0x4e2/0x652
+[  159.141470] [<ffffffffb64ffd70>] rcu_gp_kthread+0x1ee/0x250
+[  159.147113] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  159.151970] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  159.158062] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+[  159.164419] rcu: Stack dump where RCU GP kthread last ran:
+[  159.169973] Sending NMI from CPU 5 to CPUs 0:
+[  159.174384] NMI backtrace for cpu 0 skipped: idling at default_idle_call+0x28/0xd4
+[  161.925566] rcu: INFO: rcu_preempt detected expedited stalls on CPUs/tasks: { 6-.... 7-...D } 6136 jiffies s: 917 root: 0xc0/.
+[  161.937143] rcu: blocking rcu_node structures (internal RCU debug):
+[  161.943494] Sending NMI from CPU 0 to CPUs 6:
+[  161.947918] NMI backtrace for cpu 6
+[  161.947923] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  161.947929] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  161.947931] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  161.947933] epc : smp_call_function_many_cond+0x446/0x618
+[  161.947939]  ra : smp_call_function_many_cond+0x114/0x618
+[  161.947944] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc6011e3960
+[  161.947947]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  161.947950]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  161.947953]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  161.947955]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  161.947958]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  161.947960]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  161.947963]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  161.947965]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  161.947968]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  161.947971]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  161.947973] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000009
+[  161.947976] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  161.947981] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  161.947986] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  161.947990] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  161.947994] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  161.947998] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  161.948003] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  161.948006] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  161.948010] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  161.948014] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  161.948018] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  161.948023] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  162.145182] Sending NMI from CPU 0 to CPUs 7:
+[  164.235655] watchdog: BUG: soft lockup - CPU#1 stuck for 48s! [sshd-session:1614]
+[  164.235660] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  164.235731] CPU: 1 UID: 0 PID: 1614 Comm: sshd-session Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  164.235737] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  164.235739] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  164.235741] epc : smp_call_function_many_cond+0x154/0x618
+[  164.235748]  ra : smp_call_function_many_cond+0x114/0x618
+[  164.235752] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc601dab600
+[  164.235755]  gp : ffffffffb871f920 tp : ffffffd9f0db8000 t0 : ffffffd9ffb4cb90
+[  164.235757]  t1 : 000000000000009a t2 : 0000000000000000 s0 : ffffffc601dab6f0
+[  164.235759]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  164.235761]  a2 : 0000000000000005 a3 : 0000000000000001 a4 : ffffffd9ffc175c0
+[  164.235763]  a5 : 0000000000000011 a6 : 0000000000000002 a7 : ffffffffffffffff
+[  164.235765]  s2 : ffffffd9ffb4cb40 s3 : ffffffd9ffb4cb48 s4 : 0000000000000002
+[  164.235768]  s5 : ffffffffb642d3d0 s6 : 0000000000003000 s7 : 0000000000000000
+[  164.235770]  s8 : 0000000000000001 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  164.235772]  s11: 0000000000000001 t3 : ffffffffffffffff t4 : ffffffd6012b4730
+[  164.235774]  t5 : 0000000000000000 t6 : ffffffd6045d8068
+[  164.235776] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  164.235778] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  164.235783] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  164.235788] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  164.235792] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  164.235796] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  164.235801] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  164.235805] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  164.235810] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  164.235814] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  164.235818] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  164.235822] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  164.235826] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  164.235830] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  164.235834] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  164.235839] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  168.235829] watchdog: BUG: soft lockup - CPU#4 stuck for 48s! [systemd-journal:756]
+[  168.235833] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  168.235900] CPU: 4 UID: 0 PID: 756 Comm: systemd-journal Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  168.235906] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  168.235908] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  168.235910] epc : smp_call_function_many_cond+0x154/0x618
+[  168.235916]  ra : smp_call_function_many_cond+0x114/0x618
+[  168.235920] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc60136ba20
+[  168.235923]  gp : ffffffffb871f920 tp : ffffffd6029053c0 t0 : ffffffd9ffbafb90
+[  168.235925]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60136bb10
+[  168.235928]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  168.235931]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17620
+[  168.235933]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  168.235936]  s2 : ffffffd9ffbafb40 s3 : ffffffd9ffbafb48 s4 : 0000000000000005
+[  168.235938]  s5 : ffffffffb642d3d0 s6 : 0000000000001000 s7 : 0000000000000000
+[  168.235941]  s8 : 0000000000000004 s9 : 0000000000001000 s10: 0000000000000000
+[  168.235944]  s11: 0000000000000001 t3 : 0000000000000000 t4 : 0000000000000000
+[  168.235946]  t5 : 0000000000000000 t6 : ffffffd9f3cee000
+[  168.235948] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  168.235951] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  168.235956] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  168.235961] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  168.235965] [<ffffffffb642d4fe>] flush_tlb_page+0x18/0x20
+[  168.235969] [<ffffffffb66e29a6>] ptep_clear_flush+0x50/0x5c
+[  168.235974] [<ffffffffb66cda52>] wp_page_copy+0x28a/0x542
+[  168.235979] [<ffffffffb66cddac>] do_wp_page+0xa2/0x4b8
+[  168.235984] [<ffffffffb66d32e4>] handle_pte_fault+0x168/0x17c
+[  168.235989] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  168.235994] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  168.235998] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  168.236003] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  168.236008] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  172.236002] watchdog: BUG: soft lockup - CPU#6 stuck for 78s! [NetworkManager:927]
+[  172.236006] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  172.236079] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  172.236085] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  172.236086] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  172.236089] epc : smp_call_function_many_cond+0x446/0x618
+[  172.236095]  ra : smp_call_function_many_cond+0x114/0x618
+[  172.236100] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc6011e3960
+[  172.236103]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  172.236105]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  172.236108]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  172.236111]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  172.236114]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  172.236116]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  172.236119]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  172.236121]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  172.236124]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  172.236126]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  172.236129] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  172.236132] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  172.236137] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  172.236142] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  172.236146] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  172.236149] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  172.236153] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  172.236158] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  172.236161] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  172.236165] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  172.236169] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  172.236173] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  172.236179] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  184.236525] watchdog: BUG: soft lockup - CPU#5 stuck for 78s! [kworker/5:1:84]
+[  184.236529] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  184.236598] CPU: 5 UID: 0 PID: 84 Comm: kworker/5:1 Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  184.236604] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  184.236606] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  184.236608] Workqueue: events bpf_prog_free_deferred
+[  184.236614] epc : smp_call_function_many_cond+0x446/0x618
+[  184.236620]  ra : smp_call_function_many_cond+0x114/0x618
+[  184.236625] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc60076bb70
+[  184.236628]  gp : ffffffffb871f920 tp : ffffffd6028fa180 t0 : ffffffd9ffbd0b90
+[  184.236630]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60076bc60
+[  184.236633]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  184.236636]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17640
+[  184.236639]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  184.236641]  s2 : ffffffd9ffbd0b40 s3 : ffffffd9ffbd0b48 s4 : 00000000000004b5
+[  184.236644]  s5 : ffffffffb642d6d0 s6 : ffffffffb85f6380 s7 : 0000000000000000
+[  184.236646]  s8 : 0000000000000005 s9 : 0000000000000000 s10: 0000000000000000
+[  184.236649]  s11: 0000000000000001 t3 : 0000000000000008 t4 : ffffffd601fc1448
+[  184.236651]  t5 : 0000000000000000 t6 : 0000000000000024
+[  184.236654] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  184.236657] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  184.236662] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  184.236667] [<ffffffffb642d7ca>] flush_icache_all+0x42/0x5a
+[  184.236672] [<ffffffffb641f218>] patch_text_set_nosync+0x6e/0x78
+[  184.236676] [<ffffffffb643024c>] bpf_arch_text_invalidate+0x2a/0x4a
+[  184.236680] [<ffffffffb65dcc80>] bpf_prog_pack_free+0xde/0x22e
+[  184.236685] [<ffffffffb65dcf7e>] bpf_jit_binary_pack_free+0x16/0x44
+[  184.236689] [<ffffffffb64302ba>] bpf_jit_free+0x4e/0x9c
+[  184.236693] [<ffffffffb65dc5a4>] bpf_prog_free_deferred+0x13a/0x158
+[  184.236697] [<ffffffffb647d586>] process_one_work+0x146/0x33e
+[  184.236701] [<ffffffffb647df5e>] worker_thread+0x134/0x27e
+[  184.236704] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  184.236709] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  184.236713] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+[  192.236874] watchdog: BUG: soft lockup - CPU#1 stuck for 75s! [sshd-session:1614]
+[  192.236881] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  192.236955] CPU: 1 UID: 0 PID: 1614 Comm: sshd-session Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  192.236962] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  192.236964] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  192.236966] epc : smp_call_function_many_cond+0x446/0x618
+[  192.236975]  ra : smp_call_function_many_cond+0x114/0x618
+[  192.236980] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc601dab600
+[  192.236983]  gp : ffffffffb871f920 tp : ffffffd9f0db8000 t0 : ffffffd9ffb4cb90
+[  192.236986]  t1 : 000000000000009a t2 : 0000000000000000 s0 : ffffffc601dab6f0
+[  192.236989]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  192.236991]  a2 : 0000000000000005 a3 : 0000000000000001 a4 : ffffffd9ffc175c0
+[  192.236994]  a5 : 0000000000000011 a6 : 0000000000000002 a7 : ffffffffffffffff
+[  192.236997]  s2 : ffffffd9ffb4cb40 s3 : ffffffd9ffb4cb48 s4 : 0000000000000002
+[  192.236999]  s5 : ffffffffb642d3d0 s6 : 0000000000003000 s7 : 0000000000000000
+[  192.237002]  s8 : 0000000000000001 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  192.237005]  s11: 0000000000000001 t3 : ffffffffffffffff t4 : ffffffd6012b4730
+[  192.237007]  t5 : 0000000000000000 t6 : ffffffd6045d8068
+[  192.237010] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  192.237013] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  192.237019] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  192.237024] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  192.237028] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  192.237032] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  192.237038] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  192.237043] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  192.237047] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  192.237052] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  192.237057] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  192.237061] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  192.237065] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  192.237069] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  192.237073] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  192.237079] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  196.237047] watchdog: BUG: soft lockup - CPU#4 stuck for 74s! [systemd-journal:756]
+[  196.237052] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  196.237117] CPU: 4 UID: 0 PID: 756 Comm: systemd-journal Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  196.237123] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  196.237125] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  196.237127] epc : smp_call_function_many_cond+0x154/0x618
+[  196.237133]  ra : smp_call_function_many_cond+0x114/0x618
+[  196.237138] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc60136ba20
+[  196.237140]  gp : ffffffffb871f920 tp : ffffffd6029053c0 t0 : ffffffd9ffbafb90
+[  196.237142]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60136bb10
+[  196.237145]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  196.237147]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17620
+[  196.237150]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  196.237152]  s2 : ffffffd9ffbafb40 s3 : ffffffd9ffbafb48 s4 : 0000000000000005
+[  196.237154]  s5 : ffffffffb642d3d0 s6 : 0000000000001000 s7 : 0000000000000000
+[  196.237157]  s8 : 0000000000000004 s9 : 0000000000001000 s10: 0000000000000000
+[  196.237159]  s11: 0000000000000001 t3 : 0000000000000000 t4 : 0000000000000000
+[  196.237161]  t5 : 0000000000000000 t6 : ffffffd9f3cee000
+[  196.237163] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  196.237166] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  196.237171] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  196.237176] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  196.237179] [<ffffffffb642d4fe>] flush_tlb_page+0x18/0x20
+[  196.237182] [<ffffffffb66e29a6>] ptep_clear_flush+0x50/0x5c
+[  196.237187] [<ffffffffb66cda52>] wp_page_copy+0x28a/0x542
+[  196.237191] [<ffffffffb66cddac>] do_wp_page+0xa2/0x4b8
+[  196.237196] [<ffffffffb66d32e4>] handle_pte_fault+0x168/0x17c
+[  196.237201] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  196.237206] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  196.237210] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  196.237214] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  196.237220] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  200.237221] watchdog: BUG: soft lockup - CPU#6 stuck for 104s! [NetworkManager:927]
+[  200.237225] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  200.237297] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  200.237303] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  200.237306] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  200.237308] epc : smp_call_function_many_cond+0x154/0x618
+[  200.237316]  ra : smp_call_function_many_cond+0x114/0x618
+[  200.237320] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc6011e3960
+[  200.237324]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  200.237326]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  200.237329]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  200.237331]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  200.237334]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  200.237337]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  200.237339]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  200.237342]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  200.237344]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  200.237347]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  200.237349] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  200.237352] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  200.237358] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  200.237362] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  200.237367] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  200.237371] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  200.237376] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  200.237380] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  200.237384] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  200.237388] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  200.237392] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  200.237396] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  200.237401] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  208.237569] watchdog: BUG: soft lockup - CPU#0 stuck for 22s! [virtqemud:1397]
+[  208.237575] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  208.237652] CPU: 0 UID: 0 PID: 1397 Comm: virtqemud Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  208.237658] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  208.237660] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  208.237662] epc : smp_call_function_many_cond+0x154/0x618
+[  208.237669]  ra : smp_call_function_many_cond+0x114/0x618
+[  208.237673] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc601f1b980
+[  208.237677]  gp : ffffffffb871f920 tp : ffffffd63bbc4300 t0 : ffffffd9ffb2bb90
+[  208.237679]  t1 : 00000000000000ec t2 : 00000032c49fafff s0 : ffffffc601f1ba70
+[  208.237682]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  208.237685]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc160e0
+[  208.237687]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  208.237690]  s2 : ffffffd9ffb2bb40 s3 : ffffffd9ffb2bb48 s4 : 0000000000000008
+[  208.237693]  s5 : ffffffffb642d6d0 s6 : 00000032c40d0000 s7 : 0000000000000000
+[  208.237695]  s8 : 0000000000000000 s9 : ffffffc601f1bbc0 s10: 0000000000000000
+[  208.237698]  s11: 0000000000000001 t3 : ffffffd9ec2b1e08 t4 : ffffffc601f1bdd0
+[  208.237701]  t5 : 0000000000000000 t6 : 00000032c0000000
+[  208.237703] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  208.237705] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  208.237711] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  208.237716] [<ffffffffb642d8e8>] flush_icache_mm+0x106/0x15e
+[  208.237720] [<ffffffffb642d9f0>] flush_icache_pte+0xb0/0xd2
+[  208.237724] [<ffffffffb66ce5ba>] set_pte_range+0xc4/0x164
+[  208.237730] [<ffffffffb6679bd0>] filemap_map_pages+0x21c/0x4e2
+[  208.237735] [<ffffffffb66ceb80>] do_read_fault+0x128/0x292
+[  208.237740] [<ffffffffb66ceff6>] do_fault+0x188/0x1ea
+[  208.237744] [<ffffffffb66d328a>] handle_pte_fault+0x10e/0x17c
+[  208.237749] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  208.237754] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  208.237759] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  208.237764] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  208.237769] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  208.237775] watchdog: BUG: soft lockup - CPU#2 stuck for 22s! [prio-rpc-virtqe:1407]
+[  208.237780] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  208.237850] CPU: 2 UID: 0 PID: 1407 Comm: prio-rpc-virtqe Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  208.237856] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  208.237857] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  208.237859] epc : do_raw_spin_lock+0x88/0xae
+[  208.237867]  ra : _raw_spin_lock+0x1a/0x22
+[  208.237871] epc : ffffffffb64cb796 ra : ffffffffb6f762de sp : ffffffc601a13740
+[  208.237874]  gp : ffffffffb871f920 tp : ffffffd9f0043240 t0 : 0000000000000002
+[  208.237877]  t1 : 00000032c41f9000 t2 : 00000032c49fafff s0 : ffffffc601a13750
+[  208.237879]  s1 : ffffffc501095028 a0 : ffffffc501095028 a1 : 0000000000000fc8
+[  208.237882]  a2 : ffffffc601a13760 a3 : 0000000000000045 a4 : 0000000000000046
+[  208.237885]  a5 : 0000000000470045 a6 : 0000000000000000 a7 : ffffffd9ec2b1e00
+[  208.237887]  s2 : ffffffd64250b100 s3 : 00000032c41f9000 s4 : ffffffc601a13810
+[  208.237890]  s5 : ffffffd642540fc8 s6 : ffffffc601a13760 s7 : ffffffd606458680
+[  208.237893]  s8 : 0000000000000008 s9 : 00000032c41f9000 s10: 00000032c41f9000
+[  208.237895]  s11: ffffffd64250b100 t3 : ffffffd9ec2b1e08 t4 : ffffffc601a13ab0
+[  208.237898]  t5 : ffffffd9ec2b1e0c t6 : 00000032c0000000
+[  208.237900] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  208.237903] [<ffffffffb64cb796>] do_raw_spin_lock+0x88/0xae
+[  208.237909] [<ffffffffb6f762de>] _raw_spin_lock+0x1a/0x22
+[  208.237914] [<ffffffffb66e30f0>] __pte_offset_map_lock+0x92/0x566
+[  208.237919] [<ffffffffb66cc48e>] zap_pte_range+0x80/0x3b6
+[  208.237924] [<ffffffffb66cc902>] zap_pmd_range+0x13e/0x184
+[  208.237928] [<ffffffffb66cceea>] unmap_page_range+0x2e0/0x4dc
+[  208.237933] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  208.237938] [<ffffffffb66cd3ac>] zap_page_range_single_batched+0xb4/0x160
+[  208.237942] [<ffffffffb671b9fa>] madvise_vma_behavior+0x3ac/0x444
+[  208.237947] [<ffffffffb671bd3c>] madvise_do_behavior+0xe0/0x3ac
+[  208.237951] [<ffffffffb671d6c6>] do_madvise+0xf2/0x12e
+[  208.237955] [<ffffffffb671d71a>] __riscv_sys_madvise+0x18/0x20
+[  208.237959] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  208.237964] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  208.237970] watchdog: BUG: soft lockup - CPU#3 stuck for 22s! [rpc-admin:1413]
+[  208.237976] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  208.238043] CPU: 3 UID: 0 PID: 1413 Comm: rpc-admin Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  208.238049] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  208.238050] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  208.238053] epc : smp_call_function_many_cond+0x13a/0x618
+[  208.238059]  ra : smp_call_function_many_cond+0x114/0x618
+[  208.238063] epc : ffffffffb6539054 ra : ffffffffb653902e sp : ffffffc601b2b470
+[  208.238066]  gp : ffffffffb871f920 tp : ffffffd6059510c0 t0 : ffffffd9ffb8eb90
+[  208.238068]  t1 : 00000000000000ed t2 : ffffffffffffffff s0 : ffffffc601b2b560
+[  208.238070]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  208.238073]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17600
+[  208.238075]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  208.238077]  s2 : ffffffd9ffb8eb40 s3 : ffffffd9ffb8eb48 s4 : 0000000000000004
+[  208.238080]  s5 : ffffffffb642d3d0 s6 : 0000000000006000 s7 : 0000000000000000
+[  208.238082]  s8 : 0000000000000003 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  208.238084]  s11: 0000000000000001 t3 : ffffffd9ffdcb008 t4 : ffffffc601b2b8e0
+[  208.238086]  t5 : 0000000000000000 t6 : 0000000000000000
+[  208.238088] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  208.238091] [<ffffffffb6539054>] smp_call_function_many_cond+0x13a/0x618
+[  208.238096] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  208.238101] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  208.238105] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  208.238108] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  208.238113] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  208.238117] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  208.238121] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  208.238125] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  208.238129] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  208.238133] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  208.238137] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  208.238141] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  208.238145] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  208.238149] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  212.237743] watchdog: BUG: soft lockup - CPU#5 stuck for 104s! [kworker/5:1:84]
+[  212.237749] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  212.237814] CPU: 5 UID: 0 PID: 84 Comm: kworker/5:1 Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  212.237820] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  212.237823] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  212.237825] Workqueue: events bpf_prog_free_deferred
+[  212.237831] epc : smp_call_function_many_cond+0x13a/0x618
+[  212.237836]  ra : smp_call_function_many_cond+0x114/0x618
+[  212.237841] epc : ffffffffb6539054 ra : ffffffffb653902e sp : ffffffc60076bb70
+[  212.237844]  gp : ffffffffb871f920 tp : ffffffd6028fa180 t0 : ffffffd9ffbd0b90
+[  212.237847]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60076bc60
+[  212.237849]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  212.237852]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17640
+[  212.237855]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  212.237857]  s2 : ffffffd9ffbd0b40 s3 : ffffffd9ffbd0b48 s4 : 00000000000004b5
+[  212.237860]  s5 : ffffffffb642d6d0 s6 : ffffffffb85f6380 s7 : 0000000000000000
+[  212.237862]  s8 : 0000000000000005 s9 : 0000000000000000 s10: 0000000000000000
+[  212.237865]  s11: 0000000000000001 t3 : 0000000000000008 t4 : ffffffd601fc1448
+[  212.237867]  t5 : 0000000000000000 t6 : 0000000000000024
+[  212.237870] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  212.237873] [<ffffffffb6539054>] smp_call_function_many_cond+0x13a/0x618
+[  212.237878] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  212.237883] [<ffffffffb642d7ca>] flush_icache_all+0x42/0x5a
+[  212.237886] [<ffffffffb641f218>] patch_text_set_nosync+0x6e/0x78
+[  212.237891] [<ffffffffb643024c>] bpf_arch_text_invalidate+0x2a/0x4a
+[  212.237895] [<ffffffffb65dcc80>] bpf_prog_pack_free+0xde/0x22e
+[  212.237899] [<ffffffffb65dcf7e>] bpf_jit_binary_pack_free+0x16/0x44
+[  212.237904] [<ffffffffb64302ba>] bpf_jit_free+0x4e/0x9c
+[  212.237908] [<ffffffffb65dc5a4>] bpf_prog_free_deferred+0x13a/0x158
+[  212.237912] [<ffffffffb647d586>] process_one_work+0x146/0x33e
+[  212.237915] [<ffffffffb647df5e>] worker_thread+0x134/0x27e
+[  212.237919] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  212.237923] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  212.237927] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+[  220.238091] watchdog: BUG: soft lockup - CPU#1 stuck for 101s! [sshd-session:1614]
+[  220.238096] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  220.238167] CPU: 1 UID: 0 PID: 1614 Comm: sshd-session Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  220.238173] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  220.238176] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  220.238178] epc : smp_call_function_many_cond+0x13a/0x618
+[  220.238184]  ra : smp_call_function_many_cond+0x114/0x618
+[  220.238188] epc : ffffffffb6539054 ra : ffffffffb653902e sp : ffffffc601dab600
+[  220.238191]  gp : ffffffffb871f920 tp : ffffffd9f0db8000 t0 : ffffffd9ffb4cb90
+[  220.238194]  t1 : 000000000000009a t2 : 0000000000000000 s0 : ffffffc601dab6f0
+[  220.238196]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  220.238198]  a2 : 0000000000000005 a3 : 0000000000000001 a4 : ffffffd9ffc175c0
+[  220.238200]  a5 : 0000000000000011 a6 : 0000000000000002 a7 : ffffffffffffffff
+[  220.238203]  s2 : ffffffd9ffb4cb40 s3 : ffffffd9ffb4cb48 s4 : 0000000000000002
+[  220.238205]  s5 : ffffffffb642d3d0 s6 : 0000000000003000 s7 : 0000000000000000
+[  220.238207]  s8 : 0000000000000001 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  220.238210]  s11: 0000000000000001 t3 : ffffffffffffffff t4 : ffffffd6012b4730
+[  220.238212]  t5 : 0000000000000000 t6 : ffffffd6045d8068
+[  220.238214] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  220.238217] [<ffffffffb6539054>] smp_call_function_many_cond+0x13a/0x618
+[  220.238222] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  220.238226] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  220.238230] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  220.238234] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  220.238238] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  220.238243] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  220.238247] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  220.238251] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  220.238255] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  220.238259] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  220.238263] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  220.238268] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  220.238271] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  220.238276] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  224.238265] watchdog: BUG: soft lockup - CPU#4 stuck for 100s! [systemd-journal:756]
+[  224.238270] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  224.238338] CPU: 4 UID: 0 PID: 756 Comm: systemd-journal Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  224.238344] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  224.238346] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  224.238349] epc : smp_call_function_many_cond+0x154/0x618
+[  224.238355]  ra : smp_call_function_many_cond+0x114/0x618
+[  224.238360] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc60136ba20
+[  224.238363]  gp : ffffffffb871f920 tp : ffffffd6029053c0 t0 : ffffffd9ffbafb90
+[  224.238366]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60136bb10
+[  224.238368]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  224.238371]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17620
+[  224.238373]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  224.238376]  s2 : ffffffd9ffbafb40 s3 : ffffffd9ffbafb48 s4 : 0000000000000005
+[  224.238379]  s5 : ffffffffb642d3d0 s6 : 0000000000001000 s7 : 0000000000000000
+[  224.238381]  s8 : 0000000000000004 s9 : 0000000000001000 s10: 0000000000000000
+[  224.238384]  s11: 0000000000000001 t3 : 0000000000000000 t4 : 0000000000000000
+[  224.238386]  t5 : 0000000000000000 t6 : ffffffd9f3cee000
+[  224.238388] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  224.238391] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  224.238396] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  224.238402] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  224.238406] [<ffffffffb642d4fe>] flush_tlb_page+0x18/0x20
+[  224.238409] [<ffffffffb66e29a6>] ptep_clear_flush+0x50/0x5c
+[  224.238414] [<ffffffffb66cda52>] wp_page_copy+0x28a/0x542
+[  224.238419] [<ffffffffb66cddac>] do_wp_page+0xa2/0x4b8
+[  224.238424] [<ffffffffb66d32e4>] handle_pte_fault+0x168/0x17c
+[  224.238429] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  224.238433] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  224.238438] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  224.238443] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  224.238447] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  228.238439] watchdog: BUG: soft lockup - CPU#6 stuck for 130s! [NetworkManager:927]
+[  228.238443] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  228.238509] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  228.238514] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  228.238516] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  228.238518] epc : smp_call_function_many_cond+0x154/0x618
+[  228.238524]  ra : smp_call_function_many_cond+0x114/0x618
+[  228.238529] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc6011e3960
+[  228.238532]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  228.238534]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  228.238537]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  228.238539]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  228.238542]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  228.238545]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  228.238547]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  228.238549]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  228.238552]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  228.238554]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  228.238556] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  228.238559] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  228.238564] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  228.238569] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  228.238573] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  228.238576] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  228.238580] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  228.238584] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  228.238588] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  228.238591] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  228.238595] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  228.238599] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  228.238604] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  232.238614] watchdog: BUG: soft lockup - CPU#2 stuck for 45s! [prio-rpc-virtqe:1407]
+[  232.238619] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  232.238683] CPU: 2 UID: 0 PID: 1407 Comm: prio-rpc-virtqe Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  232.238689] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  232.238691] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  232.238693] epc : do_raw_spin_lock+0x88/0xae
+[  232.238698]  ra : _raw_spin_lock+0x1a/0x22
+[  232.238703] epc : ffffffffb64cb796 ra : ffffffffb6f762de sp : ffffffc601a13740
+[  232.238706]  gp : ffffffffb871f920 tp : ffffffd9f0043240 t0 : 0000000000000002
+[  232.238708]  t1 : 00000032c41f9000 t2 : 00000032c49fafff s0 : ffffffc601a13750
+[  232.238711]  s1 : ffffffc501095028 a0 : ffffffc501095028 a1 : 0000000000000fc8
+[  232.238713]  a2 : ffffffc601a13760 a3 : 0000000000000045 a4 : 0000000000000046
+[  232.238715]  a5 : 0000000000470045 a6 : 0000000000000000 a7 : ffffffd9ec2b1e00
+[  232.238718]  s2 : ffffffd64250b100 s3 : 00000032c41f9000 s4 : ffffffc601a13810
+[  232.238721]  s5 : ffffffd642540fc8 s6 : ffffffc601a13760 s7 : ffffffd606458680
+[  232.238723]  s8 : 0000000000000008 s9 : 00000032c41f9000 s10: 00000032c41f9000
+[  232.238725]  s11: ffffffd64250b100 t3 : ffffffd9ec2b1e08 t4 : ffffffc601a13ab0
+[  232.238727]  t5 : ffffffd9ec2b1e0c t6 : 00000032c0000000
+[  232.238729] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  232.238732] [<ffffffffb64cb796>] do_raw_spin_lock+0x88/0xae
+[  232.238737] [<ffffffffb6f762de>] _raw_spin_lock+0x1a/0x22
+[  232.238741] [<ffffffffb66e30f0>] __pte_offset_map_lock+0x92/0x566
+[  232.238747] [<ffffffffb66cc48e>] zap_pte_range+0x80/0x3b6
+[  232.238751] [<ffffffffb66cc902>] zap_pmd_range+0x13e/0x184
+[  232.238755] [<ffffffffb66cceea>] unmap_page_range+0x2e0/0x4dc
+[  232.238760] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  232.238764] [<ffffffffb66cd3ac>] zap_page_range_single_batched+0xb4/0x160
+[  232.238768] [<ffffffffb671b9fa>] madvise_vma_behavior+0x3ac/0x444
+[  232.238772] [<ffffffffb671bd3c>] madvise_do_behavior+0xe0/0x3ac
+[  232.238776] [<ffffffffb671d6c6>] do_madvise+0xf2/0x12e
+[  232.238780] [<ffffffffb671d71a>] __riscv_sys_madvise+0x18/0x20
+[  232.238784] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  232.238788] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  232.238794] watchdog: BUG: soft lockup - CPU#3 stuck for 45s! [rpc-admin:1413]
+[  232.238797] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  232.238864] CPU: 3 UID: 0 PID: 1413 Comm: rpc-admin Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  232.238870] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  232.238871] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  232.238873] epc : smp_call_function_many_cond+0x154/0x618
+[  232.238879]  ra : smp_call_function_many_cond+0x114/0x618
+[  232.238883] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc601b2b470
+[  232.238886]  gp : ffffffffb871f920 tp : ffffffd6059510c0 t0 : ffffffd9ffb8eb90
+[  232.238888]  t1 : 00000000000000ed t2 : ffffffffffffffff s0 : ffffffc601b2b560
+[  232.238891]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  232.238893]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17600
+[  232.238895]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  232.238898]  s2 : ffffffd9ffb8eb40 s3 : ffffffd9ffb8eb48 s4 : 0000000000000004
+[  232.238900]  s5 : ffffffffb642d3d0 s6 : 0000000000006000 s7 : 0000000000000000
+[  232.238902]  s8 : 0000000000000003 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  232.238905]  s11: 0000000000000001 t3 : ffffffd9ffdcb008 t4 : ffffffc601b2b8e0
+[  232.238907]  t5 : 0000000000000000 t6 : 0000000000000000
+[  232.238909] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  232.238912] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  232.238916] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  232.238921] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  232.238925] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  232.238928] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  232.238933] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  232.238937] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  232.238941] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  232.238945] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  232.238949] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  232.238954] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  232.238957] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  232.238961] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  232.238966] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  232.238970] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  236.238787] watchdog: BUG: soft lockup - CPU#0 stuck for 49s! [virtqemud:1397]
+[  236.238791] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  236.238856] CPU: 0 UID: 0 PID: 1397 Comm: virtqemud Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  236.238863] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  236.238864] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  236.238866] epc : smp_call_function_many_cond+0x446/0x618
+[  236.238872]  ra : smp_call_function_many_cond+0x114/0x618
+[  236.238876] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc601f1b980
+[  236.238879]  gp : ffffffffb871f920 tp : ffffffd63bbc4300 t0 : ffffffd9ffb2bb90
+[  236.238881]  t1 : 00000000000000ec t2 : 00000032c49fafff s0 : ffffffc601f1ba70
+[  236.238883]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  236.238885]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc160e0
+[  236.238887]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  236.238890]  s2 : ffffffd9ffb2bb40 s3 : ffffffd9ffb2bb48 s4 : 0000000000000008
+[  236.238892]  s5 : ffffffffb642d6d0 s6 : 00000032c40d0000 s7 : 0000000000000000
+[  236.238894]  s8 : 0000000000000000 s9 : ffffffc601f1bbc0 s10: 0000000000000000
+[  236.238896]  s11: 0000000000000001 t3 : ffffffd9ec2b1e08 t4 : ffffffc601f1bdd0
+[  236.238898]  t5 : 0000000000000000 t6 : 00000032c0000000
+[  236.238900] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  236.238902] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  236.238907] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  236.238912] [<ffffffffb642d8e8>] flush_icache_mm+0x106/0x15e
+[  236.238916] [<ffffffffb642d9f0>] flush_icache_pte+0xb0/0xd2
+[  236.238919] [<ffffffffb66ce5ba>] set_pte_range+0xc4/0x164
+[  236.238924] [<ffffffffb6679bd0>] filemap_map_pages+0x21c/0x4e2
+[  236.238928] [<ffffffffb66ceb80>] do_read_fault+0x128/0x292
+[  236.238932] [<ffffffffb66ceff6>] do_fault+0x188/0x1ea
+[  236.238936] [<ffffffffb66d328a>] handle_pte_fault+0x10e/0x17c
+[  236.238940] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  236.238945] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  236.238949] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  236.238954] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  236.238959] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  240.238962] watchdog: BUG: soft lockup - CPU#5 stuck for 130s! [kworker/5:1:84]
+[  240.238967] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  240.239033] CPU: 5 UID: 0 PID: 84 Comm: kworker/5:1 Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  240.239039] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  240.239041] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  240.239044] Workqueue: events bpf_prog_free_deferred
+[  240.239049] epc : smp_call_function_many_cond+0x13a/0x618
+[  240.239054]  ra : smp_call_function_many_cond+0x114/0x618
+[  240.239059] epc : ffffffffb6539054 ra : ffffffffb653902e sp : ffffffc60076bb70
+[  240.239062]  gp : ffffffffb871f920 tp : ffffffd6028fa180 t0 : ffffffd9ffbd0b90
+[  240.239065]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60076bc60
+[  240.239067]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  240.239070]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17640
+[  240.239072]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  240.239075]  s2 : ffffffd9ffbd0b40 s3 : ffffffd9ffbd0b48 s4 : 00000000000004b5
+[  240.239078]  s5 : ffffffffb642d6d0 s6 : ffffffffb85f6380 s7 : 0000000000000000
+[  240.239080]  s8 : 0000000000000005 s9 : 0000000000000000 s10: 0000000000000000
+[  240.239083]  s11: 0000000000000001 t3 : 0000000000000008 t4 : ffffffd601fc1448
+[  240.239085]  t5 : 0000000000000000 t6 : 0000000000000024
+[  240.239087] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  240.239090] [<ffffffffb6539054>] smp_call_function_many_cond+0x13a/0x618
+[  240.239095] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  240.239100] [<ffffffffb642d7ca>] flush_icache_all+0x42/0x5a
+[  240.239104] [<ffffffffb641f218>] patch_text_set_nosync+0x6e/0x78
+[  240.239109] [<ffffffffb643024c>] bpf_arch_text_invalidate+0x2a/0x4a
+[  240.239113] [<ffffffffb65dcc80>] bpf_prog_pack_free+0xde/0x22e
+[  240.239117] [<ffffffffb65dcf7e>] bpf_jit_binary_pack_free+0x16/0x44
+[  240.239122] [<ffffffffb64302ba>] bpf_jit_free+0x4e/0x9c
+[  240.239126] [<ffffffffb65dc5a4>] bpf_prog_free_deferred+0x13a/0x158
+[  240.239130] [<ffffffffb647d586>] process_one_work+0x146/0x33e
+[  240.239134] [<ffffffffb647df5e>] worker_thread+0x134/0x27e
+[  240.239137] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  240.239142] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  240.239146] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+[  248.239310] watchdog: BUG: soft lockup - CPU#1 stuck for 127s! [sshd-session:1614]
+[  248.239315] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  248.239383] CPU: 1 UID: 0 PID: 1614 Comm: sshd-session Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  248.239389] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  248.239391] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  248.239393] epc : smp_call_function_many_cond+0x446/0x618
+[  248.239399]  ra : smp_call_function_many_cond+0x114/0x618
+[  248.239404] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc601dab600
+[  248.239407]  gp : ffffffffb871f920 tp : ffffffd9f0db8000 t0 : ffffffd9ffb4cb90
+[  248.239409]  t1 : 000000000000009a t2 : 0000000000000000 s0 : ffffffc601dab6f0
+[  248.239412]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  248.239415]  a2 : 0000000000000005 a3 : 0000000000000001 a4 : ffffffd9ffc175c0
+[  248.239417]  a5 : 0000000000000011 a6 : 0000000000000002 a7 : ffffffffffffffff
+[  248.239420]  s2 : ffffffd9ffb4cb40 s3 : ffffffd9ffb4cb48 s4 : 0000000000000002
+[  248.239423]  s5 : ffffffffb642d3d0 s6 : 0000000000003000 s7 : 0000000000000000
+[  248.239425]  s8 : 0000000000000001 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  248.239428]  s11: 0000000000000001 t3 : ffffffffffffffff t4 : ffffffd6012b4730
+[  248.239430]  t5 : 0000000000000000 t6 : ffffffd6045d8068
+[  248.239432] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  248.239436] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  248.239441] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  248.239446] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  248.239450] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  248.239454] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  248.239459] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  248.239464] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  248.239468] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  248.239473] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  248.239477] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  248.239481] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  248.239486] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  248.239490] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  248.239494] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  248.239499] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  252.239484] watchdog: BUG: soft lockup - CPU#4 stuck for 126s! [systemd-journal:756]
+[  252.239489] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  252.239559] CPU: 4 UID: 0 PID: 756 Comm: systemd-journal Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  252.239565] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  252.239567] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  252.239569] epc : smp_call_function_many_cond+0x446/0x618
+[  252.239575]  ra : smp_call_function_many_cond+0x114/0x618
+[  252.239580] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc60136ba20
+[  252.239583]  gp : ffffffffb871f920 tp : ffffffd6029053c0 t0 : ffffffd9ffbafb90
+[  252.239585]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60136bb10
+[  252.239588]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  252.239590]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17620
+[  252.239592]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  252.239595]  s2 : ffffffd9ffbafb40 s3 : ffffffd9ffbafb48 s4 : 0000000000000005
+[  252.239597]  s5 : ffffffffb642d3d0 s6 : 0000000000001000 s7 : 0000000000000000
+[  252.239599]  s8 : 0000000000000004 s9 : 0000000000001000 s10: 0000000000000000
+[  252.239602]  s11: 0000000000000001 t3 : 0000000000000000 t4 : 0000000000000000
+[  252.239604]  t5 : 0000000000000000 t6 : ffffffd9f3cee000
+[  252.239606] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  252.239608] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  252.239613] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  252.239618] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  252.239622] [<ffffffffb642d4fe>] flush_tlb_page+0x18/0x20
+[  252.239625] [<ffffffffb66e29a6>] ptep_clear_flush+0x50/0x5c
+[  252.239630] [<ffffffffb66cda52>] wp_page_copy+0x28a/0x542
+[  252.239635] [<ffffffffb66cddac>] do_wp_page+0xa2/0x4b8
+[  252.239639] [<ffffffffb66d32e4>] handle_pte_fault+0x168/0x17c
+[  252.239644] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  252.239648] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  252.239653] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  252.239658] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  252.239662] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  256.239657] watchdog: BUG: soft lockup - CPU#6 stuck for 156s! [NetworkManager:927]
+[  256.239662] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  256.239728] CPU: 6 UID: 0 PID: 927 Comm: NetworkManager Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  256.239734] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  256.239736] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  256.239738] epc : smp_call_function_many_cond+0x446/0x618
+[  256.239744]  ra : smp_call_function_many_cond+0x114/0x618
+[  256.239749] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc6011e3960
+[  256.239751]  gp : ffffffffb871f920 tp : ffffffd9ef90c300 t0 : ffffffd9ffbf1b90
+[  256.239754]  t1 : 00000000000000ff t2 : 0000003acbffffff s0 : ffffffc6011e3a50
+[  256.239756]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  256.239759]  a2 : 0000000000000006 a3 : 0000000000000001 a4 : ffffffd9ffc17660
+[  256.239761]  a5 : 0000000000000011 a6 : 0000000000000007 a7 : 00000000000000ff
+[  256.239764]  s2 : ffffffd9ffbf1b40 s3 : ffffffd9ffbf1b48 s4 : 0000000000000007
+[  256.239767]  s5 : ffffffffb642d3d0 s6 : ffffffffffffffff s7 : 0000000000000000
+[  256.239769]  s8 : 0000000000000006 s9 : 0000000000001000 s10: ffffffd9f0da63c0
+[  256.239772]  s11: 0000000000000001 t3 : ffffffd9ef5ba800 t4 : 0000000000000000
+[  256.239774]  t5 : 0000000000000000 t6 : ffffffffb78d8e48
+[  256.239777] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  256.239780] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  256.239785] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  256.239790] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  256.239794] [<ffffffffb642d4ba>] flush_tlb_mm+0x16/0x1e
+[  256.239797] [<ffffffffb66da45a>] dup_mmap+0x282/0x668
+[  256.239802] [<ffffffffb645b020>] dup_mm.constprop.0+0x5c/0x128
+[  256.239806] [<ffffffffb645c53e>] copy_process+0x946/0x114c
+[  256.239810] [<ffffffffb645ce4c>] kernel_clone+0x8a/0x42a
+[  256.239814] [<ffffffffb645d25c>] __do_sys_clone+0x70/0x8e
+[  256.239817] [<ffffffffb645d4d0>] __riscv_sys_clone+0x18/0x20
+[  256.239821] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  256.239826] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  256.239832] watchdog: BUG: soft lockup - CPU#3 stuck for 67s! [rpc-admin:1413]
+[  256.239837] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  256.239904] CPU: 3 UID: 0 PID: 1413 Comm: rpc-admin Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  256.239910] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  256.239912] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  256.239914] epc : smp_call_function_many_cond+0x446/0x618
+[  256.239920]  ra : smp_call_function_many_cond+0x114/0x618
+[  256.239924] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc601b2b470
+[  256.239927]  gp : ffffffffb871f920 tp : ffffffd6059510c0 t0 : ffffffd9ffb8eb90
+[  256.239929]  t1 : 00000000000000ed t2 : ffffffffffffffff s0 : ffffffc601b2b560
+[  256.239932]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  256.239934]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17600
+[  256.239937]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  256.239939]  s2 : ffffffd9ffb8eb40 s3 : ffffffd9ffb8eb48 s4 : 0000000000000004
+[  256.239941]  s5 : ffffffffb642d3d0 s6 : 0000000000006000 s7 : 0000000000000000
+[  256.239944]  s8 : 0000000000000003 s9 : 0000000000001000 s10: ffffffffb7de2ca9
+[  256.239946]  s11: 0000000000000001 t3 : ffffffd9ffdcb008 t4 : ffffffc601b2b8e0
+[  256.239948]  t5 : 0000000000000000 t6 : 0000000000000000
+[  256.239950] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  256.239953] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  256.239958] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  256.239962] [<ffffffffb642d332>] __flush_tlb_range+0xd6/0x174
+[  256.239966] [<ffffffffb642d4de>] flush_tlb_mm_range+0x1c/0x24
+[  256.239970] [<ffffffffb66cd084>] unmap_page_range+0x47a/0x4dc
+[  256.239974] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  256.239979] [<ffffffffb66cd212>] unmap_vmas+0x9c/0x182
+[  256.239983] [<ffffffffb66f1e9e>] vms_clear_ptes+0xc6/0xfc
+[  256.239987] [<ffffffffb66f307c>] vms_complete_munmap_vmas+0x58/0x15c
+[  256.239991] [<ffffffffb66f4148>] do_vmi_align_munmap+0x14e/0x170
+[  256.239995] [<ffffffffb66f41ec>] do_vmi_munmap+0x82/0xfa
+[  256.239999] [<ffffffffb66f5a92>] __vm_munmap+0xa4/0x132
+[  256.240003] [<ffffffffb66d9ace>] __riscv_sys_munmap+0x1a/0x40
+[  256.240007] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  256.240012] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  260.239832] watchdog: BUG: soft lockup - CPU#2 stuck for 71s! [prio-rpc-virtqe:1407]
+[  260.239837] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  260.239905] CPU: 2 UID: 0 PID: 1407 Comm: prio-rpc-virtqe Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  260.239912] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  260.239914] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  260.239916] epc : do_raw_spin_lock+0x24/0xae
+[  260.239922]  ra : _raw_spin_lock+0x1a/0x22
+[  260.239926] epc : ffffffffb64cb732 ra : ffffffffb6f762de sp : ffffffc601a13740
+[  260.239929]  gp : ffffffffb871f920 tp : ffffffd9f0043240 t0 : 0000000000000002
+[  260.239932]  t1 : 00000032c41f9000 t2 : 00000032c49fafff s0 : ffffffc601a13750
+[  260.239935]  s1 : ffffffc501095028 a0 : ffffffc501095028 a1 : 0000000000000fc8
+[  260.239937]  a2 : ffffffc601a13760 a3 : 0000000000000045 a4 : 0000000000000046
+[  260.239940]  a5 : 0000000000470045 a6 : 0000000000000000 a7 : ffffffd9ec2b1e00
+[  260.239943]  s2 : ffffffd64250b100 s3 : 00000032c41f9000 s4 : ffffffc601a13810
+[  260.239946]  s5 : ffffffd642540fc8 s6 : ffffffc601a13760 s7 : ffffffd606458680
+[  260.239948]  s8 : 0000000000000008 s9 : 00000032c41f9000 s10: 00000032c41f9000
+[  260.239951]  s11: ffffffd64250b100 t3 : ffffffd9ec2b1e08 t4 : ffffffc601a13ab0
+[  260.239953]  t5 : ffffffd9ec2b1e0c t6 : 00000032c0000000
+[  260.239955] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  260.239958] [<ffffffffb64cb732>] do_raw_spin_lock+0x24/0xae
+[  260.239963] [<ffffffffb6f762de>] _raw_spin_lock+0x1a/0x22
+[  260.239967] [<ffffffffb66e30f0>] __pte_offset_map_lock+0x92/0x566
+[  260.239973] [<ffffffffb66cc48e>] zap_pte_range+0x80/0x3b6
+[  260.239977] [<ffffffffb66cc902>] zap_pmd_range+0x13e/0x184
+[  260.239982] [<ffffffffb66cceea>] unmap_page_range+0x2e0/0x4dc
+[  260.239986] [<ffffffffb66cd144>] unmap_single_vma.isra.0+0x5e/0x90
+[  260.239991] [<ffffffffb66cd3ac>] zap_page_range_single_batched+0xb4/0x160
+[  260.239995] [<ffffffffb671b9fa>] madvise_vma_behavior+0x3ac/0x444
+[  260.239999] [<ffffffffb671bd3c>] madvise_do_behavior+0xe0/0x3ac
+[  260.240003] [<ffffffffb671d6c6>] do_madvise+0xf2/0x12e
+[  260.240006] [<ffffffffb671d71a>] __riscv_sys_madvise+0x18/0x20
+[  260.240010] [<ffffffffb6f6c0b0>] do_trap_ecall_u+0xd6/0x32e
+[  260.240015] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  264.240005] watchdog: BUG: soft lockup - CPU#0 stuck for 75s! [virtqemud:1397]
+[  264.240009] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  264.240075] CPU: 0 UID: 0 PID: 1397 Comm: virtqemud Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  264.240081] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  264.240083] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  264.240085] epc : smp_call_function_many_cond+0x154/0x618
+[  264.240091]  ra : smp_call_function_many_cond+0x114/0x618
+[  264.240096] epc : ffffffffb653906e ra : ffffffffb653902e sp : ffffffc601f1b980
+[  264.240099]  gp : ffffffffb871f920 tp : ffffffd63bbc4300 t0 : ffffffd9ffb2bb90
+[  264.240102]  t1 : 00000000000000ec t2 : 00000032c49fafff s0 : ffffffc601f1ba70
+[  264.240104]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  264.240107]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc160e0
+[  264.240109]  a5 : 0000000000000011 a6 : 0000000000000004 a7 : 00000000000000ff
+[  264.240112]  s2 : ffffffd9ffb2bb40 s3 : ffffffd9ffb2bb48 s4 : 0000000000000008
+[  264.240115]  s5 : ffffffffb642d6d0 s6 : 00000032c40d0000 s7 : 0000000000000000
+[  264.240117]  s8 : 0000000000000000 s9 : ffffffc601f1bbc0 s10: 0000000000000000
+[  264.240120]  s11: 0000000000000001 t3 : ffffffd9ec2b1e08 t4 : ffffffc601f1bdd0
+[  264.240122]  t5 : 0000000000000000 t6 : 00000032c0000000
+[  264.240125] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  264.240128] [<ffffffffb653906e>] smp_call_function_many_cond+0x154/0x618
+[  264.240133] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  264.240138] [<ffffffffb642d8e8>] flush_icache_mm+0x106/0x15e
+[  264.240142] [<ffffffffb642d9f0>] flush_icache_pte+0xb0/0xd2
+[  264.240145] [<ffffffffb66ce5ba>] set_pte_range+0xc4/0x164
+[  264.240150] [<ffffffffb6679bd0>] filemap_map_pages+0x21c/0x4e2
+[  264.240154] [<ffffffffb66ceb80>] do_read_fault+0x128/0x292
+[  264.240158] [<ffffffffb66ceff6>] do_fault+0x188/0x1ea
+[  264.240162] [<ffffffffb66d328a>] handle_pte_fault+0x10e/0x17c
+[  264.240167] [<ffffffffb66d36c0>] __handle_mm_fault+0x3c8/0x4bc
+[  264.240172] [<ffffffffb66d3852>] handle_mm_fault+0x9e/0x27e
+[  264.240176] [<ffffffffb642aafc>] handle_page_fault+0x206/0x71a
+[  264.240181] [<ffffffffb6f6c326>] do_page_fault+0x1e/0x36
+[  264.240185] [<ffffffffb6f784b8>] handle_exception+0x160/0x16c
+[  268.240180] watchdog: BUG: soft lockup - CPU#5 stuck for 156s! [kworker/5:1:84]
+[  268.240185] Modules linked in: sbi_suspend_test(OE) nft_fib_inet nft_fib_ipv4 nft_fib_ipv6 nft_fib nft_reject_inet nf_reject_ipv4 nf_reject_ipv6
+ nft_reject nft_ct nft_chain_nat nf_nat nf_conntrack qrtr nf_defrag_ipv6 nf_defrag_ipv4 rfkill nf_tables vfat fat at24 fuse loop xfs realtek dwmac_
+spacemit(OE) stmmac_platform stmmac nvme_tcp nvme nvme_fabrics dwc3 nvme_core rtc_efi pcs_xpcs udc_core nvme_keyring gpio_spacemit_k1(OE) phylink n
+vme_auth gpio_generic i2c_k1(OE) k3_tsensor(OE) sunrpc dm_mirror dm_region_hash dm_log be2iscsi iscsi_boot_sysfs cxgb4i cxgb4 tls libcxgbi libcxgb
+iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi dm_multipath dm_mod i2c_dev nfnetlink
+[  268.240253] CPU: 5 UID: 0 PID: 84 Comm: kworker/5:1 Tainted: G           OEL     ------  ---  6.12.0-dbg1 #25 PREEMPT(voluntary)
+[  268.240259] Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE, [L]=SOFTLOCKUP
+[  268.240261] Hardware name: SpacemiT k3-pico-itx/k3-pico-itx, BIOS 0.0.1 11/19/2026
+[  268.240263] Workqueue: events bpf_prog_free_deferred
+[  268.240269] epc : smp_call_function_many_cond+0x446/0x618
+[  268.240274]  ra : smp_call_function_many_cond+0x114/0x618
+[  268.240279] epc : ffffffffb6539360 ra : ffffffffb653902e sp : ffffffc60076bb70
+[  268.240281]  gp : ffffffffb871f920 tp : ffffffd6028fa180 t0 : ffffffd9ffbd0b90
+[  268.240284]  t1 : 00000000000000ff t2 : 0000000000000000 s0 : ffffffc60076bc60
+[  268.240287]  s1 : ffffffffb8aceac8 a0 : 0000000000000007 a1 : 0000000000000007
+[  268.240289]  a2 : 0000000000000007 a3 : 0000000000000001 a4 : ffffffd9ffc17640
+[  268.240292]  a5 : 0000000000000011 a6 : 0000000000000006 a7 : 00000000000000ff
+[  268.240294]  s2 : ffffffd9ffbd0b40 s3 : ffffffd9ffbd0b48 s4 : 00000000000004b5
+[  268.240297]  s5 : ffffffffb642d6d0 s6 : ffffffffb85f6380 s7 : 0000000000000000
+[  268.240300]  s8 : 0000000000000005 s9 : 0000000000000000 s10: 0000000000000000
+[  268.240302]  s11: 0000000000000001 t3 : 0000000000000008 t4 : ffffffd601fc1448
+[  268.240304]  t5 : 0000000000000000 t6 : 0000000000000024
+[  268.240307] status: 0000000200000120 badaddr: 0000000000000000 cause: 8000000000000005
+[  268.240310] [<ffffffffb6539360>] smp_call_function_many_cond+0x446/0x618
+[  268.240315] [<ffffffffb65395b2>] on_each_cpu_cond_mask+0x1e/0x42
+[  268.240320] [<ffffffffb642d7ca>] flush_icache_all+0x42/0x5a
+[  268.240324] [<ffffffffb641f218>] patch_text_set_nosync+0x6e/0x78
+[  268.240329] [<ffffffffb643024c>] bpf_arch_text_invalidate+0x2a/0x4a
+[  268.240333] [<ffffffffb65dcc80>] bpf_prog_pack_free+0xde/0x22e
+[  268.240338] [<ffffffffb65dcf7e>] bpf_jit_binary_pack_free+0x16/0x44
+[  268.240342] [<ffffffffb64302ba>] bpf_jit_free+0x4e/0x9c
+[  268.240346] [<ffffffffb65dc5a4>] bpf_prog_free_deferred+0x13a/0x158
+[  268.240350] [<ffffffffb647d586>] process_one_work+0x146/0x33e
+[  268.240354] [<ffffffffb647df5e>] worker_thread+0x134/0x27e
+[  268.240357] [<ffffffffb6484b18>] kthread+0xd8/0xf8
+[  268.240361] [<ffffffffb641a3b4>] ret_from_fork_kernel+0x10/0x192
+[  268.240365] [<ffffffffb6f785f2>] ret_from_fork_kernel_asm+0x16/0x18
+

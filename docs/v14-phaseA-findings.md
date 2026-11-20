@@ -73,3 +73,35 @@ spacemit_mask_irq, until the hoist makes that unreachable.
 - Board state: wedged; needs a hard reset (power cycle or reset
   button). The NOR is intact (flash verified by readback; the wedge
   is a runtime state, not corruption).
+
+## Update (v15 phase-A, post-fix): the fallback is the real killer
+
+The v15 dispatch-hoist fix was verified in disassembly (zero CSR/PMU
+writes before any rejection) and the wedge RECURRED on hart 7 — a
+non-special hart, killing the unconditional-vote theory. The console
+shows the diagnostic printed and then a HARD lockup (no NMI
+backtrace). Root cause found in the generic layer:
+
+  sbi_hsm_hart_suspend() (lib/sbi/sbi_hsm.c):
+    ret = hsm_device_hart_suspend(...)          // our ENOTSUPP
+    if (ret == SBI_ENOTSUPP && default type)
+        ret = __sbi_hsm_suspend_default()       // plain wfi -> 0
+    if (ret == 0 && NON_RET_BIT)
+        jump_warmboot()                         // simulate resume
+
+ENOTSUPP from a platform device is not a rejection — the generic
+layer consumes it as "run the generic implementation". For
+non-retentive types the generic path then jumps to warm-boot to
+SIMULATE a resume at scratch->next_addr, re-running the K3 warm init
+(PMA/L2/snoop) with MIE cleared. The hart parks there forever:
+hard lockup, no NMI response. This single mechanism explains BOTH
+wedges (v14 hart 4, v15 hart 7); the harts differed only in where
+the sysfs write ran.
+
+v16 fix: the rpmi wrapper translates ENOTSUPP + NON_RET_DEFAULT
+into SBI_EFAIL — the ecall now fails outright, no generic fallback,
+no warmboot simulation. Disassembly-verified at the wrapper:
+rc==-2 AND type==0x80000000 -> return -1. The module now also
+passes a valid S-mode resume_addr per spec (was 0).
+
+Status after v16 build: awaiting flash + phase-A re-run.
