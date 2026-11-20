@@ -38,9 +38,9 @@ installed into the source trees until a build adapter defines that operation.
 
 | Component | Integration status / intended responsibility |
 | --- | --- |
-| ESOS + ESOS-lite | Pinned source preparation and native SCons adapter; fresh local cross-build passed |
+| ESOS + ESOS-lite | Pinned source preparation and native SCons adapter; fresh local cross-build passed. The ESOS patch series carries the reset-handoff fix and the RPMI CLOCK service + CCU application-core clocks (experimental ACPI-clock path; host regression for the service callbacks, no hardware qualification yet) |
 | OpenSBI | Pending extraction of qualified source pin, local patches and build configuration |
-| edk2-platforms | Pinned source with the maintained ACPI patch series exported under `patches/edk2-platforms/` (tables, clock bring-up, GMAC/PCIe/reset fixes, quiet console); applied by `meta.py prepare` via `git apply` |
+| edk2-platforms | Pinned source with the maintained ACPI patch series exported under `patches/edk2-platforms/` (tables incl. SPCR, DSDT v8, clock bring-up, GMAC/PCIe/reset fixes, quiet console); applied by `meta.py prepare` via `git apply` |
 | Linux | Separate optional driver-validation build; experimental patches are not firmware release inputs |
 | FSBL / DDR initialization | External input until source, license and exact binary provenance are established |
 | FIT / flash packaging | Separate adapter with explicit payload contracts, board layouts and durable-state exclusions |

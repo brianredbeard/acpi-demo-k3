@@ -63,12 +63,24 @@ def run(*args, cwd=None):
     subprocess.run(args, cwd=cwd, check=True)
 
 
-def prepare(lock, destination, repositories=None):
+def prepare(lock, destination, repositories=None, select=None):
     lock = Path(lock).resolve()
     manifest_bytes = lock.read_bytes()
     data = validate(lock, json.loads(manifest_bytes))
+    if select is None:
+        select = {c['name'] for c in data['components']}
+    unknown = select - {c['name'] for c in data['components']}
+    if unknown:
+        raise ValueError(f'unknown component selection: {sorted(unknown)}')
+    # A selected component must not depend on an unselected parent:
+    # the ESOS pair nests, so selecting esos-lite alone is invalid.
+    paths = {c['path'] for c in data['components'] if c['name'] in select}
+    for component in data['components']:
+        if component['name'] not in select and any(
+                Path(component['path']) in Path(p).parents for p in paths):
+            raise ValueError(f"selection requires parent component: {component['name']}")
     repositories = repositories or {}
-    if set(repositories) - {c['name'] for c in data['components']}:
+    if set(repositories) - select:
         raise ValueError('unknown repository override')
     for repository in repositories.values():
         if not Path(repository).is_absolute() or not Path(repository).is_dir():
@@ -78,6 +90,8 @@ def prepare(lock, destination, repositories=None):
     with tempfile.TemporaryDirectory(prefix='k3-inputs-') as temporary:
         inputs = {}
         for component in data['components']:
+            if component['name'] not in select:
+                continue
             for item in component.get('patches', []) + component.get('configs', []):
                 content = contained(lock.parent, item['file']).read_bytes()
                 if hashlib.sha256(content).hexdigest() != item['sha256']:
@@ -88,6 +102,8 @@ def prepare(lock, destination, repositories=None):
         destination = Path(destination).absolute()
         destination.mkdir(parents=True, exist_ok=False)
         for component in data['components']:
+            if component['name'] not in select:
+                continue
             target = contained(destination, component['path'])
             if target.exists():
                 raise FileExistsError(f'refusing existing source destination: {target}')

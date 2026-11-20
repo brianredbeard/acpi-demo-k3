@@ -1,0 +1,422 @@
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
+index 0ad48f76f..adc3c1f2b 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_clk.c
+@@ -4,82 +4,297 @@
+  * SPDX-License-Identifier: Apache-2.0
+  */
+ 
++/*
++ * K3 RPMI clock service — wired to the ESOS CCU clock framework.
++ *
++ * The RPMI CLOCK service group (MPXY channel 8) exposes the
++ * application-core peripheral clocks that Linux drivers request under
++ * ACPI (PRP0001 consumers cannot reach CCU phandles, so Linux obtains
++ * clocks through this service via clk-rpmi + SBI-MPXY).
++ *
++ * Clock control is delegated to the ESOS CCU driver
++ * (ccu-spacemit-k3.c), which owns the APBC/APMU/MPMU register
++ * programming. This file only:
++ *   1. declares the stable RPMI clock-id <-> CCU clock-name contract
++ *      (k3-rpmi-clk-ids.h), and
++ *   2. forwards RPMI ops (state/rate) to struct clk operations.
++ */
++
+ #include <rthw.h>
+ #include <rtthread.h>
+ #include <dtb_head.h>
+ #include <librpmi.h>
++#include <drivers/clk-provider.h>
++#include "../../clk/ccu-spacemit-k3.h"
++#include "k3-rpmi-clk-ids.h"
+ #include "../spacemit-rpmi.h"
+ 
+-static rpmi_uint64_t rproc_clk[] = {500000000, 900000000, 50000000};
++struct k3_rpmi_clk_entry {
++	struct clk      *clk;      /* resolved CCU clock (lazy)          */
++	rpmi_uint64_t    rate;     /* boot rate (snapshot for gates)     */
++};
+ 
+-static rpmi_uint64_t rproc_new_rate = 500000000;
+-static enum rpmi_clock_state rproc_state = RPMI_CLK_STATE_ENABLED;
++static struct k3_rpmi_clk_entry k3_rpmi_clks[K3_RPMI_CLK_COUNT];
+ 
+-struct rpmi_clock_data k3_os0_clk_data[1] = {
+-	[0] = {
+-		.parent_id = -1,
+-		.transition_latency_ms = 5,
+-		.clock_type = RPMI_CLK_TYPE_LINEAR,
+-		.name = "rproc_clk",
+-		.rate_count = 9,
+-		.clock_rate_array = rproc_clk,
+-	},
+-};
++/* placeholder rate for clocks not yet present in the CCU table */
++static rpmi_uint64_t k3_rpmi_unresolved_rate;
++
++static struct rpmi_clock_data k3_os0_clk_data[K3_RPMI_CLK_COUNT];
+ 
+-static rt_int32_t  _k3_os0_clock_init(void *priv)
++/*
++ * Resolve a CCU clock by name. Lazy: retried on every op until it
++ * succeeds, so RPMI service init is decoupled from CCU init order (if
++ * the CCU registers after this service, or a clock joins the CCU table
++ * in a later build, the entry starts working without a firmware reboot).
++ */
++static struct clk *k3_rpmi_clk_resolve(rpmi_uint32_t clock_id)
+ {
+-	/* platform releated, get the registers or other thing what you want */
+-	struct spacemit_rpmi_clk_config *config = priv;
++	struct k3_rpmi_clk_entry *e = &k3_rpmi_clks[clock_id];
+ 
+-	config->num_clk = 1;
++	if (e->clk)
++		return e->clk;
+ 
++	e->clk = spacemit_ccu_get_clk_by_name(k3_rpmi_clk_names[clock_id]);
++	if (e->clk) {
++		e->rate = (rpmi_uint64_t)clk_get_rate(e->clk);
++
++		/*
++		 * If the clock was published as unavailable at service init
++		 * (CCU not up yet / table entry added later), refresh the
++		 * metadata now -- the service group reads cdata by pointer, so
++		 * Linux sees the rates on its next get_info/query.
++		 */
++		if (k3_os0_clk_data[clock_id].rate_count == 0) {
++			k3_os0_clk_data[clock_id] = (struct rpmi_clock_data){
++				.parent_id = -1,
++				.transition_latency_ms = 1,
++				.clock_type = RPMI_CLK_TYPE_DISCRETE,
++				.name = k3_rpmi_clk_names[clock_id],
++				.rate_count = 1,
++				.clock_rate_array = &e->rate,
++			};
++		}
++	}
++
++	return e->clk;
++}
++
++static rt_int32_t _k3_os0_clock_init(void *priv)
++{
++	struct spacemit_rpmi_clk_config *config = priv;
++	int i;
++
++	config->num_clk  = K3_RPMI_CLK_COUNT;
+ 	config->clk_data = k3_os0_clk_data;
+ 
++	for (i = 0; i < K3_RPMI_CLK_COUNT; i++) {
++		if (i == K3_RPMI_CLK_RPROC) {
++			/* legacy stub clock retained for ABI compatibility */
++			static rpmi_uint64_t rproc_rates[] = {
++				50000000, 500000000, 900000000,
++			};
++			k3_os0_clk_data[i] = (struct rpmi_clock_data){
++				.parent_id = -1,
++				.transition_latency_ms = 5,
++				.clock_type = RPMI_CLK_TYPE_DISCRETE,
++				.name = "rproc_clk",
++				.rate_count = 3,
++				.clock_rate_array = rproc_rates,
++			};
++			continue;
++		}
++
++		/*
++		 * Try to resolve now (normal case: CCU already up). If the
++		 * CCU clock table does not contain this name yet, still
++		 * publish the clock to Linux (stable IDs mean the entry
++		 * must exist); ops return RPMI_ERR_NOTSUPP until the CCU
++		 * side lands. rate stays a boot snapshot for gate clocks.
++		 */
++		if (k3_rpmi_clk_resolve(i)) {
++			/*
++			 * Gate-class clocks are fixed-rate: publish them as
++			 * DISCRETE with the boot rate. NEVER publish single-rate
++			 * clocks as LINEAR: the RPMI GET_SUPPORTED_RATES linear
++			 * branch serves min/max/step from rate_array[0..2], so a
++			 * 1-element array leaks adjacent memory as max/step, and
++			 * Linux clk-rpmi feeds that garbage into
++			 * clk_set_rate_range() -- which can clamp and issue a
++			 * real SET_RATE that propagates into the shared axi
++			 * parent. DISCRETE keeps clk-rpmi's determine_rate a
++			 * pass-through and the range a point [r, r].
++			 */
++			k3_os0_clk_data[i] = (struct rpmi_clock_data){
++				.parent_id = -1,
++				.transition_latency_ms = 1,
++				.clock_type = RPMI_CLK_TYPE_DISCRETE,
++				.name = k3_rpmi_clk_names[i],
++				.rate_count = 1,
++				.clock_rate_array = &k3_rpmi_clks[i].rate,
++			};
++		} else {
++			rt_kprintf("rpmi-clk: CCU clock '%s' not found (id %d)\n",
++				   k3_rpmi_clk_names[i], i);
++			/*
++			 * Unresolved clock: still publish a DISCRETE entry
++			 * with a placeholder rate. clk-rpmi aborts the whole
++			 * provider if GET_SUPPORTED_RATES fails for any clock,
++			 * so rate_count must be >= 1; ops return NOTSUPP until
++			 * the CCU side lands.
++			 */
++			k3_os0_clk_data[i] = (struct rpmi_clock_data){
++				.parent_id = -1,
++				.transition_latency_ms = 0,
++				.clock_type = RPMI_CLK_TYPE_DISCRETE,
++				.name = k3_rpmi_clk_names[i],
++				.rate_count = 1,
++				.clock_rate_array = &k3_rpmi_unresolved_rate,
++			};
++		}
++	}
++
+ 	return 0;
+ }
+ 
+-static enum rpmi_error spacemit_set_state(void *priv, rpmi_uint32_t clock_id, enum rpmi_clock_state state)
++static enum rpmi_error spacemit_set_state(void *priv, rpmi_uint32_t clock_id,
++                                          enum rpmi_clock_state state)
+ {
+-	rproc_state = state;
++	struct clk *clk;
+ 
+-	return 0;
++	if (clock_id >= K3_RPMI_CLK_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++	if (clock_id == K3_RPMI_CLK_RPROC)
++		return RPMI_SUCCESS;    /* legacy stub */
++
++	clk = k3_rpmi_clk_resolve(clock_id);
++	if (!clk)
++		return RPMI_ERR_NOTSUPP;
++
++	if (state == RPMI_CLK_STATE_ENABLED) {
++		if (clk_prepare_enable(clk))
++			return RPMI_ERR_FAILED;
++	} else if (state == RPMI_CLK_STATE_DISABLED) {
++		clk_disable_unprepare(clk);
++	} else {
++		return RPMI_ERR_INVALID_PARAM;
++	}
++
++	return RPMI_SUCCESS;
+ }
+ 
+-static enum rpmi_error spacemit_get_state_and_rate(void *priv, rpmi_uint32_t clock_id, enum rpmi_clock_state *state, rpmi_uint64_t *rate)
++static enum rpmi_error spacemit_get_state_and_rate(void *priv, rpmi_uint32_t clock_id,
++                                                   enum rpmi_clock_state *state,
++                                                   rpmi_uint64_t *rate)
+ {
+-	*state = rproc_state;
+-	*rate = rproc_new_rate;
++	struct clk *clk;
+ 
+-	return 0;
++	if (clock_id >= K3_RPMI_CLK_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++	if (clock_id == K3_RPMI_CLK_RPROC) {
++		*state = RPMI_CLK_STATE_ENABLED;
++		*rate  = 500000000;
++		return RPMI_SUCCESS;
++	}
++
++	clk = k3_rpmi_clk_resolve(clock_id);
++	if (!clk)
++		return RPMI_ERR_NOTSUPP;
++
++	/* read the gate bit back from hardware via the CCU clock ops */
++	*state = spacemit_ccu_clk_is_enabled(clk) ?
++		 RPMI_CLK_STATE_ENABLED : RPMI_CLK_STATE_DISABLED;
++	*rate  = (rpmi_uint64_t)clk_get_rate(clk);
++	return RPMI_SUCCESS;
+ }
+ 
+-static rpmi_bool_t spacemit_rate_change_match(void *priv, rpmi_uint32_t clock_id, rpmi_uint64_t rate)
++/*
++ * Returns TRUE if a rate change is required to reach the requested rate
++ * (i.e. the clock is not already running at it).
++ */
++static rpmi_bool_t spacemit_rate_change_match(void *priv, rpmi_uint32_t clock_id,
++                                              rpmi_uint64_t rate)
+ {
+-	rproc_new_rate = rate;
++	if (clock_id >= K3_RPMI_CLK_COUNT)
++		return 0;
++	if (clock_id == K3_RPMI_CLK_RPROC)
++		return rate != 500000000;
++	if (!k3_rpmi_clk_resolve(clock_id))
++		return 0;
+ 
+-	return 0;
++	return (rpmi_uint64_t)clk_get_rate(k3_rpmi_clks[clock_id].clk) != rate;
+ }
+ 
+-static enum rpmi_error spacemit_set_rate(void *priv, rpmi_uint32_t clock_id, enum rpmi_clock_rate_match match, rpmi_uint64_t rate, rpmi_uint64_t *new_rate)
++static enum rpmi_error spacemit_set_rate(void *priv, rpmi_uint32_t clock_id,
++                                         enum rpmi_clock_rate_match match,
++                                         rpmi_uint64_t rate, rpmi_uint64_t *new_rate)
+ {
+-	rproc_new_rate = *new_rate;
++	struct clk *clk;
+ 
+-	return 0;
++	if (clock_id >= K3_RPMI_CLK_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++	if (clock_id == K3_RPMI_CLK_RPROC)
++		return RPMI_ERR_NOTSUPP;
++
++	clk = k3_rpmi_clk_resolve(clock_id);
++	if (!clk)
++		return RPMI_ERR_NOTSUPP;
++
++	/*
++	 * Only exact (platform-defined) rates are supported for now.
++	 * ROUND_DOWN/ROUND_UP would need CCU round-rate wiring; refuse
++	 * rather than silently programming an exact rate.
++	 */
++	if (match != RPMI_CLK_RATE_MATCH_PLATFORM)
++		return RPMI_ERR_NOTSUPP;
++
++	/*
++	 * Only allow rate changes on clocks that own a divider/mux.
++	 * Gate clocks have no .set_rate; letting the request through
++	 * would make the CCU framework propagate it to the shared parent
++	 * (e.g. axi_clk -> APMU_ACLK_CLK_CTRL), reprogramming a bus
++	 * clock shared by unrelated peripherals.
++	 */
++	if (!__clk_get_hw(clk)->init->ops->set_rate)
++		return RPMI_ERR_NOTSUPP;
++
++	if (clk_set_rate(clk, (rt_uint64_t)rate))
++		return RPMI_ERR_DENIED;
++
++	if (new_rate)
++		*new_rate = (rpmi_uint64_t)clk_get_rate(clk);
++	return RPMI_SUCCESS;
+ }
+ 
+-static enum rpmi_error spacemit_set_rate_recalc(void *priv, rpmi_uint32_t clock_id, rpmi_uint64_t parent_rate, rpmi_uint64_t *new_rate)
++static enum rpmi_error spacemit_set_rate_recalc(void *priv, rpmi_uint32_t clock_id,
++                                                rpmi_uint64_t parent_rate,
++                                                rpmi_uint64_t *new_rate)
+ {
+-	rproc_new_rate = *new_rate;
++	struct clk *clk;
+ 
+-	return 0;
++	if (clock_id >= K3_RPMI_CLK_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++	if (clock_id == K3_RPMI_CLK_RPROC)
++		return RPMI_ERR_NOTSUPP;
++
++	clk = k3_rpmi_clk_resolve(clock_id);
++	if (!clk)
++		return RPMI_ERR_NOTSUPP;
++
++	/*
++	 * Recalculation happens inside the CCU when a parent rate changes;
++	 * report the resulting rate.
++	 */
++	if (new_rate)
++		*new_rate = (rpmi_uint64_t)clk_get_rate(clk);
++	return RPMI_SUCCESS;
+ }
+ 
+ static struct rpmi_clock_platform_ops k3_os0_clock_pops = {
+-	.set_state = spacemit_set_state,
++	.set_state          = spacemit_set_state,
+ 	.get_state_and_rate = spacemit_get_state_and_rate,
+-	.rate_change_match = spacemit_rate_change_match,
+-	.set_rate = spacemit_set_rate,
+-	.set_rate_recalc = spacemit_set_rate_recalc,
++	.rate_change_match  = spacemit_rate_change_match,
++	.set_rate           = spacemit_set_rate,
++	.set_rate_recalc    = spacemit_set_rate_recalc,
+ };
+ 
+ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
+@@ -90,11 +305,8 @@ static struct spacemit_rpmi_clk_ops k3_os0_clk_ops = {
+ 
+ static rt_int32_t k3_os0_clk_init(void)
+ {
+-
+ 	rt_list_init(&k3_os0_clk_ops.list);
+-
+ 	spacemit_rpmi_clk_register(&k3_os0_clk_ops.list);
+-
+ 	return 0;
+ }
+ INIT_DEVICE_EXPORT(k3_os0_clk_init);
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h b/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
+new file mode 100644
+index 000000000..5e71e84b3
+--- /dev/null
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-rpmi-clk-ids.h
+@@ -0,0 +1,65 @@
++/*
++ * Copyright (c) 2022-2025, Spacemit
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++/*
++ * K3 RPMI clock ID contract (firmware <-> kernel ABI).
++ *
++ * RPMI clock IDs are an ABI: append-only, never renumber, never reuse a
++ * retired ID. The names must match the CCU clock table in
++ * bsp/spacemit/drivers/clk/ccu-spacemit-k3.c exactly: they are the lookup
++ * keys for spacemit_ccu_get_clk_by_name(), and they are served to Linux
++ * via RPMI CLOCK_GET_INFO, where clk-rpmi re-uses them as clk names
++ * (i.e. they are the con_ids Linux drivers request).
++ *
++ * Before adding an entry here, verify the name against the Linux ccu-k3.c
++ * clock table -- this header is the single source of truth for the ESOS
++ * side of that contract.
++ */
++
++#ifndef _K3_RPMI_CLK_IDS_H_
++#define _K3_RPMI_CLK_IDS_H_
++
++enum k3_rpmi_clk_id {
++	K3_RPMI_CLK_RPROC      = 0,   /* "rproc_clk" (legacy stub, keep id 0) */
++	K3_RPMI_CLK_TWSI0      = 1,   /* APBC twsi0_clk  (i2c0 func clock)   */
++	K3_RPMI_CLK_TWSI0_BUS  = 2,   /* APBC twsi0_bus_clk                  */
++	K3_RPMI_CLK_GPIO       = 3,   /* APBC gpio_clk                       */
++	K3_RPMI_CLK_GPIO_BUS   = 4,   /* APBC gpio_bus_clk                   */
++	K3_RPMI_CLK_SDH0       = 5,   /* APMU sdh0_clk                       */
++	K3_RPMI_CLK_SDH_AXI    = 6,   /* APMU sdh_axi_aclk                   */
++	K3_RPMI_CLK_UFS_ACLK   = 7,   /* APMU ufs_aclk                       */
++	K3_RPMI_CLK_UFS_REFCLK = 8,   /* APMU ufs_refclk                     */
++	K3_RPMI_CLK_EMAC0_BUS  = 9,   /* APMU emac0_bus_clk                  */
++	K3_RPMI_CLK_EMAC0_REF  = 10,  /* APMU emac0_ref_clk                  */
++	K3_RPMI_CLK_EMAC0_TX   = 11,  /* APMU emac0_rgmii_tx_clk             */
++	K3_RPMI_CLK_USB2_BUS   = 12,  /* APMU usb2_bus_clk                   */
++
++	K3_RPMI_CLK_COUNT,            /* append new clocks above this line   */
++};
++
++/*
++ * CCU clock-name table, indexed by k3_rpmi_clk_id. Kept next to the enum
++ * so ID and name cannot drift apart. Entries without a CCU counterpart
++ * (currently only the legacy rproc clock) use NULL and are handled
++ * service-locally.
++ */
++static const char *k3_rpmi_clk_names[K3_RPMI_CLK_COUNT] = {
++	[K3_RPMI_CLK_RPROC]      = NULL,             /* service-local stub */
++	[K3_RPMI_CLK_TWSI0]      = "twsi0_clk",
++	[K3_RPMI_CLK_TWSI0_BUS]  = "twsi0_bus_clk",
++	[K3_RPMI_CLK_GPIO]       = "gpio_clk",
++	[K3_RPMI_CLK_GPIO_BUS]   = "gpio_bus_clk",
++	[K3_RPMI_CLK_SDH0]       = "sdh0_clk",
++	[K3_RPMI_CLK_SDH_AXI]    = "sdh_axi_aclk",
++	[K3_RPMI_CLK_UFS_ACLK]   = "ufs_aclk",
++	[K3_RPMI_CLK_UFS_REFCLK] = "ufs_refclk",
++	[K3_RPMI_CLK_EMAC0_BUS]  = "emac0_bus_clk",
++	[K3_RPMI_CLK_EMAC0_REF]  = "emac0_ref_clk",
++	[K3_RPMI_CLK_EMAC0_TX]   = "emac0_rgmii_tx_clk",
++	[K3_RPMI_CLK_USB2_BUS]   = "usb2_bus_clk",
++};
++
++#endif /* _K3_RPMI_CLK_IDS_H_ */

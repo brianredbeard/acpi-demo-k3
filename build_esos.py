@@ -33,10 +33,12 @@ def build(lock, destination, python, compiler_dir, jobs, repositories=None):
     data = meta.validate(lock)
     components = {c['name']: c for c in data['components']}
     # The manifest may carry other components (e.g. edk2-platforms); this
-    # adapter consumes only the ESOS pair.
+    # adapter prepares and consumes only the ESOS pair regardless of what
+    # else the manifest pins.
     missing = {'esos', 'esos-lite'} - set(components)
     if missing:
         raise ValueError(f'ESOS adapter requires components: {sorted(missing)}')
+    select = {'esos', 'esos-lite'}
     if components['esos-lite']['path'] != components['esos']['path'] + '/components/esos-lite':
         raise ValueError('ESOS-lite must occupy the native nested dependency path')
     configs = {}
@@ -80,7 +82,7 @@ def build(lock, destination, python, compiler_dir, jobs, repositories=None):
         report['tools']['compiler_directory'] = str(compiler_dir)
         report['tools']['python_path'] = str(python)
         sources = destination / 'sources'
-        meta.prepare(lock, sources, repositories=repositories)
+        meta.prepare(lock, sources, repositories=repositories, select=select)
         prepared = json.loads((sources / 'prepared.json').read_text())
         # Refuse a manifest changed between configuration snapshot and cloning.
         if prepared['manifest'] != data:

@@ -26,7 +26,7 @@ class BuildTests(unittest.TestCase):
                 (tools / name).write_text('fixture')
                 (tools / name).chmod(0o755)
             steps = []
-            def prepare(lock, destination, repositories=None):
+            def prepare(lock, destination, repositories=None, select=None):
                 for project in ('esos', 'esos/components/esos-lite/rt-thread'):
                     (destination / project / 'bsp/spacemit/platform').mkdir(parents=True)
                 (destination / 'prepared.json').write_text(json.dumps({'manifest': json.loads(lock.read_text()), 'manifest_sha256': build_esos.meta.digest(lock)}))

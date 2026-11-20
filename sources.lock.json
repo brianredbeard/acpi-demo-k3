@@ -13,15 +13,19 @@
           "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
         },
         {
-          "file": "patches/esos/0002-rpmi-clk-wire-service-to-ccu.patch",
+          "file": "patches/esos/0002-ccu-apbc-base-and-clk-name-lookup.patch",
           "sha256": "6a9f4a9ca812c2b44bea09c5aa3286baad69694903036a82ada84088e3a6223f"
         },
         {
-          "file": "patches/esos/0003-ccu-k3-port-RPMI-consumer-clocks.patch",
+          "file": "patches/esos/0003-rpmi-clk-wire-service-to-ccu.patch",
+          "sha256": "f456573063cfe8b81e28b92c439bdc153894057a67c2610dd0e36153ce72d25c"
+        },
+        {
+          "file": "patches/esos/0004-ccu-k3-port-RPMI-consumer-clocks.patch",
           "sha256": "fde976b277cfc96f126bb103c8bc868543a6341051148f3d35b8054cdd707de4"
         },
         {
-          "file": "patches/esos/0004-ccu-k3-fix-transposed-fields.patch",
+          "file": "patches/esos/0005-ccu-k3-fix-transposed-fields.patch",
           "sha256": "57bdd372cec710d72da1d5bd0e16d9248377d298b241fa635901b5c5e61f7e9b"
         }
       ],
@@ -53,7 +57,7 @@
     },
     {
       "name": "edk2-platforms",
-      "repository": "git@github.com:brianredbeard/edk2-platforms.git",
+      "repository": "https://github.com/brianredbeard/edk2-platforms.git",
       "revision": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
       "path": "edk2-platforms",
       "patches": [
