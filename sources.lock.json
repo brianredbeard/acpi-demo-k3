@@ -27,6 +27,10 @@
         {
           "file": "patches/esos/0005-ccu-k3-fix-transposed-fields.patch",
           "sha256": "57bdd372cec710d72da1d5bd0e16d9248377d298b241fa635901b5c5e61f7e9b"
+        },
+        {
+          "file": "patches/esos/0006-ccu-k3-fix-name-lookup-after-regist.patch",
+          "sha256": "8688ee260fefcbbbc31f159d4ad1e2bdc67cc40b4f9094b080cb9ea5d941101d"
         }
       ],
       "configs": [

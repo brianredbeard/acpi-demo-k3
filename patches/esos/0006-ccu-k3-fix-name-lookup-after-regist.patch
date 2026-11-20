@@ -1,0 +1,31 @@
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Subject: [PATCH] clk: ccu-k3: fix name lookup after registration (hw->init is NULL)
+
+spacemit_ccu_get_clk_by_name() matched clocks by hw->init->name, but the
+RT-Thread clk core NULLs hw->init in __clk_register() ("The init data is
+not supposed to be used outside of registration path. Set it to NULL so
+that ... we catch use of hw->init early on in the core."). Every
+registered clock therefore failed the hw->init && hw->init->name check
+and the lookup returned NULL for every name — the RPMI clock service
+published all 12 consumer clocks as unresolved (placeholder rate 0,
+placeholder state enabled), confirmed live on hardware (pico-acpi-v11:
+/sys/kernel/debug/clk shows all RPMI clocks at rate 0 with the mpxy
+mailbox and clk-rpmi otherwise fully functional).
+
+Use clk_hw_get_name(hw) — the core->name accessor valid after
+registration, the same one the probe's own clkdev registration uses.
+diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+index 6ddf783..8921d49 100644
+--- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
++++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+@@ -1306,8 +1306,8 @@ struct clk *spacemit_ccu_get_clk_by_name(const char *name)
+ 
+ 	for (i = 0; i < cells->num; i++) {
+ 		hw = cells->hws[i];
+-		if (hw && hw->init && hw->init->name &&
+-		    !rt_strcmp(hw->init->name, name))
++		if (hw && clk_hw_get_name(hw) &&
++		    !rt_strcmp(clk_hw_get_name(hw), name))
+ 			return clk_hw_get_clk(hw, name);
+ 	}
+ 
