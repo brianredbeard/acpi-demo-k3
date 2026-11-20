@@ -1,0 +1,589 @@
+diff --git a/bsp/spacemit/drivers/i2c/i2c-k1.c b/bsp/spacemit/drivers/i2c/i2c-k1.c
+index 3ece046..45c1bce 100644
+--- a/bsp/spacemit/drivers/i2c/i2c-k1.c
++++ b/bsp/spacemit/drivers/i2c/i2c-k1.c
+@@ -11,6 +11,7 @@
+ #include <drivers/i2c-bit-ops.h>
+ #include <drivers/i2c_dev.h>
+ #include "i2c-k1.h"
++#include "i2c-reset.h"
+ 
+ #define I2C_SMBUS_BLOCK_MAX	32    /* As specified in SMBus standard */
+ #define USEC_PER_SEC		1000000L
+@@ -878,6 +879,19 @@ static struct rt_i2c_bus_device_ops spacemit_i2c_ops = {
+ 	.master_xfer	= spacemit_i2c_xfer,
+ };
+ 
++int spacemit_i2c_restore_pins(struct rt_i2c_bus_device *bus)
++{
++	struct spacemit_i2c_dev *i2c;
++	rt_thread_t self = rt_thread_self();
++
++	if (!bus || bus->ops != &spacemit_i2c_ops)
++		return -RT_EINVAL;
++	if (!self || bus->lock.owner != self)
++		return -RT_EBUSY;
++	i2c = to_spacemit_i2c_dev(bus);
++	return pinctrl_reapply_state(i2c->node, "default");
++}
++
+ static int
+ spacemit_i2c_parse_dt(struct dtb_node * dnode, struct spacemit_i2c_dev *spacemit_i2c)
+ {
+@@ -962,6 +976,7 @@ static int spacemit_i2c_probe(void)
+ 			}
+ 			memset(spacemit_i2c, 0, sizeof(struct spacemit_i2c_dev));
+ 			dev = &spacemit_i2c->dev;
++			spacemit_i2c->node = compatible_node;
+ 			spacemit_i2c->name = (char *)__compatible[i].data;
+ 
+ 			ret = spacemit_i2c_parse_dt(compatible_node, spacemit_i2c);
+diff --git a/bsp/spacemit/drivers/i2c/i2c-k1.h b/bsp/spacemit/drivers/i2c/i2c-k1.h
+index 856925a..c12cf84 100644
+--- a/bsp/spacemit/drivers/i2c/i2c-k1.h
++++ b/bsp/spacemit/drivers/i2c/i2c-k1.h
+@@ -198,6 +198,7 @@ typedef rt_uint32_t i2c_size_t;
+ /* i2c-spacemit driver's main struct */
+ struct spacemit_i2c_dev {
+ 	struct rt_i2c_bus_device dev;
++	struct dtb_node *node;
+ 	char *name;
+ 	//struct i2c_adapter	adapt;
+ 	struct rt_i2c_msg		*msgs;
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_sysreset.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_sysreset.c
+index 8ef3e79..4babc35 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_sysreset.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_sysreset.c
+@@ -10,6 +10,7 @@
+ #include <dtb_head.h>
+ #include <librpmi.h>
+ #include "../spacemit-rpmi.h"
++#include "../../i2c/i2c-reset.h"
+ 
+ #define P1_REG_NONVOLATILE_ADDR		0xab
+ #define P1_REG_NONVOLATILE_FASTBOOT	0xf1
+@@ -159,6 +160,7 @@ static void k3_os0_system_reset(void *priv, rpmi_uint32_t sysreset_type)
+ {
+ 	struct spacemit_rpmi_sysreset_config *config = priv;
+ 	volatile rt_uint8_t val = 0;
++	int ret;
+ 
+ 	if (k3_sys_reset_is_shutdown(sysreset_type) && config->reset >= 0) {
+ 		rt_kprintf("k3 sysreset: shutdown via GPIO%d\n", config->reset);
+@@ -168,6 +170,31 @@ static void k3_os0_system_reset(void *priv, rpmi_uint32_t sysreset_type)
+ 			rt_thread_mdelay(100);
+ 	}
+ 
++	if (!k3_sysreset_is_reboot(sysreset_type) &&
++	    !k3_sys_reset_is_shutdown(sysreset_type)) {
++		rt_kprintf("k3 sysreset: unknown sysreset type\n");
++		return;
++	}
++	if (!i2c_bus_device) {
++		rt_kprintf("k3 sysreset: no valid pwr i2c\n");
++		return;
++	}
++
++	/* AP users must be quiesced before this terminal handoff. Serialize ESOS
++	 * users across pin restoration, boot-mode flags and the final PMIC write.
++	 * rt_i2c_transfer() recursively takes this same bus mutex.
++	 */
++	ret = rt_i2c_bus_lock(i2c_bus_device, RT_WAITING_FOREVER);
++	if (ret) {
++		rt_kprintf("k3 sysreset: pwr i2c lock failed: %d\n", ret);
++		return;
++	}
++	ret = spacemit_i2c_restore_pins(i2c_bus_device);
++	if (ret) {
++		rt_kprintf("k3 sysreset: pwr i2c pin restore failed: %d\n", ret);
++		goto unlock;
++	}
++
+ 	if (k3_sysreset_is_reboot(sysreset_type)) {
+ 		/* read from share memory */
+ 		/* to decide perform fastboot reboot or normal reboot */
+@@ -177,14 +204,14 @@ static void k3_os0_system_reset(void *priv, rpmi_uint32_t sysreset_type)
+ 			if (k3_sysreset_write_flag_to_p1(P1_REG_NONVOLATILE_FASTBOOT) != 1) {
+ 				rt_kprintf("k3 sysreset: i2c transfer error, %s:%d\n",
+ 					   __func__, __LINE__);
+-				return;
++				goto unlock;
+ 			}
+ 			rt_kprintf("k3 sysreset: fastboot reboot\n");
+ 		} else if (val == FLAG_UPDATER) {
+ 			if (k3_sysreset_write_flag_to_p1(P1_REG_NONVOLATILE_UPDATER) != 1) {
+ 				rt_kprintf("k3 sysreset: i2c transfer error, %s:%d\n",
+ 					   __func__, __LINE__);
+-				return;
++				goto unlock;
+ 			}
+ 			rt_kprintf("k3 sysreset: updater reboot\n");
+ 		} else {
+@@ -194,9 +221,10 @@ static void k3_os0_system_reset(void *priv, rpmi_uint32_t sysreset_type)
+ 	} else if (k3_sys_reset_is_shutdown(sysreset_type)) {
+ 		rt_kprintf("k3 sysreset: shutdown\n");
+ 		k3_os0_sysreset_soft_rst_sd(sysreset_type);
+-	} else {
+-		rt_kprintf("k3 sysreset: unknown sysreset type\n");
+ 	}
++
++unlock:
++	rt_i2c_bus_unlock(i2c_bus_device);
+ }
+ 
+ static struct rpmi_sysreset_platform_ops k3_os0_sysreset_pops = {
+diff --git a/components/drivers/include/drivers/pinctrl/pinctrl.h b/components/drivers/include/drivers/pinctrl/pinctrl.h
+index ac18f26..80eecdc 100644
+--- a/components/drivers/include/drivers/pinctrl/pinctrl.h
++++ b/components/drivers/include/drivers/pinctrl/pinctrl.h
+@@ -110,6 +110,8 @@ const char *pinctrl_dev_get_name(struct pinctrl_dev *pctldev);
+ struct pinctrl *pinctrl_get(struct dtb_node *dev);
+ int pinctrl_apply_state(struct dtb_node *node, const char *state);
+ int pinctrl_apply_default(struct dtb_node *node);
++/* Reapply an already-selected state; caller quiesces all users of its pins. */
++int pinctrl_reapply_state(struct dtb_node *node, const char *name);
+ int pinctrl_apply_sleep(struct dtb_node *node);
+ void *pinctrl_dev_get_drvdata(struct pinctrl_dev *pctldev);
+ extern struct pinctrl_dev *pinctrl_find_and_add_gpio_range(const char *devname, struct pinctrl_gpio_range *range);
+diff --git a/components/drivers/pinctrl/core.c b/components/drivers/pinctrl/core.c
+index 29ef520..93d174e 100644
+--- a/components/drivers/pinctrl/core.c
++++ b/components/drivers/pinctrl/core.c
+@@ -498,6 +498,57 @@ int pinctrl_apply_default(struct dtb_node *node)
+ 	pinctrl_apply_state(node, "default");
+ }
+ 
++/* Restore an existing selection after an external owner changed hardware.
++ * Caller must serialize local state changes and quiesce external users.
++ * No ownership is acquired/released. A hardware error may leave a partially
++ * restored state; report it rather than claiming rollback to external state.
++ */
++int pinctrl_reapply_state(struct dtb_node *node, const char *name)
++{
++	struct pinctrl *p;
++	struct pinctrl_state *state;
++	struct pinctrl_setting *setting;
++	int ret;
++
++	if (!node || !name)
++		return -RT_EINVAL;
++	p = find_pinctrl(node);
++	if (!p)
++		return -RT_EINVAL;
++	state = pinctrl_lookup_state(p, name);
++	if (IS_ERR(state))
++		return PTR_ERR(state);
++	if (!state || p->state != state)
++		return -RT_EINVAL;
++
++	/* Validate every mux group before writing any of them. */
++	rt_list_for_each_entry(setting, &state->settings, node) {
++		switch (setting->type) {
++		case PIN_MAP_TYPE_MUX_GROUP:
++			ret = pinmux_check_active_setting(setting);
++			if (ret)
++				return ret;
++			break;
++		case PIN_MAP_TYPE_CONFIGS_PIN:
++		case PIN_MAP_TYPE_CONFIGS_GROUP:
++			break;
++		default:
++			return -RT_EINVAL;
++		}
++	}
++
++	rt_list_for_each_entry(setting, &state->settings, node) {
++		if (setting->type == PIN_MAP_TYPE_MUX_GROUP)
++			ret = pinmux_reapply_setting(setting);
++		else
++			ret = pinconf_apply_setting(setting);
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
+ int pinctrl_apply_sleep(struct dtb_node *node)
+ {
+ 	pinctrl_apply_state(node, "sleep");
+diff --git a/components/drivers/pinctrl/pinmux.c b/components/drivers/pinctrl/pinmux.c
+index b251fc0..07ab014 100644
+--- a/components/drivers/pinctrl/pinmux.c
++++ b/components/drivers/pinctrl/pinmux.c
+@@ -370,6 +370,45 @@ err_pin_request:
+         return ret;
+ }
+ 
++/* Caller serializes state changes and has quiesced external pin users. */
++int pinmux_check_active_setting(struct pinctrl_setting const *setting)
++{
++	struct pinctrl_dev *pctldev = setting->pctldev;
++	const rt_uint32_t *pins;
++	rt_uint32_t num_pins, i;
++	struct pin_desc *desc;
++	int ret;
++
++	ret = pctldev->desc->pctlops->get_group_pins(pctldev,
++			setting->data.mux.group, &pins, &num_pins);
++	if (ret)
++		return ret;
++	if (!num_pins || !pins || !setting->dev_name)
++		return -RT_EINVAL;
++
++	for (i = 0; i < num_pins; i++) {
++		desc = pin_desc_get(pctldev, pins[i]);
++		if (!desc || !desc->mux_usecount || !desc->mux_owner ||
++		    rt_strcmp(desc->mux_owner, setting->dev_name) ||
++		    desc->mux_setting != &setting->data.mux || desc->gpio_owner)
++			return -RT_EBUSY;
++	}
++
++	return 0;
++}
++
++int pinmux_reapply_setting(struct pinctrl_setting const *setting)
++{
++	int ret = pinmux_check_active_setting(setting);
++
++	if (ret)
++		return ret;
++
++	/* Restore hardware without requesting already-owned pins again. */
++	return setting->pctldev->desc->pmxops->enable(setting->pctldev,
++			setting->data.mux.func, setting->data.mux.group);
++}
++
+ extern char *rt_kasprintf(const char *fmt, ...);
+ 
+ /**
+diff --git a/components/drivers/pinctrl/pinmux.h b/components/drivers/pinctrl/pinmux.h
+index fab0fbc..2e9d1d8 100644
+--- a/components/drivers/pinctrl/pinmux.h
++++ b/components/drivers/pinctrl/pinmux.h
+@@ -8,6 +8,8 @@ int pinmux_map_to_setting(struct pinctrl_map const *map,
+ void pinmux_disable_setting(struct pinctrl_setting const *setting);
+ void pinmux_free_setting(struct pinctrl_setting const *setting);
+ int pinmux_enable_setting(struct pinctrl_setting const *setting);
++int pinmux_check_active_setting(struct pinctrl_setting const *setting);
++int pinmux_reapply_setting(struct pinctrl_setting const *setting);
+ 
+ int pinmux_request_gpio(struct pinctrl_dev *pctldev, struct pinctrl_gpio_range *range, rt_uint32_t pin, rt_uint32_t gpio);
+ void pinmux_free_gpio(struct pinctrl_dev *pctldev, rt_uint32_t pin, struct pinctrl_gpio_range *range);
+diff --git a/bsp/spacemit/drivers/i2c/i2c-reset.h b/bsp/spacemit/drivers/i2c/i2c-reset.h
+new file mode 100644
+index 0000000..1b122a0
+--- /dev/null
++++ b/bsp/spacemit/drivers/i2c/i2c-reset.h
+@@ -0,0 +1,23 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++#ifndef SPACEMIT_I2C_RESET_H
++#define SPACEMIT_I2C_RESET_H
++
++#include <rtthread.h>
++
++struct rt_i2c_bus_device;
++
++/* Terminal reset handoff only. Caller holds the recursive bus lock and has
++ * quiesced AP/other hardware masters. Keep the lock through all PMIC accesses.
++ * This does not provide arbitration with a running application processor.
++ */
++#ifdef BSP_USING_I2C
++int spacemit_i2c_restore_pins(struct rt_i2c_bus_device *bus);
++#else
++static inline int spacemit_i2c_restore_pins(struct rt_i2c_bus_device *bus)
++{
++	(void)bus;
++	return -RT_ENOSYS;
++}
++#endif
++
++#endif
+diff --git a/tools/check-reset-handoff.py b/tools/check-reset-handoff.py
+new file mode 100644
+index 0000000..6b143c3
+--- /dev/null
++++ b/tools/check-reset-handoff.py
+@@ -0,0 +1,282 @@
++#!/usr/bin/env python3
++"""Host regressions for actual ESOS C; hardware/RTOS boundaries are simulated.
++
++The baseline uses its ordinary state selection and unmodified reset handler.
++Regressions catch skipped hardware restore, leaked ownership, writes after
++validation failures, and PMIC traffic outside the terminal bus transaction.
++"""
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++
++root = Path(__file__).resolve().parents[1]
++source = Path(sys.argv[1]) if len(sys.argv) > 1 else (
++    root if (root/'components/drivers/pinctrl/core.c').exists()
++    else root/'esos-reset-handoff')
++
++
++def function(text, name):
++    import re
++    m = re.search(r'(?m)^(?:static )?(?:inline )?(?:int|void|rt_err_t)\s+' + name + r'\(', text)
++    if not m:
++        raise ValueError(name)
++    opening = text.index('{', m.start())
++    depth, end = 1, opening + 1
++    while depth:
++        depth += (text[end] == '{') - (text[end] == '}')
++        end += 1
++    return text[m.start():end]
++
++
++common = r'''
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <setjmp.h>
++#define RT_EINVAL 10
++#define RT_EBUSY 7
++#define RT_ERROR 1
++#define RT_ENOSYS 6
++#define RT_ETIMEOUT 2
++#define RT_TICK_PER_SECOND 100
++#define RT_WAITING_FOREVER -1
++#define RT_NULL NULL
++#define RT_EOK 0
++#define rt_strcmp strcmp
++#define rt_kprintf(...) ((void)0)
++#define IS_ERR(x) ((uintptr_t)(x) > (uintptr_t)-1000)
++#define PTR_ERR(x) ((intptr_t)(x))
++typedef uint32_t rt_uint32_t;
++typedef uint8_t rt_uint8_t;
++typedef int rt_err_t;
++typedef void *rt_thread_t;
++static void require(bool ok, const char *why) {
++ if (!ok) { fprintf(stderr, "FAIL: %s\n", why); exit(1); }
++}
++'''
++
++pinctrl_fixture = r'''
++#define PIN_MAP_TYPE_MUX_GROUP 1
++#define PIN_MAP_TYPE_CONFIGS_PIN 2
++#define PIN_MAP_TYPE_CONFIGS_GROUP 3
++struct dtb_node { const char *name; };
++struct pinctrl_setting_mux { unsigned group, func; };
++struct pinctrl_dev;
++struct pinmux_ops { int (*enable)(struct pinctrl_dev*, unsigned, unsigned); };
++struct pinctrl_ops { int (*get_group_pins)(struct pinctrl_dev*, unsigned, const unsigned**, unsigned*); };
++struct pinctrl_desc { const struct pinmux_ops *pmxops; const struct pinctrl_ops *pctlops; };
++struct pinctrl_dev { struct pinctrl_desc *desc; };
++struct pinctrl_setting {
++ int type, node;
++ struct pinctrl_setting *next;
++ struct pinctrl_dev *pctldev;
++ const char *dev_name;
++ union { struct pinctrl_setting_mux mux; } data;
++};
++struct settings_list { struct pinctrl_setting *first; };
++struct pinctrl_state { struct settings_list settings; };
++struct pinctrl { struct pinctrl_state *state; };
++struct pin_desc { unsigned mux_usecount; const char *mux_owner; const struct pinctrl_setting_mux *mux_setting; const char *gpio_owner; };
++#define rt_list_for_each_entry(pos,head,member) for ((pos)=(head)->first;(pos);(pos)=(pos)->next)
++static struct pin_desc pins[2];
++static unsigned pin_ids[2]={0,1};
++static int mux, writes, group_error, enable_error, config_error;
++static bool missing_handle, missing_state;
++static struct pinctrl cached;
++static struct pinctrl_state selected;
++static struct pinctrl *find_pinctrl(struct dtb_node *n) { (void)n; return missing_handle ? NULL : &cached; }
++static struct pinctrl *pinctrl_get(struct dtb_node *n) { return find_pinctrl(n); }
++static struct pinctrl_state *pinctrl_lookup_state(struct pinctrl *p,const char *name) {
++ (void)p;(void)name;return missing_state ? (void*)-RT_EINVAL : &selected;
++}
++static struct pin_desc *pin_desc_get(struct pinctrl_dev *p,unsigned i) { (void)p;return i<2?&pins[i]:NULL; }
++static int group_pins(struct pinctrl_dev *p,unsigned g,const unsigned **ids,unsigned *n) {
++ (void)p;(void)g;*ids=pin_ids;*n=2;return group_error;
++}
++static int enable(struct pinctrl_dev *p,unsigned f,unsigned g) { (void)p;(void)g;writes++;if(enable_error)return enable_error;mux=f;return 0; }
++static int pinconf_apply_setting(const struct pinctrl_setting *s) { (void)s;return config_error; }
++static int pinmux_enable_setting(const struct pinctrl_setting *s) {
++ for (int i=0;i<2;i++) pins[i].mux_usecount++;
++ return enable(s->pctldev,s->data.mux.func,s->data.mux.group);
++}
++static void pinmux_disable_setting(const struct pinctrl_setting *s) {(void)s;}
++static int pinctrl_select_state(struct pinctrl*,struct pinctrl_state*);
++'''
++
++pinctrl_tests = r'''
++int main(void) {
++ struct pinmux_ops mx={.enable=enable};struct pinctrl_ops pc={.get_group_pins=group_pins};
++ struct pinctrl_desc desc={.pmxops=&mx,.pctlops=&pc};struct pinctrl_dev dev={.desc=&desc};
++ struct dtb_node node={.name="controller"};
++ struct pinctrl_setting s={.type=PIN_MAP_TYPE_MUX_GROUP,.pctldev=&dev,.dev_name="controller",.data.mux={.group=0,.func=1}};
++ struct pinctrl_setting other=s;
++ selected.settings.first=&s;cached.state=&selected;
++ for(int i=0;i<2;i++) pins[i]=(struct pin_desc){.mux_usecount=1,.mux_owner="controller",.mux_setting=&s.data.mux};
++ mux=0;
++ require(RESTORE(&node,"default")==0 && mux==1 && writes==1,"externally changed pins must be restored despite cached state");
++ mux=0;require(RESTORE(&node,"default")==0 && mux==1,"repeated restoration must reach hardware");
++ require(pins[0].mux_usecount==1 && pins[1].mux_usecount==1,"restoration must not acquire more pin references");
++ require(cached.state==&selected && pins[0].mux_setting==&s.data.mux,"cached ownership must remain intact");
++ writes=0;pins[1].mux_owner="someone-else";
++ require(RESTORE(&node,"default")<0 && writes==0,"another owner's pin rejects restoration before writes");
++ pins[1].mux_owner="controller";pins[1].mux_usecount=0;
++ require(RESTORE(&node,"default")<0 && writes==0,"unclaimed pin must reject restoration");
++ pins[1].mux_usecount=1;pins[1].gpio_owner="gpio";
++ require(RESTORE(&node,"default")<0 && writes==0,"GPIO conflict must reject restoration");
++ pins[1].gpio_owner=NULL;s.next=&other;
++ require(RESTORE(&node,"default")<0 && writes==0,"all groups must be validated before the first write");
++ s.next=NULL;group_error=-8;
++ require(RESTORE(&node,"default")==-8 && writes==0,"group query errors must propagate before writes");
++ group_error=0;enable_error=-8;
++ require(RESTORE(&node,"default")==-8,"hardware write errors must propagate");
++ require(pins[0].mux_usecount==1 && cached.state==&selected,"hardware errors must not release ownership");
++ enable_error=0;writes=0;cached.state=NULL;
++ require(RESTORE(&node,"default")<0 && writes==0,"unselected state must not be acquired by restoration");
++ cached.state=&selected;missing_state=true;
++ require(RESTORE(&node,"default")<0 && writes==0,"missing state must fail safely");
++ missing_state=false;missing_handle=true;
++ require(RESTORE(&node,"default")<0 && writes==0,"missing handle must not allocate a new owner");
++ missing_handle=false;
++ require(RESTORE(NULL,"default")<0 && RESTORE(&node,NULL)<0,"invalid arguments must fail");
++ other.type=PIN_MAP_TYPE_CONFIGS_PIN;other.next=NULL;s.next=&other;config_error=-8;
++ require(RESTORE(&node,"default")==-8,"pin configuration failure must propagate");
++ puts("PASS: pin restoration, repeated ownership, preflight validation and error propagation");
++}
++'''
++
++reset_fixture = r'''
++typedef uint32_t rpmi_uint32_t;
++typedef uint8_t rpmi_uint8_t;
++typedef int rt_size_t;
++#define RT_I2C_WR 0
++#define RT_I2C_RD 1
++#define PIN_MODE_OUTPUT 1
++#define PIN_LOW 0
++#define RPMI_SYSRST_TYPE_SHUTDOWN 0
++#define RPMI_SYSRST_TYPE_COLD_REBOOT 1
++#define RPMI_SYSRST_TYPE_WARM_REBOOT 2
++struct rt_i2c_bus_device { int unused; };
++struct rt_i2c_msg { unsigned addr,flags,len; unsigned char *buf; };
++struct spacemit_rpmi_sysreset_config { int reset; };
++static struct rt_i2c_bus_device bus;
++static struct rt_i2c_bus_device *i2c_bus_device=&bus;
++static rt_uint32_t i2c_addr=0x41;
++static unsigned char boot_flag;
++#define LISTEN_ADDR ((uintptr_t)&boot_flag)
++static char events[64];static int count,depth,restore_error,lock_error,read_error,flag_error,write_error;
++static unsigned written_flag,reset_bits;
++static jmp_buf shutdown_jump;
++static void event(char c) {events[count++]=c;events[count]=0;}
++static int rt_i2c_bus_lock(struct rt_i2c_bus_device *b,int ticks) {
++ require(b==&bus && ticks==RT_WAITING_FOREVER,"preserve transfer lock policy rather than impose a shorter reset deadline");event('L');if(lock_error)return lock_error;depth++;return 0;
++}
++static int rt_i2c_bus_unlock(struct rt_i2c_bus_device *b) {require(b==&bus && depth==1,"balanced outer bus lock");depth--;event('U');return 0;}
++static int spacemit_i2c_restore_pins(struct rt_i2c_bus_device *b) {require(b==&bus && depth==1,"restore must run under bus lock");event('P');return restore_error;}
++static rt_size_t rt_i2c_transfer(struct rt_i2c_bus_device *b,struct rt_i2c_msg *m,unsigned n) {
++ require(b==&bus && depth==1,"every PMIC transfer must be protected by the outer bus lock");
++ require(m[0].addr==0x41,"preserve configured PMIC address");
++ if(n==2){event('R');require(m[0].buf[0]==0x7e && m[1].flags==RT_I2C_RD,"read PMIC power register");m[1].buf[0]=0x80;return read_error?read_error:2;}
++ if(m[0].buf[0]==0xab){event('F');written_flag=m[0].buf[1];return flag_error?flag_error:1;}
++ event('W');require(m[0].buf[0]==0x7e,"write PMIC power register");reset_bits=m[0].buf[1];return write_error?write_error:1;
++}
++static void rt_pin_mode(int pin,int mode){(void)pin;(void)mode;event('G');}
++static void rt_pin_write(int pin,int val){(void)pin;(void)val;event('g');}
++static void rt_thread_mdelay(int ms){(void)ms;longjmp(shutdown_jump,1);}
++'''
++
++reset_tests = r'''
++static void clear(void){count=0;events[0]=0;depth=restore_error=lock_error=read_error=flag_error=write_error=0;boot_flag=0;i2c_bus_device=&bus;}
++int main(void) {
++ struct spacemit_rpmi_sysreset_config cfg={.reset=-1};
++ for(unsigned type=0;type<=2;type++) {
++  clear();k3_os0_system_reset(&cfg,type);
++  require(!strcmp(events,"LPRWU"),"restore must precede PMIC access for all I2C reset modes");
++  require(reset_bits==(type==0?0x84:0x82),"preserve PMIC bits and reset/shutdown choice");
++ }
++ for(unsigned flag=1;flag<=3;flag+=2) {
++  clear();boot_flag=flag;k3_os0_system_reset(&cfg,1);
++  require(!strcmp(events,"LPFRWU") && written_flag==(flag==1?0xf1:0xf3),"restore before boot-mode flag and reset writes");
++ }
++ clear();restore_error=-8;k3_os0_system_reset(&cfg,1);require(!strcmp(events,"LPU"),"restore failure prevents all PMIC traffic and unlocks");
++ clear();lock_error=-2;k3_os0_system_reset(&cfg,1);require(!strcmp(events,"L"),"lock acquisition failure prevents restore and does not unlock unowned lock");
++ clear();read_error=-2;k3_os0_system_reset(&cfg,1);require(!strcmp(events,"LPRU"),"read failure prevents reset write and unlocks");
++ clear();write_error=-2;k3_os0_system_reset(&cfg,1);require(!strcmp(events,"LPRWU") && !depth,"final PMIC-write failure must release the outer lock");
++ clear();boot_flag=1;flag_error=-2;k3_os0_system_reset(&cfg,1);require(!strcmp(events,"LPFU"),"flag failure prevents reset and unlocks");
++ clear();i2c_bus_device=NULL;k3_os0_system_reset(&cfg,1);require(!count,"missing binding must not access bus");
++ clear();k3_os0_system_reset(&cfg,99);require(!count,"unknown reset type must not restore pins");
++ clear();cfg.reset=5;
++ if(!setjmp(shutdown_jump))k3_os0_system_reset(&cfg,0);
++ require(!strcmp(events,"Gg"),"GPIO shutdown must bypass I2C restoration");
++ puts("PASS: reset modes, boot flags, transfer ordering, lock/error cleanup and GPIO bypass");
++}
++'''
++
++core = (source/'components/drivers/pinctrl/core.c').read_text()
++pinmux = (source/'components/drivers/pinctrl/pinmux.c').read_text()
++reset = (source/'bsp/spacemit/drivers/rpmi/k3/k3-os0_sysreset.c').read_text()
++if 'int pinctrl_reapply_state(' in core:
++    funcs = '\n'.join([function(pinmux,'pinmux_check_active_setting'),function(pinmux,'pinmux_reapply_setting'),function(core,'pinctrl_reapply_state')])
++    restore = 'pinctrl_reapply_state'
++else:
++    funcs = function(core,'pinctrl_select_state') + '\n' + function(core,'pinctrl_apply_state')
++    restore = 'pinctrl_apply_state'
++start = reset.index('static void k3_os0_sysreset_soft_rst_sd(')
++end = reset.index('static struct rpmi_sysreset_platform_ops')
++reset_funcs = reset[start:end].replace('asm volatile("fence rw, rw")','asm volatile("" ::: "memory")')
++defines = '\n'.join(line for line in reset.splitlines() if line.startswith('#define ') and not line.startswith('#define LISTEN_ADDR'))
++cases = {'pinctrl':common+pinctrl_fixture+funcs+'\n#define RESTORE '+restore+'\n'+pinctrl_tests,
++         'reset':common+reset_fixture+defines+'\n'+reset_funcs+reset_tests}
++driver = (source/'bsp/spacemit/drivers/i2c/i2c-k1.c').read_text()
++if 'int spacemit_i2c_restore_pins(' in driver:
++    driver_fixture = r'''
++struct dtb_node { int identity; };
++struct rt_i2c_bus_device { const void *ops; struct {void *owner;} lock; };
++struct spacemit_i2c_dev {struct rt_i2c_bus_device dev; struct dtb_node *node;};
++static int spacemit_i2c_ops, other_ops, thread, calls;
++static bool no_thread;
++static struct dtb_node *observed;
++static void *rt_thread_self(void){return no_thread ? NULL : &thread;}
++static struct spacemit_i2c_dev *to_spacemit_i2c_dev(struct rt_i2c_bus_device *b){return (void*)b;}
++static int pinctrl_reapply_state(struct dtb_node *n,const char *name){
++ require(!strcmp(name,"default"),"driver must restore the default state");
++ observed=n;calls++;return -8;
++}
++'''
++    driver_tests = r'''
++int main(void){
++ struct dtb_node node={.identity=42};
++ struct spacemit_i2c_dev dev={.dev={.ops=&spacemit_i2c_ops,.lock={.owner=&thread}},.node=&node};
++ require(spacemit_i2c_restore_pins(&dev.dev)==-8 && calls==1 && observed==&node,"bound controller DT and hardware error must propagate");
++ calls=0;dev.dev.ops=&other_ops;
++ require(spacemit_i2c_restore_pins(&dev.dev)<0 && calls==0,"foreign driver must be rejected before container conversion");
++ dev.dev.ops=&spacemit_i2c_ops;dev.dev.lock.owner=NULL;
++ require(spacemit_i2c_restore_pins(&dev.dev)<0 && calls==0,"unlocked bus must be rejected");
++ no_thread=true;
++ require(spacemit_i2c_restore_pins(&dev.dev)<0 && calls==0,"NULL owner and NULL thread do not prove the lock is held");
++ require(spacemit_i2c_restore_pins(NULL)<0 && calls==0,"missing bus must be rejected");
++ puts("PASS: driver binding, lock precondition and DT/error forwarding");
++}
++'''
++    cases['driver']=common+driver_fixture+function(driver,'spacemit_i2c_restore_pins')+driver_tests
++    header=(source/'bsp/spacemit/drivers/i2c/i2c-reset.h').resolve()
++    cases['driver-disabled']=common+'\n#include "'+str(header)+'"\n'+r'''
++int main(void){require(spacemit_i2c_restore_pins(NULL)==-RT_ENOSYS,"disabled hardware I2C must link and report unsupported");puts("PASS: hardware-I2C-disabled link and error contract");}
++'''
++failed = False
++with tempfile.TemporaryDirectory(prefix='k3-handoff-check-') as tmp:
++    tmp=Path(tmp)
++    (tmp/'rtthread.h').write_text('/* Host types supplied by common fixture. */\n')
++    for name, code in cases.items():
++        c=tmp/(name+'.c');c.write_text(code)
++        compile_run=subprocess.run(['cc','-O2','-Wall','-Wextra','-Wno-unused-function','-Wno-unused-parameter','-I'+str(tmp),str(c),'-o',str(tmp/name)],text=True,capture_output=True)
++        if compile_run.returncode:
++            print(name+': FAIL: compile/link\n'+compile_run.stderr)
++            failed=True
++            continue
++        run=subprocess.run([str(tmp/name)],text=True,capture_output=True)
++        print(name+': '+run.stdout+run.stderr,end='')
++        failed |= run.returncode!=0
++sys.exit(1 if failed else 0)

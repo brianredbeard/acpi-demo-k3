@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "project": "https://github.com/riseproject-dev/acpi-demo-k3",
+  "components": [
+    {
+      "name": "esos",
+      "repository": "https://github.com/spacemit-com/esos.git",
+      "revision": "e0b8d955bdc84957da3b7bba8c89e35ee0d27c2b",
+      "path": "esos",
+      "patches": [
+        {
+          "file": "patches/esos/0001-k3-reset-restore-owned-i2c-pins.patch",
+          "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
+        }
+      ],
+      "configs": [
+        {
+          "file": "patches/esos/os0.config",
+          "sha256": "a9106239da42ac00b3daad5e6ad2a7c2c294a7a3ee3c9d75f7c6e782c04a8726"
+        },
+        {
+          "file": "patches/esos/lite.config",
+          "sha256": "0bd24d1d16258a2a9ed1303c1fae79bc9a4421071f14ab6dbffad6984c3f4cd1"
+        }
+      ],
+      "sparse_paths": [
+        "bsp/spacemit",
+        "components",
+        "include",
+        "libcpu/risc-v",
+        "src",
+        "tools"
+      ]
+    },
+    {
+      "name": "esos-lite",
+      "repository": "https://github.com/spacemit-com/esos-lite.git",
+      "revision": "1e166dbeaa55ea6a572c2dc9b567a16b29b3ea38",
+      "path": "esos/components/esos-lite",
+      "patches": []
+    },
+    {
+      "name": "edk2-platforms",
+      "repository": "git@github.com:brianredbeard/edk2-platforms.git",
+      "revision": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
+      "path": "edk2-platforms",
+      "patches": [
+        {
+          "file": "patches/edk2-platforms/0001-Platform-Spacemit-K3-ACPI-tables-for-Pico-ITX-bring-.patch",
+          "sha256": "3e0609b4f594fb1e09134cb44a6a88f7ea85cffc01ef64985d262fcb52dd2497"
+        },
+        {
+          "file": "patches/edk2-platforms/0002-Silicon-Spacemit-K3-ClockDxe-TSEN-ESPI-entries-and-c.patch",
+          "sha256": "d571cdff2d56bc680d460a6860357e1d12842553ce11c004a9aa008a04f952a8"
+        },
+        {
+          "file": "patches/edk2-platforms/0003-Silicon-Spacemit-K3-add-AcpiClockInitDxe-for-OS-visi.patch",
+          "sha256": "27ecb0211cdaf091098b9f88b4fd84d1eded96ee906e5d45fdae568f195571e3"
+        },
+        {
+          "file": "patches/edk2-platforms/0004-Platform-Spacemit-K3-MUSE-Pico-ACPI-build-config-and.patch",
+          "sha256": "5b6260712c58b96596db5c04dbc77d5357c3046ad497356a7b862815b8f564d9"
+        },
+        {
+          "file": "patches/edk2-platforms/0005-Silicon-Spacemit-K3-DwEqosDxe-leave-EMAC-clocks-enab.patch",
+          "sha256": "36dd8271a268b884d24c75ba5001757fe3fd28da19d3914b8af1f61617999027"
+        },
+        {
+          "file": "patches/edk2-platforms/0006-Silicon-Spacemit-extend-PCIe-bus-0-config-window.patch",
+          "sha256": "51e0ce10a89715768c0104a66079819b0c3e657dfa0508aa8785f85d54534ee6"
+        },
+        {
+          "file": "patches/edk2-platforms/0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch",
+          "sha256": "51acf570b402b04ab8d07f28f1fd360c4381e99eae1bb5df64b0b5f076b347d4"
+        }
+      ],
+      "configs": [],
+      "sparse_paths": []
+    }
+  ]
+}

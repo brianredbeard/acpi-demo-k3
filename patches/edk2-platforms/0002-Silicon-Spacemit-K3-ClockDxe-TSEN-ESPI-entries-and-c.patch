@@ -1,0 +1,156 @@
+From e0799ec7c7cde72f638e14ae532fc24bfb1cc787 Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 17:07:41 -0800
+Subject: [PATCH 2/7] Silicon/Spacemit/K3/ClockDxe: TSEN/ESPI entries and
+ config-table fixes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Add TSEN (APBC+0x6C: bits [1:0] function clock enable, bit 2 reset)
+  and ESPI (APMU+0x240: bits [3:0] = SCLK_EN, SCLK_RST#, MCLK_EN,
+  MCLK_RST# — note the ACTIVE-LOW reset bits) clock definitions.
+- Fix ConfigNum/row mismatches in the vendor table: the GMAC*_TX and
+  GMAC*_PHY entries declared 2 config rows but defined 1; the
+  zero-filled second row made EnableClock() write to physical address
+  0, resetting the SoC (observed as a boot-reset loop when
+  K3AcpiClockInitDxe re-asserted those clocks at ReadyToBoot).
+- Guard EnableClock()/DisableClock() against zero register addresses
+  so future table bugs log an error instead of writing address 0.
+---
+ .../Spacemit/K3/Drivers/ClockDxe/ClockDxe.c   | 52 ++++++++++++++++---
+ .../Spacemit/K3/Drivers/ClockDxe/ClockDxe.h   |  2 +
+ 2 files changed, 48 insertions(+), 6 deletions(-)
+
+diff --git a/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c b/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c
+index 3227a89d..ca53208c 100644
+--- a/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c
++++ b/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c
+@@ -57,6 +57,27 @@ STATIC CONST CLOCK_CONFIG  ModuleConfig[] = {
+       { K3_GPIO_CLK_RES_CTRL,  BIT2,                  0,                     BIT2  }
+     }
+   },
++  {
++    "TSEN", 0x17BB00D7, 2,
++    NULL,
++    {
++      { K3_TSEN_CLK_RES_CTRL,  BIT0 | BIT1,           BIT0 | BIT1,           0     },
++      { K3_TSEN_CLK_RES_CTRL,  BIT2,                  0,                     BIT2  }
++    }
++  },
++  {
++    // ESPI: APMU 0x240. NOTE the reset bits are ACTIVE LOW (1 = release),
++    // unlike most other APMU gates: bits [3:0] = SCLK_EN, SCLK_RST#,
++    // MCLK_EN, MCLK_RST#. Enable = all four set (0xF). The SCLK source
++    // mux (bits [7:4]) is left in its boot state; the eSPI driver
++    // programs the operating frequency through the controller's own
++    // registers when the override bit is clear.
++    "ESPI", 0x56CF439A, 1,
++    NULL,
++    {
++      { K3_ESPI_CLK_RES_CTRL,  BIT0 | BIT1 | BIT2 | BIT3, BIT0 | BIT1 | BIT2 | BIT3, 0 }
++    }
++  },
+   {
+     "QSPI", 0x89B48352, 2,
+     &QspiClockRateOps,
+@@ -109,14 +130,14 @@ STATIC CONST CLOCK_CONFIG  ModuleConfig[] = {
+     }
+   },
+   {
+-    "GMAC0_TX", 0x945D2BCE, 2,
++    "GMAC0_TX", 0x945D2BCE, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT8,                  BIT8,                  0     },
+     }
+   },
+   {
+-    "GMAC0_PHY", 0xF1360ECC, 2,
++    "GMAC0_PHY", 0xF1360ECC, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT14,                 0,                     BIT14 },
+@@ -131,14 +152,14 @@ STATIC CONST CLOCK_CONFIG  ModuleConfig[] = {
+     }
+   },
+   {
+-    "GMAC1_TX", 0x2CE14CAB, 2,
++    "GMAC1_TX", 0x2CE14CAB, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT8,                  BIT8,                  0     },
+     }
+   },
+   {
+-    "GMAC1_PHY", 0xCC56277C, 2,
++    "GMAC1_PHY", 0xCC56277C, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT14,                 0,                     BIT14 },
+@@ -153,14 +174,14 @@ STATIC CONST CLOCK_CONFIG  ModuleConfig[] = {
+     }
+   },
+   {
+-    "GMAC2_TX", 0x3E54E345, 2,
++    "GMAC2_TX", 0x3E54E345, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT8,                  BIT8,                  0     },
+     }
+   },
+   {
+-    "GMAC2_PHY", 0x8BF65DAC, 2,
++    "GMAC2_PHY", 0x8BF65DAC, 1,
+     NULL,
+     {
+       { K3_EMAC0_CLK_RES_CTRL, BIT14,                 0,                     BIT14 },
+@@ -447,6 +468,21 @@ EnableClock (
+   UINT32  I;
+ 
+   for (I = 0; I < ModuleConfig[Index].ConfigNum; I++) {
++    /*
++     * Guard against table bugs: an entry whose ConfigNum exceeds its
++     * defined rows reads zero-filled config, and a zero RegAddr write
++     * resets the SoC (observed with the GMAC*_TX/PHY rows before their
++     * ConfigNum was corrected). Never touch address 0.
++     */
++    if (ModuleConfig[Index].Config[I].RegAddr == 0) {
++      DEBUG ((
++        DEBUG_ERROR,
++        "%a: %a config[%u] has zero register address, skipping\n",
++        __func__, ModuleConfig[Index].ClockName, I
++        ));
++      continue;
++    }
++
+     MmioAndThenOr32 (
+                      ModuleConfig[Index].Config[I].RegAddr,
+                      ~ModuleConfig[Index].Config[I].RegValMask,
+@@ -464,6 +500,10 @@ DisableClock (
+   UINT32  I;
+ 
+   for (I = 0; I < ModuleConfig[Index].ConfigNum; I++) {
++    if (ModuleConfig[Index].Config[I].RegAddr == 0) {
++      continue;
++    }
++
+     MmioAndThenOr32 (
+                      ModuleConfig[Index].Config[I].RegAddr,
+                      ~ModuleConfig[Index].Config[I].RegValMask,
+diff --git a/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.h b/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.h
+index 0749c095..917952dd 100644
+--- a/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.h
++++ b/Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.h
+@@ -39,6 +39,8 @@
+ #define K3_PCIE4_APP_BASE      (K3_APMU_BASE + 0x1E8)
+ 
+ #define K3_GPIO_CLK_RES_CTRL  (K3_APB_CLOCK_BASE + 0x08)
++#define K3_TSEN_CLK_RES_CTRL  (K3_APB_CLOCK_BASE + 0x6C)
++#define K3_ESPI_CLK_RES_CTRL  (K3_APMU_BASE + 0x240)
+ #define K3_LCD_CLK_RES_CTRL1  (K3_APMU_BASE + 0x44)
+ #define K3_LCD_CLK_RES_CTRL2  (K3_APMU_BASE + 0x4C)
+ #define K3_LCD_CLK_RES_CTRL3  (K3_APMU_BASE + 0x26C)
+-- 
+2.56.1
+

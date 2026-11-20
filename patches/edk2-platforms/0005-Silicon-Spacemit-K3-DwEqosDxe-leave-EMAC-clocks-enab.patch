@@ -1,0 +1,45 @@
+From 0628b95ceee9dd247c92e0eeb84cd8cf8d2461d6 Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 17:07:41 -0800
+Subject: [PATCH 5/7] Silicon/Spacemit/K3/DwEqosDxe: leave EMAC clocks enabled
+ at ExitBootServices
+
+The ExitBootServices path (EqosNotifyExitBootServices -> EqosStop ->
+SpacemitAssertReset) gated the EMAC bus clocks on the way to the OS.
+Under ACPI the OS has no clock driver, so the GMAC arrived dead and
+the first driver probe found the control register zeroed. Make
+SpacemitAssertReset a no-op for the EMAC clocks so the handoff state
+stays working; the MAC itself is still quiesced.
+
+Validated on hardware: GMAC enumerates via PRP0001 (dwmac-spacemit)
+and reaches DHCP without any kernel-side clock re-enable.
+---
+ .../Spacemit/K3/Drivers/DwEqosDxe/DwEqosSpacemit.c   | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/Silicon/Spacemit/K3/Drivers/DwEqosDxe/DwEqosSpacemit.c b/Silicon/Spacemit/K3/Drivers/DwEqosDxe/DwEqosSpacemit.c
+index 92c05530..cc50e804 100644
+--- a/Silicon/Spacemit/K3/Drivers/DwEqosDxe/DwEqosSpacemit.c
++++ b/Silicon/Spacemit/K3/Drivers/DwEqosDxe/DwEqosSpacemit.c
+@@ -877,7 +877,17 @@ SpacemitAssertReset (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  EqosClockDisable (Priv, Priv->BusClkAndRstName);
++  //
++  // Do NOT disable the EMAC bus clock here. This "reset" is invoked from
++  // EqosStop() when the EFI network stack is torn down at ExitBootServices,
++  // and gating the bus clock makes the MAC MMIO region stop responding: an
++  // ACPI OS without a clock provider (the clock is owned by firmware) wedges
++  // the bus on the first register access. Firmware owns the clocks and must
++  // leave the device usable for the OS it boots.
++  //
++  // The Linux dwmac-spacemit driver re-programming the MAC (reset, DMA
++  // reinit) does not require the clock to be toggled.
++  //
+ 
+   return EFI_SUCCESS;
+ }
+-- 
+2.56.1
+

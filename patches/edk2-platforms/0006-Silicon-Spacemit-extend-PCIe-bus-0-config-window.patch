@@ -1,0 +1,48 @@
+From 46900dae8d6a607cd8253de53729d2edc858d8e3 Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 17:07:41 -0800
+Subject: [PATCH 6/7] Silicon/Spacemit: extend PCIe bus-0 config window
+
+Extend the DesignWare PCIe controller description region 0 to a 2MB
+configuration-shift window at ConfigBase so the bus-0 configuration
+space (including the root-port slots the OS must scan) is reachable
+through the ECAM mapping declared in MCFG. Without this, config
+accesses to bus-0 slots above the primary port failed.
+
+Pairs with the kernel MCFG quirk that rejects ghost entries for
+slots > 0 on bus 0 of the SPMT/K3 DesignWare root complex.
+---
+ .../DesignWarePcieControllerLib.c                   | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/Silicon/Spacemit/Library/DesignWarePcieControllerLib/DesignWarePcieControllerLib.c b/Silicon/Spacemit/Library/DesignWarePcieControllerLib/DesignWarePcieControllerLib.c
+index 4f9c8b05..54a9f737 100644
+--- a/Silicon/Spacemit/Library/DesignWarePcieControllerLib/DesignWarePcieControllerLib.c
++++ b/Silicon/Spacemit/Library/DesignWarePcieControllerLib/DesignWarePcieControllerLib.c
+@@ -1312,12 +1312,21 @@ DwPcieSetupObIatuForCfgSpace (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
++  //
+   // Immediate bus under root bus needs type 0 iATU configuration.
++  //
++  // Cover the root bus (bus 0) as well: the root complex answers type-0
++  // config TLPs addressed to bus 0 from its DBI, so an OS that uses the
++  // ECAM window described by MCFG can enumerate the root bus without any
++  // per-access iATU programming. In CFG-shift mode the bus number derives
++  // from CPU address bits [27:20], so a 2 MiB window at ConfigBase maps
++  // [0, 1 MiB) to bus 0 and [1 MiB, 2 MiB) to bus 1.
++  //
+   ZeroMem (&AtuCfg, sizeof (AtuCfg));
+   AtuCfg.Index = 0;
+   AtuCfg.Type = DW_PCIE_ATU_TYPE_CFG0;
+-  AtuCfg.CpuAddr = DwPcie->Rp.ConfigBase + SIZE_1MB;
+-  AtuCfg.Size = SIZE_1MB;
++  AtuCfg.CpuAddr = DwPcie->Rp.ConfigBase;
++  AtuCfg.Size = 2 * SIZE_1MB;
+   AtuCfg.Ctrl2 |= DW_PCIE_ATU_CFG_SHIFT_MODE_ENABLE;
+   Status = DwPcieProgOutboundAtu (DwPcie, &AtuCfg);
+   if (Status != EFI_SUCCESS) {
+-- 
+2.56.1
+

@@ -1,0 +1,39 @@
+{
+  "status": "built",
+  "profile": "rt24/os0_rcpu",
+  "tools": {
+    "compiler": "riscv64-unknown-elf-gcc (g539a98fbda4) 14.2.1 20250123\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+    "python": "Python 3.14.10",
+    "python-packages": "SCons=4.11.1\nkconfiglib=14.1.0",
+    "compiler_sha256": "74d5fcc433d3fefd3c3d8070fe039211cf4d7559b3bf43a07ebfb7adc67e2637",
+    "compiler_directory": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/toolchains/spacemit-toolchain-elf-newlib-x86_64-v1.0.9/bin",
+    "python_path": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/esos-build-venv/bin/python"
+  },
+  "artifacts": {
+    "esos_lite.bin": {
+      "size": 17336,
+      "sha256": "8de20e8ac09a388da2abd492a1a8cc87a149e917f16e13931781252f33eece43"
+    },
+    "rtthread.bin": {
+      "size": 255488,
+      "sha256": "2af6ed925ae1efaafb369cb4b4efcd17190c56a500dd68477a8d0b9449d4f676"
+    }
+  },
+  "generated_version": "os0_rcpu:acpi-demo-9294317e1d0cb19046ea",
+  "recipe_sha256": "dce39d259200091d1facf952db47152debdd194d67a709735f2479b68d5bb9f9",
+  "source_preparer_sha256": "6544e688e5db99a6e71ab460c039e675a1bc509abbcc823fd3efe11230f2e2d7",
+  "orchestration_tests": 15,
+  "host_regression_groups": [
+    "pinctrl",
+    "reset",
+    "driver",
+    "driver-disabled"
+  ],
+  "repeated_local_build_artifacts_equal": false,
+  "limitations": [
+    "Same host/toolchain; not independent reproducibility",
+    "Local partial cache emitted missing unrelated .gitee object diagnostics",
+    "No FIT packaging, flashing or hardware qualification"
+  ],
+  "repeat_comparison": "Lite payload identical; main strings differ in embedded absolute components/fdt-main/src/dtb_base.c path. Full binary difference attribution not established."
+}
