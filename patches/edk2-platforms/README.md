@@ -21,7 +21,7 @@ DSDT v10 is a separate un-promoted experiment — see below).
 |---|---|---|
 | `0001` ACPI tables for Pico-ITX bring-up | Monolithic DSDT v8 (IC00/COM0/ETH0/USB2/PCI0/RES0/DBI0), MADT/RHCT (8×RINTC, IMSIC, APLIC-MSI), K3AcpiTables.inf wiring | Live boot: full RHEL via ACPI enumeration |
 | `0002` ClockDxe TSEN/ESPI entries | TSEN (APBC+0x6C) and ESPI gate+reset rows in the EDK2 clock driver | v9c/v9e on flash: thermal channels read, ESPI clock handoff |
-| `0003` AcpiClockInitDxe | Deterministic OS-visible device-block clock state at ReadyToBoot (GMAC/PCIe/USB/TSEN gate rows; no PLL re-forces per v9b regression) | v9c on flash: no reset loop, TSEN up, no GMAC/NVMe regression |
+| `0003` AcpiClockInitDxe | Deterministic OS-visible device-block clock state at ReadyToBoot (TSEN+ESPI rows only; GMAC/PCIe/USB deliberately excluded — their UEFI drivers already enable them during BDS connect; the v9b reset loop was the ClockDxe ConfigNum corruption fixed in 0002) | v9c on flash: no reset loop, TSEN up, no GMAC/NVMe regression; v9e: ESPI handoff |
 | `0004` MUSE-Pico ACPI build config | DSC/FDF/Spacemit.dsc.inc wiring: ACPI table set, AcpiClockInitDxe, PcdInstallAcpiSdtProtocol, status-code mask 0x02, DEBUG-print level | Builds RELEASE; quiet console verified on flash |
 | `0005` DwEqosDxe EMAC clocks | Stop gating EMAC bus clock at ExitBootServices (APMU EMAC0 CLK_RES_CTRL) | Live: GMAC MMIO does not wedge kernel; full DHCP/SSH |
 | `0006` PCIe bus-0 config window | 2 MB DW iATU OB window for bus 0 at 0x11_00000000 | Live: ATU OB0 dump base 0x11:00000000; removes kernel ECAM hack |

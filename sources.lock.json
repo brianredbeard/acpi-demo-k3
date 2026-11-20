@@ -19,6 +19,10 @@
         {
           "file": "patches/esos/0003-ccu-k3-port-RPMI-consumer-clocks.patch",
           "sha256": "fde976b277cfc96f126bb103c8bc868543a6341051148f3d35b8054cdd707de4"
+        },
+        {
+          "file": "patches/esos/0004-ccu-k3-fix-transposed-fields.patch",
+          "sha256": "57bdd372cec710d72da1d5bd0e16d9248377d298b241fa635901b5c5e61f7e9b"
         }
       ],
       "configs": [

@@ -1,0 +1,78 @@
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Subject: [PATCH] clk: ccu-k3: fix transposed div/mux/fc/gate fields in RPMI consumer clocks
+
+Value audit of 0003 against Linux ccu-k3.c and the K3 clock/reset manual
+found three clocks with transposed field layouts. The Linux macro
+argument order is div-first (CCU_MUX_DIV_GATE_FC_DEFINE takes DIV
+shift/width, FC, then MUX shift/width, then GATE); the ported values
+passed those numbers to the ESOS macros in swapped positions:
+
+- ufs_aclk (APMU_UFS_CLK_RES_CTRL 0x268): every field transposed. The
+  ported definition (div 4:2, fc BIT(1), mux 7:5, gate BIT(8)) maps onto
+  the manual's UFS_ACLK_SEL, UFS_ACLK_EN, UFS_ACLK_DIV and UFS_ACLK_FC_REQ
+  fields respectively. Correct: div 7:5, fc BIT(8) (FC_REQ), mux 4:2
+  (SEL), gate BIT(1) (ACLK_EN). As ported, an RPMI enable would write
+  the W1C frequency-change-request bit while leaving ACLK_EN cleared,
+  and a rate change would rewrite the source select as the divider.
+
+- sdh0_clk (APMU_SDH0_CLK_RES_CTRL 0x054): div and mux transposed.
+  Correct: div 8:3, mux 5:3 (fc BIT(11), gate BIT(4) were right).
+
+- axi_clk (APMU_ACLK_CLK_CTRL 0x388): mux given the divider position
+  (1,2 instead of 0,1) and a spurious gate on BIT(0), which is ACLK_SEL
+  per the manual — an RPMI enable/disable of axi_clk would flip the AXI
+  source between 307 and 409 MHz. Linux models axi_clk with no gate; use
+  the gate-less SPACEMIT_CCU_DIV_FC_MUX variant. div (1,2) and fc BIT(4)
+  match the manual (ACLK_DIV 2:1, ACLK_FC_REQ BIT(4)).
+
+apb_clk, twsi0_clk, all simple gates, ufs_refclk and every register
+offset were verified correct against Linux, the manual, and in-situ
+hardware validation (EMAC0 0x3e4, USB 0x5c, APBC GPIO 0x08, PLL2 SWCR2
+0x11c bits 5/7).
+
+Audit reference: Linux drivers/clk/spacemit/ccu-k3.c and
+include/soc/spacemit/k3-syscon.h verified unmodified for these
+definitions against the pristine 6.12.0-284 tarball; K3 user manual
+chapter 17 (PMU_UFS_CLK_RST_CTRL, PMUA_ACLK_CTRL, APBS_PLL2_SWCR2).
+diff --git a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+index 851adcb..c895301 100644
+--- a/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
++++ b/bsp/spacemit/drivers/clk/ccu-spacemit-k3.c
+@@ -817,11 +817,10 @@ static SPACEMIT_CCU_MUX(apb_clk, "apb_clk", apb_parents,
+ static const char * const axi_parents[] = {
+ 	"pll1_d8_307p2", "pll1_d6_409p6"
+ };
+-static SPACEMIT_CCU_DIV_FC_MUX_GATE(axi_clk, "axi_clk", axi_parents,
++static SPACEMIT_CCU_DIV_FC_MUX(axi_clk, "axi_clk", axi_parents,
+ 	BASE_TYPE_APMU, APMU_ACLK_CLK_CTRL,
+ 	1, 2, BIT(4),
+-	1, 2,
+-	BIT(0), BIT(0), 0x0,
++	0, 1,
+ 	0);
+ 
+ /* APBC GPIO: func clock on vctcxo_24 (fixed clock from the rt24 DTSI) */
+@@ -859,8 +858,8 @@ static const char * const sdh01_parents[] = {
+ };
+ static SPACEMIT_CCU_DIV_FC_MUX_GATE(sdh0_clk, "sdh0_clk", sdh01_parents,
+ 	BASE_TYPE_APMU, APMU_SDH0_CLK_RES_CTRL,
+-	5, 3, BIT(11),
+-	8, 3,
++	8, 3, BIT(11),
++	5, 3,
+ 	BIT(4), BIT(4), 0x0,
+ 	0);
+ 
+@@ -876,9 +875,9 @@ static const char * const ufs_aclk_parents[] = {
+ };
+ static SPACEMIT_CCU_DIV_FC_MUX_GATE(ufs_aclk, "ufs_aclk", ufs_aclk_parents,
+ 	BASE_TYPE_APMU, APMU_UFS_CLK_RES_CTRL,
+-	2, 3, BIT(1),
+-	5, 3,
+-	BIT(8), BIT(8), 0x0,
++	5, 3, BIT(8),
++	2, 3,
++	BIT(1), BIT(1), 0x0,
+ 	0);
+ static SPACEMIT_CCU_FACTOR(ufs_refclk, "ufs_refclk", "pll1_d64_38p4", 2, 1);
+ 

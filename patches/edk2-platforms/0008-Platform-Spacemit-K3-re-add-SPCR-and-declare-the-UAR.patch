@@ -1,0 +1,107 @@
+From 930dd6664135e99d1d524143c5047e5d546a9f93 Mon Sep 17 00:00:00 2001
+From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
+Date: Thu, 19 Nov 2026 18:02:49 -0800
+Subject: [PATCH 8/8] Platform/Spacemit/K3: re-add SPCR and declare the UART XScale
+ binding
+
+Re-add the SPCR table (v4, 16550-with-GAS + namespace string) that was
+removed while root-causing the ACPI console hang, now that the hang
+mechanism is closed at the kernel side:
+
+- The original hang was printk racing the 8250 autoconfig DLAB window
+  (LCR=0xBF) on the XScale-derived DW 16550. The 6.12 kernel now gates
+  PORT_XSCALE + UPF_FIXED_TYPE on the device's _DSD "compatible", which
+  skips autoconfig entirely; the firmware DSDT therefore declares
+  "spacemit,k3-uart", "intel,xscale-uart" on COM0 (matching the vendor
+  DT binding and the validated DSDT v10 experiment).
+- SPCR provides the OS-preferred serial console for ACPI boots (RHEL
+  riscv64 has no SBI console): add_preferred_console("uart") binds
+  ttyS0 via univ8250_console_match on address/iotype.
+- Fix the v4 variant's BaudRate field: 0 means "already configured" on
+  6.12 (spcr.c), and PreciseBaudRate was never populated; set the real
+  115200 code.
+- The UART input clock is 14745600 (matches uart0 clock-frequency in
+  the vendored K3.dtsi and COM0 _DSD), not the rounded 14750000.
+
+Safe with the existing earlycon=uart8250 cmdline: a bare "earlycon"
+(SPCR-driven earlycon) is NOT used, so only the preferred-console
+registration takes effect.
+
+RHEL 6.12 backport note: 6.12 spcr.c supports 16550-with-GAS (0x12),
+so interface type 1 (SPCR_TABLE_TYPE 1) stays. The RISC-V SBI console
+interface type (0x15 / SPCR_TABLE_TYPE 2) only lands in v7.4
+(ACPI_DBG2_RISCV_SBI_CON); backporting spcr.c's "sbi" case would make
+type 2 usable but is not required for the 16550 console.
+
+Validation: iasl-compiled DSDT (0 errors) matches the hardware-proven
+v10 COM0 AML; full RELEASE firmware build with ACPI_ENABLE=TRUE; SPCR
+decoded from DXEFV: GAS mmio32 0xd4017000, GSI 42, baud 115200, uart
+clock 14745600, namespace \\_SB.COM0. Hardware boot validation pending
+(scheduled with the board owner).
+---
+ Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl    | 8 +++++++-
+ Platform/Spacemit/K3/AcpiTables/K3AcpiTables.inf | 1 +
+ Platform/Spacemit/K3/AcpiTables/Spcr.aslc        | 9 ++++++---
+ 3 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+index 6289977..0f541fc 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
++++ b/Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl
+@@ -48,7 +48,13 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "SPMT  ", "K3", EFI_ACPI_OEM_REVISI
+         Package () {
+           Package (2) { "clock-frequency", 14745600 },
+           Package (2) { "reg-shift", 2 },
+-          Package (2) { "reg-io-width", 4 }
++          Package (2) { "reg-io-width", 4 },
++          // The K3 UART is an XScale-derived DW 16550 (same IP as the
++          // vendor DT node "spacemit,k3-uart", "intel,xscale-uart").
++          // The 8250 platform driver gates its PORT_XSCALE fixed-type
++          // quirk (autoconfig bank-switching wedges an earlycon) on
++          // this compatible; generic RSCV0003 devices are unaffected.
++          Package () { "compatible", Package () { "spacemit,k3-uart", "intel,xscale-uart" } }
+         }
+       })
+     }
+diff --git a/Platform/Spacemit/K3/AcpiTables/K3AcpiTables.inf b/Platform/Spacemit/K3/AcpiTables/K3AcpiTables.inf
+index 5df171e..fa88db7 100644
+--- a/Platform/Spacemit/K3/AcpiTables/K3AcpiTables.inf
++++ b/Platform/Spacemit/K3/AcpiTables/K3AcpiTables.inf
+@@ -19,6 +19,7 @@
+   Madt.aslc
+   Pptt.aslc
+   Rhct.aslc
++  Spcr.aslc
+   Mcfg.aslc
+   Dsdt/Dsdt.asl
+ 
+diff --git a/Platform/Spacemit/K3/AcpiTables/Spcr.aslc b/Platform/Spacemit/K3/AcpiTables/Spcr.aslc
+index 079ad4a..100e738 100644
+--- a/Platform/Spacemit/K3/AcpiTables/Spcr.aslc
++++ b/Platform/Spacemit/K3/AcpiTables/Spcr.aslc
+@@ -126,8 +126,11 @@ STATIC EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_4_WITH_NAMESPACE_STRING  S
+     0,      // PC-AT-compatible IRQ, valid only if bit[0] of InterruptType is set.
+     // UINT32   GlobalSystemInterrupt;
+     UART_GSI_NUM,
+-    // UINT8  BaudRate; set to zero means use config as is
+-    0,      // Use PreciseBaudRate (see below) as the baud rate instead.
++    // UINT8  BaudRate;
++    // PreciseBaudRate below is not populated, so this must carry the
++    // real rate: 6.12's spcr.c treats 0 as "already configured by
++    // firmware" and programs no divisor.
++    EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_115200,
+     // UINT8  Parity;
+     EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_PARITY_NO_PARITY,
+     // UINT8  StopBits;
+@@ -154,7 +157,7 @@ STATIC EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_4_WITH_NAMESPACE_STRING  S
+     0x00,
+     // UINT32   UartClockFrequency;
+     /* FixedPcdGet32 (PcdUartSystemClockRate), */
+-    14750000,
++    14745600,   // UART input clock; matches uart0 clock-frequency in K3.dtsi
+     // UINT32   PreciseBaudRate; set zero means use BaudRate instead
+     0,
+     // UINT16   NameSpaceStrLength;
+-- 
+2.56.1
+
