@@ -60,3 +60,28 @@ fwts defect (version skew), not a firmware issue.
 
 ## Net: one real fix (ISA order, applied), two fwts defects
 ## to file upstream, one hardware-fact waiver.
+
+## The bundle (pico-acpi-rhct1)
+
+Staged at /tmp/pico-acpi-rhct1: single-variable build on the
+qualified lpi2q image — ONLY the edk2 payload swapped (fresh
+RELEASE_GCC5 from edk2-platforms 7c6cf9d1, the one-file ISA
+reorder). fsbl/agent/esos/opensbi byte-identical (sha256
+verified in both manifests). FIT payload rule verified:
+fdt_1 subimage byte-identical between old and new edk2 FITs;
+uefi subimage differs FD-wide via DXE-FV recompression of
+the single table change (source delta git-verified: 1 file,
+4 insertions).
+
+Built through build_edk2.py (new): the canonical recipe
+extracted from tools/build-com260-efi-edge.py made executable
+— WORKSPACE=root, PACKAGES_PATH=SDK-first, --conf=$root/Conf,
+cwd=root, no edksetup.sh. AGENTS.md prose had drifted to a
+nonexistent efi-development path; the executable recipe
+cannot drift.
+
+Acceptance on next flash+boot: fwts rhct Test 2 —
+RHCTISABadOrder GONE (the one real violation fixed);
+RHCTProfileMissingExtensions remains (hardware fact,
+documented waiver); 17 clocks, 3 LPI states, UFS unchanged
+(same ESOS/OpenSBI/dtb payloads).
