@@ -174,3 +174,22 @@ v0.10 PSB with live CSR values) / chassis 0x11 / TLV+PCD
 identity / datasheet-true memory (LPDDR5 16GiB 6400) / all
 lengths, markers, and string areas conformant. Seven cycles,
 one variable each, every acceptance caught the next real bug.
+
+## rhct8 staged: the front-page System Information (UiApp)
+
+The EDK2 build/validation for the config-tool display found
+a structural surprise: the vendor's Override UiApp was DEAD
+CODE — the DSC's "MdeModulePkg/Application/UiApp/UiApp.inf"
+resolves to the SDK copy first under our (recorded,
+qualified) PACKAGES_PATH order. The override mechanism for
+this module is the explicit INF path (as with
+NonDiscoverablePciDeviceDxe). DSC + FDF now use it.
+
+With the override active: the vendor's front-page
+customizations (formset ordering) + the new System
+Information section — BIOS version, board, TLV serial, CPU,
+memory — rendered from the INSTALLED SMBIOS tables at
+front-page time. Strings verified in the built UiApp.efi
+(UTF-16 HII pack). rhct8 staged, inspect-gated; display-only
+(no boot-path effect), qualification = visual check on the
+next boot + the standard regression gates.
