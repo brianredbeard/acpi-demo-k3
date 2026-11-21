@@ -43,6 +43,10 @@
         {
           "file": "patches/esos/0009-pmdomain-ownership-gate.patch",
           "sha256": "c34dabfee3e171a1bbedf15e7c4279ce3b28f7e3be4684d698eebc08bf8b73cf"
+        },
+        {
+          "file": "patches/esos/0010-cppc-service-group.patch",
+          "sha256": "0e1c5fc2c5be171ce588d3ce70cac788783b1762a204f6882ffb0dfaebc58f11"
         }
       ],
       "configs": [

@@ -1,0 +1,270 @@
+diff --git a/bsp/spacemit/drivers/rpmi/spacemit-hsm.c b/bsp/spacemit/drivers/rpmi/spacemit-hsm.c
+index 6e0e8dc96..98e0b1d66 100644
+--- a/bsp/spacemit/drivers/rpmi/spacemit-hsm.c
++++ b/bsp/spacemit/drivers/rpmi/spacemit-hsm.c
+@@ -12,6 +12,14 @@
+ #include <register_defination.h>
+ #include "spacemit-rpmi.h"
+ 
++/* shared hsm context for services needing hart-id<->index (CPPC) */
++struct rpmi_hsm *spacemit_rpmi_hsm_ctx;
++
++struct rpmi_hsm *spacemit_rpmi_get_hsm_ctx(void)
++{
++	return spacemit_rpmi_hsm_ctx;
++}
++
+ static rt_list_t rpmi_hsm_list = RT_LIST_OBJECT_INIT(rpmi_hsm_list);
+ extern struct rt_mutex rpmi_hsm_mtx;
+ 
+@@ -269,6 +277,9 @@ static rt_int32_t spacemit_rpmi_register_hsm_service(void *con, struct rpmi_cont
+ 		return -RT_EINVAL;
+ 	}
+ 
++	/* share the hsm context with CPPC (hart-id<->index lookups) */
++	spacemit_rpmi_hsm_ctx = hsm;
++
+ 	/* Create HSM service group */
+ 	group = rpmi_service_group_hsm_create(hsm);
+ 	if (!group) {
+diff --git a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
+index efbf3c41f..2c1e6da71 100644
+--- a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
++++ b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
+@@ -19,6 +19,7 @@ extern struct spacemit_rpmi_func rpmi_rtc_func;
+ extern struct spacemit_rpmi_func rpmi_pwrkey_func;
+ extern struct spacemit_rpmi_func rpmi_sysreset_func;
+ extern struct spacemit_rpmi_func rpmi_msi_func;
++extern struct spacemit_rpmi_func rpmi_cppc_func;
+ 
+ static struct dtb_compatible_array __k1_compatible_sub[] = {
+ 	{ .compatible = "k3-os0-rpmi-clock", .data = (void *)&rpmi_clk_func },
+@@ -27,6 +28,7 @@ static struct dtb_compatible_array __k1_compatible_sub[] = {
+ 	{ .compatible = "k3-os0-rpmi-hsm", .data = (void *)&rpmi_hsm_func },
+ 	{ .compatible = "k3-os0-rpmi-rtc", .data = (void *)&rpmi_rtc_func },
+ 	{ .compatible = "k3-os0-rpmi-sysreset", .data = (void *)&rpmi_sysreset_func },
++	{ .compatible = "k3-os0-rpmi-cppc", .data = (void *)&rpmi_cppc_func },
+ 	{ .compatible = "k3-os0-rpmi-pwrkey", .data = (void *)&rpmi_pwrkey_func },
+ 	{ .compatible = "k3-os0-rpmi-msi", .data = (void *)&rpmi_msi_func },
+ 	{},
+diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
+index 732f11353..64c3f41d2 100644
+--- a/bsp/spacemit/platform/rt24/k3.dtsi
++++ b/bsp/spacemit/platform/rt24/k3.dtsi
+@@ -736,6 +736,12 @@
+ 				status = "disabled";
+ 			};
+ 
++			rpmi_cppc: rpmi-cppc@14 {
++				compatible = "k3-os0-rpmi-cppc";
++				reg = <0x0 0x0>;
++				status = "okay";
++			};
++
+ 			rpmi_pwrkey: rpmi-pwrkey@13 {
+ 				compatible = "k3-os0-rpmi-pwrkey";
+ 				reg = <0x0 0x0>;
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c
+new file mode 100644
+index 000000000..436551498
+--- /dev/null
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c
+@@ -0,0 +1,198 @@
++/*
++ * K3 OS0 RPMI CPPC service driver.
++ *
++ * P2 #2: the CPPC backend. Scope per the board's qualification
++ * state: the FULL ACPI CPPC register interface is served
++ * (probe/read/write), with the performance domain pinned at
++ * the single qualified operating point (nominal) — cluster
++ * PLL DVFS is NOT a qualified path (the CCU PLL tables carry
++ * one rate each), so update_perf acknowledges and holds
++ * nominal. This mirrors the P1 rate-policy philosophy: the
++ * interface is real, the transitions are conservative until a
++ * qualification says otherwise.
++ *
++ * Register values (perf abstract numbers, 2500 = nominal MHz):
++ *   highest = nominal = 2500, lowest_nonlinear = lowest = 2500
++ *   (single-point domain: any desired value maps to nominal).
++ *
++ * Copyright (c) 2026, SpacemiT Co., Ltd. All rights reserved.
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include <rthw.h>
++#include <rtthread.h>
++#include <rtservice.h>
++#include <dtb_node.h>
++#include "../spacemit-rpmi.h"
++#include <librpmi.h>
++
++/* shared hsm context (spacemit-hsm.c) */
++struct rpmi_hsm *spacemit_rpmi_get_hsm_ctx(void);
++
++#define K3_CPPC_NOMINAL_PERF   2500
++#define K3_CPPC_HART_COUNT     8
++
++struct k3_cppc_config {
++	struct dtb_node *node;
++	rt_uint32_t hart_count;
++	/* per-hart desired perf (tracked; transitions pinned to nominal) */
++	rt_uint32_t desired[K3_CPPC_HART_COUNT];
++};
++
++static struct k3_cppc_config k3_cppc_cfg;
++
++static rt_int32_t _k3_os0_cppc_init(void *priv)
++{
++	struct spacemit_rpmi_config *c = (struct spacemit_rpmi_config *)priv;
++	struct k3_cppc_config *cfg = &k3_cppc_cfg;
++	rt_uint32_t i;
++
++	cfg->node = c ? (struct dtb_node *)priv : RT_NULL;
++	for (i = 0; i < K3_CPPC_HART_COUNT; i++)
++		cfg->desired[i] = K3_CPPC_NOMINAL_PERF;
++	cfg->hart_count = K3_CPPC_HART_COUNT;
++
++	return 0;
++}
++
++static enum rpmi_error k3_cppc_get_reg(void *priv, rpmi_uint32_t reg_id,
++				       rpmi_uint32_t hart_index,
++				       rpmi_uint64_t *val)
++{
++	if (hart_index >= K3_CPPC_HART_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++
++	switch (reg_id) {
++	case RPMI_CPPC_HIGHEST_PERF:
++	case RPMI_CPPC_NOMINAL_PERF:
++	case RPMI_CPPC_GUARANTEED_PERF:
++	case RPMI_CPPC_MAX_PERF:
++		*val = K3_CPPC_NOMINAL_PERF;
++		break;
++	case RPMI_CPPC_LOWEST_PERF:
++	case RPMI_CPPC_LOWEST_NON_LINEAR_PERF:
++	case RPMI_CPPC_MIN_PERF:
++		*val = K3_CPPC_NOMINAL_PERF;
++		break;
++	case RPMI_CPPC_DESIRED_PERF:
++		*val = k3_cppc_cfg.desired[hart_index];
++		break;
++	case RPMI_CPPC_PERF_LIMITED:
++		*val = 0;   /* not limited: single-point domain */
++		break;
++	case RPMI_CPPC_REFERENCE_PERF:
++		*val = K3_CPPC_NOMINAL_PERF;
++		break;
++	case RPMI_CPPC_LOWEST_FREQ:
++		*val = 2500;   /* MHz */
++		break;
++	case RPMI_CPPC_NOMINAL_FREQ:
++		*val = 2500;   /* MHz */
++		break;
++	default:
++		return RPMI_ERR_NOTSUPP;
++	}
++	return RPMI_SUCCESS;
++}
++
++static enum rpmi_error k3_cppc_set_reg(void *priv, rpmi_uint32_t reg_id,
++				       rpmi_uint32_t hart_index,
++				       rpmi_uint64_t val)
++{
++	if (hart_index >= K3_CPPC_HART_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++
++	switch (reg_id) {
++	case RPMI_CPPC_DESIRED_PERF:
++	case RPMI_CPPC_MIN_PERF:
++	case RPMI_CPPC_MAX_PERF:
++		/* accept and record; the domain holds nominal (no DVFS
++		 * qualification — see the file header) */
++		k3_cppc_cfg.desired[hart_index] = (rt_uint32_t)val;
++		return RPMI_SUCCESS;
++	default:
++		return RPMI_ERR_NOTSUPP;
++	}
++}
++
++static enum rpmi_error k3_cppc_update_perf(void *priv,
++					   rpmi_uint32_t hart_index,
++					   rpmi_uint32_t desired_perf)
++{
++	if (hart_index >= K3_CPPC_HART_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++
++	/* Single-point domain: acknowledge, record, hold nominal.
++	 * A real transition requires cluster-PLL DVFS qualification
++	 * (shared-parent policy on the P1 model) — out of scope
++	 * until then. */
++	k3_cppc_cfg.desired[hart_index] = desired_perf;
++	return RPMI_SUCCESS;
++}
++
++static enum rpmi_error k3_cppc_get_current_freq(void *priv,
++						rpmi_uint32_t hart_index,
++						rpmi_uint64_t *current_freq_hz)
++{
++	if (hart_index >= K3_CPPC_HART_COUNT)
++		return RPMI_ERR_INVALID_PARAM;
++
++	*current_freq_hz = 2400000000ULL;   /* 2.4 GHz observed */
++	return RPMI_SUCCESS;
++}
++
++static const struct rpmi_cppc_platform_ops k3_os0_cppc_pops = {
++	.cppc_get_reg = k3_cppc_get_reg,
++	.cppc_set_reg = k3_cppc_set_reg,
++	.cppc_update_perf = k3_cppc_update_perf,
++	.cppc_get_current_freq = k3_cppc_get_current_freq,
++};
++
++static rt_int32_t spacemit_rpmi_get_cppc_config(struct dtb_node *node, void *con, char *match)
++{
++	struct spacemit_rpmi_config *c = (struct spacemit_rpmi_config *)con;
++
++	_k3_os0_cppc_init(c);
++	return 0;
++}
++
++static rt_int32_t spacemit_rpmi_register_cppc_service(void *con, struct rpmi_context *cntx)
++{
++	struct rpmi_service_group *group;
++	struct rpmi_cppc_regs regs = {
++		.highest_perf = K3_CPPC_NOMINAL_PERF,
++		.nominal_perf = K3_CPPC_NOMINAL_PERF,
++		.lowest_nonlinear_perf = K3_CPPC_NOMINAL_PERF,
++		.lowest_perf = K3_CPPC_NOMINAL_PERF,
++		.guaranteed_perf = K3_CPPC_NOMINAL_PERF,
++		.desired_perf = K3_CPPC_NOMINAL_PERF,
++		.min_perf = K3_CPPC_NOMINAL_PERF,
++		.max_perf = K3_CPPC_NOMINAL_PERF,
++		.reference_perf = K3_CPPC_NOMINAL_PERF,
++		.lowest_freq = 2500,
++		.nominal_freq = 2500,
++	};
++
++	/* Fastchannel shmem is wired by the transport glue; the CPPC
++	 * group requires the HSM for hart indexing. */
++	group = rpmi_service_group_cppc_create(spacemit_rpmi_get_hsm_ctx(), &regs,
++					       RPMI_CPPC_PASSIVE_MODE,
++					       NULL, 0, 0,
++					       &k3_os0_cppc_pops, NULL);
++	if (!group) {
++		rt_kprintf("Failed to create cppc service group\n");
++		return -RT_EINVAL;
++	}
++
++	if (rpmi_context_add_group(cntx, group) != RPMI_SUCCESS) {
++		rt_kprintf("Failed to add cppc service group\n");
++		return -RT_EINVAL;
++	}
++
++	return 0;
++}
++
++struct spacemit_rpmi_func rpmi_cppc_func = {
++	.rmpi_get_configuration = spacemit_rpmi_get_cppc_config,
++	.rpmi_register_service = spacemit_rpmi_register_cppc_service,
++};
