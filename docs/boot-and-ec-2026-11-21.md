@@ -202,3 +202,27 @@ amd-ucode present. Meaningless on riscv64; disabled via
 Round 5 acceptance: gpio_spacemit_k1 loads BEFORE udevd
 coldplug (sub-3s), EC first probe binds, kernel time back to
 ~12s, initrd <11s, clocks 17, LPI 3 states.
+
+## The =y GPIO kernel: EC BOUND — first EC event = poweroff (2026-11-21)
+
+The gpioy kernel boot (vmlinuz-dbg1-gpioy, GPIO built-in):
+  [0.14s] spacemit-gpio: 128 pins — first probe wave ✓
+  [1.98s] cros_ec_espi: Chrome EC device REGISTERED ✓
+  ZERO -517 lines — the deadlock is DEAD.
+  Kernel init was FAST (~2s to initcalls done).
+
+Then at 29s (mid-initrd): a CLEAN systemd poweroff — not a
+crash. The trigger wasn't logged. Prime suspect: the EC's
+first-ever delivered event — with the GpioInt live, the EC
+power-key state reached the OS for the first time; a
+stuck/active power button (or the EC reporting a power
+event on its now-functional interrupt line) triggers
+poweroff. The OpenSBI rpmi-mpxy-pwrkey driver also failed
+its init (-1000) this boot — the EC/pwrkey interaction is
+newly live on BOTH sides.
+
+NEXT BOOT: watch the EC event stream (the GpioInt line +
+any input events) the moment cros_ec registers; if the
+power key reports active, that's the answer — and the fix
+is the EC firmware/power-button line state, not our GPIO
+work (which is now PROVEN: probe order, bind, no defer).
