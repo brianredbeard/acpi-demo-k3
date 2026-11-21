@@ -261,3 +261,32 @@ B. RCPU CONSOLE: wire the rcpu uart0 to an observable port
    — a question for the board team)
 C. SoC MODELING in QEMU: the full K3 peripheral set — months,
    low confidence
+
+## THE ACTUAL ROOT CAUSE (supersedes everything above): the regenerated rcpu0 dtb
+
+Every failing ESOS image since v20 carried a REGENERATED
+k3_rt240_pico_itx device tree (content differs from the
+original: 23,921 vs 23,765 decompressed bytes). The rcpu
+firmware reads its hardware configuration — register bases,
+queue addresses, service descriptions — from this dtb. The
+regenerated tree describes different addresses; the firmware
+boots but its RPMI transport lands on wrong registers: dead
+clock service, dead MPXY, hanging reboot.
+
+This explains the ENTIRE v20+ cascade and is consistent with
+every falsification result (firmware content equivalent, FIT
+properties identical, rcpu1-fw identical — the rcpu0 dtb was
+the one payload never compared).
+
+Origin: the 0x11000000 idle-state work rebuilt the pico dtb
+from tree source, overwriting output/esos/k3_rt240_pico_itx.
+dtb.lzo. Every subsequent FIT packaged the wrong tree.
+
+THE FIX (fix2, staged): restore the ORIGINAL dtb payloads
+(extracted from the working image) into the FIT. fix2 differs
+from the working image in exactly ONE payload: rcpu0-fw (the
+from-source frwk2 build). If it boots, the from-source pipeline
+is fully repaired — firmware AND config reproducible.
+
+The 'user decision' options (transplant/console/modeling) are
+superseded: none are needed.
