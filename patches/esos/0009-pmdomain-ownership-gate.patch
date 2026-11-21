@@ -1,0 +1,185 @@
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_pmdomain.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_pmdomain.c
+index 5be19836a..4072f05ea 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_pmdomain.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_pmdomain.c
+@@ -11,10 +11,52 @@
+ #include <dtb_head.h>
+ #include <drivers/dtb_node.h>
+ #include "../spacemit-rpmi.h"
++#include "k3_domain_ownership.h"
+ 
+ #define DEVICE_POWER_STATE_OFFSET 0xF0
+ #define AUDIO_DOMAIN_INDEX	0x2
+ 
++/*
++ * ---- device-power ownership gate (P2 #1) ---------------------------
++ *
++ * The RPMI DEVICE_POWER group exposes register-block power
++ * transitions to the AP. A transition is ELIGIBLE only when the
++ * device's owning consumer class holds no active consumers — the
++ * same contract the P1 cluster-sleep gate enforces
++ * (k3-os0_hsm.c), applied at device granularity:
++ *
++ *   REGISTERED+QUIESCENT  transition proceeds
++ *   REGISTERED+ACTIVE     RPMI_ERR_DENIED (the AP cannot yank
++ *                         power under a live consumer)
++ *   UNREGISTERED          RPMI_ERR_DENIED (unknown ownership
++ *                         blocks, never allows — P1 audit rule)
++ *
++ * Domain->consumer-class map mirrors the dtb children (vpu, gpu,
++ * audio, lcd0, lcd1, dummy). gpu->GPU, lcd0/lcd1->DISPLAY.
++ * vpu/audio/dummy are deliberately UNMAPPED: like the vendor's
++ * AUDIO carve-out (RCPU-managed), their power is not
++ * AP-controllable on this board until a qualification says so.
++ */
++static const enum k3_consumer_class k3_pmdomain_owner_map[] = {
++	[0]	= K3_CONSUMER_UNKNOWN,	/* vpu    */
++	[1]	= K3_CONSUMER_GPU,	/* gpu    */
++	[2]	= K3_CONSUMER_UNKNOWN,	/* audio  */
++	[3]	= K3_CONSUMER_DISPLAY,	/* lcd0   */
++	[4]	= K3_CONSUMER_DISPLAY,	/* lcd1   */
++	[5]	= K3_CONSUMER_UNKNOWN,	/* dummy  */
++};
++
++static enum rpmi_error k3_pmdomain_gate(rpmi_uint32_t domain_id)
++{
++	if (domain_id >= sizeof(k3_pmdomain_owner_map) / sizeof(k3_pmdomain_owner_map[0]))
++		return RPMI_ERR_DENIED;
++
++	if (!k3_device_power_eligible(k3_pmdomain_owner_map[domain_id]))
++		return RPMI_ERR_DENIED;
++
++	return RPMI_SUCCESS;
++}
++
+ struct rt_domain_data {
+ 	uint32_t offset;
+ 	uint32_t bit_hw_mode;
+@@ -86,9 +128,20 @@ static rt_int32_t  _k3_os0_domain_init(void *priv)
+ 		++ptr;
+ 		++attr;
+ 	}
++	/*
++	 * P2 #1: qualify the mapped owner classes so their devices are
++	 * gate-eligible (unregistered = permanently denied). The
++	 * display class starts HELD by the AP: the simpledrm console
++	 * (and any KMS driver) is a live consumer until an AP-side
++	 * quiesce protocol releases it — the same shape as the P1
++	 * X100_AP hold on the cluster domains.
++	 */
++	k3_device_power_register(K3_CONSUMER_GPU);
++	k3_device_power_register(K3_CONSUMER_DISPLAY);
++	k3_device_power_consumer_acquire(K3_CONSUMER_DISPLAY);
+ 
+ 	return 0;
+-}
++ }
+ 
+ /** Set the power domain state ON_STATE */
+ static enum rpmi_error spacemit_set_state(void *priv, rpmi_uint32_t domain_id, enum rpmi_device_power_state state)
+@@ -98,6 +151,12 @@ static enum rpmi_error spacemit_set_state(void *priv, rpmi_uint32_t domain_id, e
+ 	rt_uint32_t val;
+ 	rt_int32_t loop;
+ 
++	/* P2 #1: ownership gate before any register write. Runs inside
++	 * the RPMI request context — no sleeping (0008 rule). */
++	enum rpmi_error gate = k3_pmdomain_gate(domain_id);
++	if (gate != RPMI_SUCCESS)
++		return gate;
++
+ 	if (state == RPMI_DEVICE_POWER_STATE_ON) {
+ 		/* Audio power switch is managed by RCPU itself; kernel must not control it */
+ 		if ((ptr[domain_id].dummy) || (domain_id == AUDIO_DOMAIN_INDEX)) {
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
+index ac5c78dc1..abd4f606b 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
+@@ -618,6 +618,69 @@ int k3_domain_init(int cluster)
+ 	return 0;
+ }
+ 
++/* ---- device-power ownership (P2 #1) ---------------------------------
++ *
++ * The cluster model guards shared-cluster sleep; device domains
++ * (RPMI DEVICE_POWER group: vpu/gpu/audio/lcd0/lcd1) need the same
++ * contract at device granularity: a device's power may transition
++ * only when no consumer class holds it. Same rules as P1:
++ *   unregistered device      -> ineligible (unknown blocks)
++ *   registered + any holder  -> ineligible
++ *   registered + quiescent   -> eligible
++ * The registry is per CONSUMER CLASS (the device domains each have
++ * exactly one natural owner class; multi-owner devices would need
++ * the full refcount array — none exist on this board).
++ */
++static rt_uint16_t k3_device_power_consumers[K3_CONSUMER_CLASS_COUNT];
++static rt_uint8_t k3_device_power_registered[K3_CONSUMER_CLASS_COUNT];
++
++int k3_device_power_register(enum k3_consumer_class owner)
++{
++	if ((owner >= K3_CONSUMER_CLASS_COUNT) || (owner == K3_CONSUMER_UNKNOWN))
++		return -RT_EINVAL;
++
++	rt_base_t level = rt_hw_interrupt_disable();
++	k3_device_power_registered[owner] = 1;
++	k3_device_power_consumers[owner] = 0;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++int k3_device_power_consumer_acquire(enum k3_consumer_class c)
++{
++	if ((c >= K3_CONSUMER_CLASS_COUNT) || (c == K3_CONSUMER_UNKNOWN))
++		return -RT_EINVAL;
++
++	rt_base_t level = rt_hw_interrupt_disable();
++	k3_device_power_consumers[c]++;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++int k3_device_power_consumer_release(enum k3_consumer_class c)
++{
++	if ((c >= K3_CONSUMER_CLASS_COUNT) || (c == K3_CONSUMER_UNKNOWN))
++		return -RT_EINVAL;
++
++	rt_base_t level = rt_hw_interrupt_disable();
++	if (k3_device_power_consumers[c])
++		k3_device_power_consumers[c]--;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++rt_bool_t k3_device_power_eligible(enum k3_consumer_class owner)
++{
++	if ((owner >= K3_CONSUMER_CLASS_COUNT) || (owner == K3_CONSUMER_UNKNOWN))
++		return RT_FALSE;
++
++	rt_base_t level = rt_hw_interrupt_disable();
++	rt_bool_t eligible = k3_device_power_registered[owner] &&
++			     (k3_device_power_consumers[owner] == 0);
++	rt_hw_interrupt_enable(level);
++	return eligible;
++}
++
+ #ifdef K3_DOMAIN_TEST
+ /* Test hook: simulate ONLY the semaphore release of the M2-enter ISR
+  * (the full ISR drives state too; tests use this to deliver a
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+index 7d0435ccd..a192c44cb 100644
+--- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+@@ -119,6 +119,14 @@ int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c);
+ int k3_domain_consumer_release(int cluster, enum k3_consumer_class c);
+ rt_bool_t k3_domain_sleep_eligible(int cluster);
+ 
++/* ---- device-power ownership (P2 #1) ---------------------------------
++ * RPMI DEVICE_POWER group gate: per-consumer-class registry with
++ * the P1 rules (unregistered blocks; any holder blocks). */
++int k3_device_power_register(enum k3_consumer_class owner);
++int k3_device_power_consumer_acquire(enum k3_consumer_class c);
++int k3_device_power_consumer_release(enum k3_consumer_class c);
++rt_bool_t k3_device_power_eligible(enum k3_consumer_class owner);
++
+ /* Domain qualification: clears the sticky unqualified blocker once an
+  * ownership provider has actually enumerated this cluster's consumers. */
+ int k3_domain_qualify(int cluster);

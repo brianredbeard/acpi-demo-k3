@@ -39,6 +39,10 @@
         {
           "file": "patches/esos/0008-ccu-k3-rate-change-policy.patch",
           "sha256": "68dc9e5e482f0aca8fe6d8ea88b18b2d35ecaadfc122ee647e5585b3de048d3f"
+        },
+        {
+          "file": "patches/esos/0009-pmdomain-ownership-gate.patch",
+          "sha256": "c34dabfee3e171a1bbedf15e7c4279ce3b28f7e3be4684d698eebc08bf8b73cf"
         }
       ],
       "configs": [
