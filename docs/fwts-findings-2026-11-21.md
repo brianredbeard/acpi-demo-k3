@@ -175,3 +175,15 @@ until upstream filing; profile = silicon waiver).
 fwts operational rule (learned the hard way, twice): always
 run with -r results-<fresh-name>.log and NEVER grep across
 appended multi-boot results.
+
+## Power.asl/Pcct.aslc orphan — RESOLVED (deliberate, quarantined)
+
+Commit ca57e1af (2026-11-19, "PCC power-model drafts (UNWIRED,
+gated)") added them explicitly as unwired drafts when the P1
+power model moved to the ESOS-side sequencer. They are NOT in
+K3AcpiTables.inf sources and never enter the build. The fwts
+MethodNotExist (Test 41, _STA) failure traces to this: the
+namespace has no _STA objects because the PCC power resources
+that would carry them are deliberately unwired. That failure
+is a policy statement, not a defect — revisit only if SBBR
+_STA coverage becomes a requirement.
