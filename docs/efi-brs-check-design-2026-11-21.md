@@ -101,3 +101,21 @@ Acceptance: fresh fwts dmicheck — BrsiSmbiosVersion,
 SbbrSmbiosNoStruct (4/7/16/17/19), DMIValueOutOfRange,
 DMISerialNumber all GONE; BrsiSmbiosNoStruct reduced to the
 three absent-hardware items (IPMI/Redfish/TPM, waived).
+
+## rhct3 hardware acceptance + rhct4 (Type17 corrections)
+
+rhct3 verified live: SMBIOS 3.7.0, 8x Type4 + 18x Type7 +
+Types 16/17/19 + 8x Type44, chassis 0x11, all identity
+strings populated (TLV serial through Types 1/2/3; PCD
+fallbacks elsewhere). Two data bugs caught by the acceptance:
+MemoryType 0x1E (read LPDDR4; LPDDR5 = 0x23) and ExtendedSize
+bit31 (read 16 TiB; clear = KB = 16 GiB) + speed 5500->6400
+per the SoC datasheet. rhct4 staged with the corrections,
+inspect-gated.
+
+Identity-field policy: TLV EEPROM is the per-unit source
+(serial# plumbed through all three types by
+SmbiosTlvOverrideDxe); PCD fallbacks carry deterministic
+build constants; arbitrary values only where no TLV source
+exists — never for hardware-truth fields (type/size/speed),
+which are corrected against the datasheet.
