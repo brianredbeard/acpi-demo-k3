@@ -24,16 +24,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 def build_fixture():
-    """Read the ownership model from the canonical ESOS tree (the
-    reset-handoff checkout with the P1 files applied); fall back to the
-    in-tree copy under patches/esos/p1/."""
-    src = ROOT.parent / 'esos-reset-handoff/bsp/spacemit/drivers/rpmi/k3'
-    if not (src / 'k3_domain_ownership.c').exists():
-        src = ROOT / 'patches/esos/p1'
-    if not (src / 'k3_domain_ownership.c').exists():
-        raise unittest.SkipTest(
-            f'P1 sources not found at {src}; stage the canonical tree first')
-    return src
+    """AUDIT FIX 5: test the LOCKED source — the tree produced by
+    meta.prepare (pristine e0b8d955b + patches 0001-0007 from
+    sources.lock.json), which is exactly what a reproducible build
+    compiles. Prepares it on demand into a temp dir. The mutable
+    dev checkout (esos-reset-handoff) is deliberately NOT used: a
+    test that passes against uncommitted edits proves nothing about
+    the shipped artifact."""
+    import subprocess, sys, tempfile
+    import meta
+    lock = ROOT / 'sources.lock.json'
+    prepared = ROOT.parent / '.p1-test-lock-source' / 'esos' / 'bsp/spacemit/drivers/rpmi/k3'
+    if not (prepared / 'k3_domain_ownership.c').exists():
+        dest = ROOT.parent / '.p1-test-lock-source'
+        if dest.exists():
+            import shutil; shutil.rmtree(dest)
+        meta.prepare(lock, dest,
+                     repositories={'esos': str(ROOT.parent / 'esos-reset-diagnostic')},
+                     select={'esos', 'esos-lite'})
+    if not (prepared / 'k3_domain_ownership.c').exists():
+        raise unittest.SkipTest('locked P1 source did not prepare')
+    return prepared
 
 SOURCE_DIR = build_fixture()
 
@@ -43,6 +54,7 @@ COMMON = r'''
 #include <stdint.h>
 #include <stdlib.h>
 typedef int rt_bool_t; typedef int rt_err_t; typedef int rt_base_t;
+typedef unsigned short rt_uint16_t; typedef unsigned char rt_uint8_t;
 typedef unsigned int rt_uint32_t; typedef unsigned long rt_ubase_t;
 #define RT_TRUE 1
 #define RT_FALSE 0
@@ -73,14 +85,23 @@ static void *rt_sem_create(const char *n, int c, int f) {
     return &sems[sem_alloc++];
 }
 static rt_err_t rt_sem_delete(void *s) { (void)s; return RT_EOK; }
+/* mid-wait injection: when a take would block, this hook runs first
+ * (simulating an event landing DURING the semaphore wait) */
+static void (*mid_wait_hook)(void);
 static rt_err_t rt_sem_take(void *s, rt_ubase_t t) {
     mock_sem *m = s;
     if (m->auto_take_rc) { int rc = m->auto_take_rc; m->auto_take_rc = 0; return rc; }
+    if (m->count > 0) { m->count--; return RT_EOK; }
+    /* mid-wait injection fires only for BOUNDED waits: the stale-count
+     * drain uses RT_WAITING_NO polls and must not consume injections */
+    if (t != RT_WAITING_NO && mid_wait_hook) { void (*h)(void) = mid_wait_hook; mid_wait_hook = 0; h(); }
     if (m->count > 0) { m->count--; return RT_EOK; }
     /* nothing pending: any wait (bounded or poll) times out —
      * the M2-enter interrupt never landed */
     return -RT_ETIMEOUT;
 }
+/* test access to the current cluster-0 domain state (declared in the model) */
+extern struct k3_cluster_domain *k3_test_domain(int c);
 static rt_err_t rt_sem_release(void *s) { mock_sem *m = s; m->count++; return RT_EOK; }
 
 #define RT_IPC_FLAG_FIFO 0
@@ -99,70 +120,109 @@ static void require(int cond, const char *what){
     if (!cond) { failed++; printf("FAIL: %s\n", what); }
 }
 
+static void inject_during_wait(void); /* fwd: defined after main */
+static void release_enter_sem_during_wait(void); /* fwd */
+
 int main(void){
-    /* --- init -------------------------------------------------------- */
+    struct k3_cluster_domain *d;
+
+    /* --- init: BLOCKED until qualified (audit fix 3) ------------------ */
     require(k3_domain_init(0) == 0, "cluster 0 init");
     require(k3_domain_init(0) == 0, "init idempotent");
     require(k3_domain_init(9) == -RT_EINVAL, "invalid cluster rejected");
+    require(k3_domain_sleep_eligible(0) == RT_FALSE, "unqualified domain is BLOCKED");
+    require(k3_domain_request_sleep(0, 0) == -RT_EPERM, "request denied while unqualified");
 
-    /* --- rejected transition: active consumer ------------------------ */
+    /* --- qualification + consumer blocking --------------------------- */
+    require(k3_domain_qualify(0) == 0, "provider qualifies C0");
+    require(k3_domain_sleep_eligible(0) == RT_TRUE, "qualified + empty -> eligible");
+
     require(k3_domain_consumer_acquire(0, K3_CONSUMER_GPU) == 0, "GPU acquires C0");
     require(k3_domain_sleep_eligible(0) == RT_FALSE, "active consumer blocks sleep");
     require(k3_domain_request_sleep(0, 0) == -RT_EPERM, "sleep request denied with consumers");
-    require(k3_domain_consumer_release(0, K3_CONSUMER_GPU) == 0, "GPU releases C0");
-    require(k3_domain_sleep_eligible(0) == RT_TRUE, "released -> eligible");
 
-    /* --- unknown ownership is a sticky blocker ------------------------ */
+    /* --- per-class REFCOUNTS: two users, one release (audit fix 3) ---- */
+    require(k3_domain_consumer_acquire(0, K3_CONSUMER_DMA) == 0, "DMA user 1");
+    require(k3_domain_consumer_acquire(0, K3_CONSUMER_DMA) == 0, "DMA user 2");
+    require(k3_domain_consumer_release(0, K3_CONSUMER_DMA) == 0, "DMA user 2 releases");
+    require(k3_domain_sleep_eligible(0) == RT_FALSE, "one DMA user still holds C0");
+    require(k3_domain_consumer_release(0, K3_CONSUMER_DMA) == 0, "DMA user 1 releases");
+    require(k3_domain_sleep_eligible(0) == RT_FALSE, "GPU still holds C0");
+    require(k3_domain_consumer_release(0, K3_CONSUMER_GPU) == 0, "GPU releases");
+    require(k3_domain_sleep_eligible(0) == RT_TRUE, "all released -> eligible");
+
+    /* --- unknown class rejected --------------------------------------- */
     require(k3_domain_consumer_acquire(0, K3_CONSUMER_UNKNOWN) == -RT_EINVAL,
             "unknown class rejected at acquire");
-    /* simulate the sticky bit the way a mis-classified source would */
-    require(k3_domain_consumer_acquire(0, K3_CONSUMER_A100) == 0, "A100 acquires");
-    require(k3_domain_sleep_eligible(0) == RT_FALSE, "A100 blocks");
 
-    /* --- bounded-wait timeout aborts, no stale vote ------------------- */
-    /* force the semaphore take to fail (timeout path) */
+    /* --- bounded-wait timeout aborts, no stale vote -------------------- */
+    require(k3_domain_request_sleep(0, 1) == -RT_ETIMEOUT, "timeout aborts entry");
+    d = k3_test_domain(0);
+    require(d->state == K3_DOMAIN_ACTIVE, "timeout returns domain ACTIVE (ABORTED is transient)");
+    require(d->stats.aborted_entry >= 1, "abort counted");
+    require(k3_domain_request_sleep(0, 0) == -RT_ETIMEOUT,
+            "retry after abort permitted (nonblocking)");
+
+    /* --- LATE CONSUMER during ENTERING/COMMITTED: atomic invalidation - */
     {
-        extern void *mock_last_sem(void);
-        /* request with consumers active first: denied */
-        require(k3_domain_request_sleep(0, 1) == -RT_EPERM, "denied with A100");
-        require(k3_domain_consumer_release(0, K3_CONSUMER_A100) == 0, "A100 releases");
-        /* now an empty cluster: the mocked take with count 0 and a
-         * positive timeout returns -RT_ETIMEOUT -> abort path */
-        require(k3_domain_request_sleep(0, 1) == -RT_ETIMEOUT, "timeout aborts entry");
-        /* state returns ABORTED -> retry must be allowed */
-        require(k3_domain_request_sleep(0, 0) == -RT_ETIMEOUT, "retry after abort permitted (nonblocking)");
+        rt_uint32_t g;
+
+        /* the drain discards PRE-armed counts (stale M2 signals); a
+         * legitimate grant must arrive DURING the wait: the mid-wait
+         * hook simulates the M2-enter ISR releasing the semaphore */
+        mid_wait_hook = release_enter_sem_during_wait;
+        require(k3_domain_request_sleep(0, 1) == 0, "mid-wait M2-enter grants entry");
+        d = k3_test_domain(0);
+        require(d->state == K3_DOMAIN_COMMITTED, "granted entry COMMITTED");
+
+        /* a consumer arriving during COMMITTED must invalidate the
+         * transaction atomically: generation++ in the same critical
+         * section (audit finding 2) */
+        g = d->generation;
+        require(k3_domain_consumer_acquire(0, K3_CONSUMER_DMA) == 0,
+                "late DMA acquire during COMMITTED");
+        d = k3_test_domain(0);
+        require(d->generation == g + 1, "generation bumped atomically");
+        /* the transient ABORTED normalizes to ACTIVE via abort_sleep;
+         * the OBSERVABLE invariant: a request capturing generation g
+         * can no longer commit (see the commit gate), and the domain
+         * is not eligible while the consumer holds it */
+        require(d->state == K3_DOMAIN_ACTIVE, "abort normalized to ACTIVE");
+        require(k3_domain_sleep_eligible(0) == RT_FALSE, "invalidated entry not eligible");
+        require(d->consumers[K3_CONSUMER_DMA] == 1, "DMA consumer held");
+        require(k3_domain_sleep_eligible(0) == RT_FALSE, "not eligible with consumer");
+        require(k3_domain_consumer_release(0, K3_CONSUMER_DMA) == 0, "DMA releases");
     }
 
-    /* --- late consumer during ENTERING aborts ------------------------- */
+    /* --- MID-WAIT injection: consumer lands during the wait (audit 5) - */
     {
-        /* drive to ENTERING via a non-blocking path that succeeds:
-         * prime the enter semaphore so take() succeeds */
-        /* (the mock take with count>0 succeeds) */
-        extern void k3_domain_test_prime_enter(int c);
-        k3_domain_test_prime_enter(0);
-        require(k3_domain_request_sleep(0, 1) == 0, "primed entry commits");
-        /* a consumer arriving during COMMITTED aborts */
-        require(k3_domain_consumer_acquire(0, K3_CONSUMER_DMA) == 0, "late DMA acquire");
-        /* state is now ABORTED; stats recorded */
+        /* a request that passes the initial eligibility check, then a
+         * consumer arrives while the request blocks on the M2 wait: the
+         * hook fires inside rt_sem_take; the take still times out; but
+         * the ACQUIRE ran mid-wait and the abort+commit-gate must hold */
+        k3_domain_qualify(0);
+        mid_wait_hook = inject_during_wait;   /* set below before use */
+        require(k3_domain_request_sleep(0, 1) == -RT_ETIMEOUT,
+                "mid-wait consumer -> entry aborts (timeout)");
+        d = k3_test_domain(0);
+        require(d->state == K3_DOMAIN_ABORTED || d->state == K3_DOMAIN_ACTIVE,
+                "no commit despite primed M2");
+        require(k3_domain_sleep_eligible(0) == RT_FALSE, "consumer from mid-wait holds");
+        require(k3_domain_consumer_release(0, K3_CONSUMER_DISPLAY) == 0, "mid-wait consumer releases");
+        require(k3_domain_sleep_eligible(0) == RT_TRUE, "eligible again");
     }
 
-    /* --- sibling wake race: M2-exit during ASLEEP --------------------- */
-    {
-        struct k3_cluster_domain *d = (void*)0; /* via stats only */
-        int before = 0;
-        /* count aborts recorded so far */
-        /* (stats are internal; verify via behavior) */
-        k3_domain_m2_exit_isr(0);   /* wake with no sleep pending: no-op */
-        k3_domain_m2_enter_isr(0);  /* enter with no entry pending: counted */
-    }
+    /* --- sibling wake race: M2-exit during ASLEEP ---------------------- */
+    k3_domain_m2_exit_isr(0);   /* wake with no sleep pending: no-op */
+    k3_domain_m2_enter_isr(0);  /* enter with no entry pending: counted */
+    d = k3_test_domain(0);
+    require(d->stats.m2_enter_count >= 1 && d->stats.m2_exit_count >= 1,
+            "M2 ISRs counted");
 
-    /* --- stale transaction: generation invalidation ------------------- */
-    {
-        /* abort bumps generation; an older request's commit must be rejected */
-        /* (covered structurally: request_sleep re-checks generation after
-         * the wait; the abort path bumps it) */
-        require(1, "generation invalidation structural check");
-    }
+    /* --- hw handshake timeout accounting (audit 4) --------------------- */
+    k3_domain_note_hw_timeout(0);
+    require(k3_test_domain(0)->stats.hw_handshake_timeouts == 1,
+            "hw timeout counted");
 
     /* --- wake accounting ---------------------------------------------- */
     require(k3_domain_note_wake(0, K3_CONSUMER_MGMT) == 0, "IPC wake noted");
@@ -171,6 +231,18 @@ int main(void){
 
     printf("%s: %d checks, %d failures\n", failed ? "FAILED" : "PASS", checks, failed);
     return failed != 0;
+}
+
+/* the mid-wait injection target: a DISPLAY consumer arrives while the
+ * request is blocked in rt_sem_take */
+static void inject_during_wait(void){
+    k3_domain_consumer_acquire(0, K3_CONSUMER_DISPLAY);
+}
+
+/* mid-wait M2-enter: the ISR releases the semaphore while the
+ * request is blocked in rt_sem_take (a legitimate grant) */
+static void release_enter_sem_during_wait(void){
+    k3_domain_m2_enter_release(0);
 }
 '''
 

@@ -189,42 +189,12 @@ index 221acf09c..8f35bd28b 100644
  	switch (cluster_id) {
  	case 0:
  		/* exit m2 */
-diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
-index 0ec46bce9..4102e4164 100644
---- a/bsp/spacemit/platform/rt24/k3.dtsi
-+++ b/bsp/spacemit/platform/rt24/k3.dtsi
-@@ -785,6 +785,25 @@
- 					min-residency-us = <2700>;
- 					wakeup-latency-us = <1500>;
- 				};
-+
-+				/*
-+				 * Cluster-RETENTIVE (P1 activation): routed by
-+				 * OpenSBI through RPMI_HSM_SRV_HART_SUSPEND so
-+				 * the ESOS ownership gate drives the cluster M2
-+				 * decision. The hart retains full architectural
-+				 * state (no local-timer-stop: the timer keeps
-+				 * running and is a wake source). Latencies TBD —
-+				 * placeholder vendor values until measured.
-+				 */
-+				CLUSTER_RET: cluster-retentive@18 {
-+					compatible = "riscv,idle-state";
-+					reg = <0x0 0x0>;
-+					riscv,sbi-suspend-param = <0x11000000>;
-+					entry-latency-us = <600>;
-+					exit-latency-us = <1100>;
-+					min-residency-us = <2700>;
-+					wakeup-latency-us = <1500>;
-+				};
- 			};
- 
- 			rpmi_sysreset0: rpmi-sysreset@18 {
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
 new file mode 100644
-index 000000000..6c1856618
+index 000000000..1a78cd663
 --- /dev/null
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,462 @@
 +/*
 + * K3 shared-domain ownership model and retained wake mechanism (P1).
 + * See k3_domain_ownership.h for the design contract.
@@ -306,6 +276,15 @@ index 000000000..6c1856618
 +	}
 +	d->consumers[c]++;
 +	rt_hw_interrupt_enable(level);
++
++	/*
++	 * Normalize the transient ABORTED state outside the lock: the
++	 * invalidation already happened (generation++ + state change
++	 * atomically); abort_sleep records the stats and returns the
++	 * domain to ACTIVE so new requests are admitted.
++	 */
++	if (ret == 1)
++		k3_domain_abort_sleep(cluster);
 +
 +	return (ret < 0) ? ret : 0;
 +}
@@ -407,9 +386,23 @@ index 000000000..6c1856618
 +		rt_hw_interrupt_enable(level);
 +		return -RT_EBUSY;
 +	}
-+	if (d->consumers != 0) {
-+		rt_hw_interrupt_enable(level);
-+		return -RT_ERROR;	/* active consumers: not eligible */
++	/*
++	 * AUDIT FIX: use the eligibility rules (qualified + zero
++	 * per-class refcounts), not a scalar bitmask remnant. The
++	 * old `consumers != 0` read the refcount ARRAY as a pointer
++	 * after the accounting change — always-true, always deny.
++	 */
++	{
++		rt_bool_t eligible = d->qualified;
++		int i;
++
++		for (i = 0; i < K3_CONSUMER_CLASS_COUNT; i++)
++			if (d->consumers[i])
++				eligible = RT_FALSE;
++		if (!eligible) {
++			rt_hw_interrupt_enable(level);
++			return -RT_ERROR;	/* unqualified or consumers active */
++		}
 +	}
 +
 +	d->state = K3_DOMAIN_ENTERING;
@@ -642,6 +635,20 @@ index 000000000..6c1856618
 +}
 +
 +#ifdef K3_DOMAIN_TEST
++/* Test hook: simulate ONLY the semaphore release of the M2-enter ISR
++ * (the full ISR drives state too; tests use this to deliver a
++ * legitimate grant mid-wait). */
++void k3_domain_m2_enter_release(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++
++	if (d && d->m2_enter_sem)
++		rt_sem_release(d->m2_enter_sem);
++}
++
++/* Test hook: direct domain access for state/stat assertions. */
++struct k3_cluster_domain *k3_test_domain(int cluster) { return dom(cluster); }
++
 +/* Test hook: prime the M2-enter semaphore so a bounded request succeeds. */
 +void k3_domain_test_prime_enter(int cluster)
 +{
@@ -799,3 +806,33 @@ index 000000000..d5f3aff23
 +int k3_domain_init(int cluster);
 +
 +#endif /* K3_DOMAIN_OWNERSHIP_H */
+diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
+index 0ec46bce9..4102e4164 100644
+--- a/bsp/spacemit/platform/rt24/k3.dtsi
++++ b/bsp/spacemit/platform/rt24/k3.dtsi
+@@ -785,6 +785,25 @@
+ 					min-residency-us = <2700>;
+ 					wakeup-latency-us = <1500>;
+ 				};
++
++				/*
++				 * Cluster-RETENTIVE (P1 activation): routed by
++				 * OpenSBI through RPMI_HSM_SRV_HART_SUSPEND so
++				 * the ESOS ownership gate drives the cluster M2
++				 * decision. The hart retains full architectural
++				 * state (no local-timer-stop: the timer keeps
++				 * running and is a wake source). Latencies TBD —
++				 * placeholder vendor values until measured.
++				 */
++				CLUSTER_RET: cluster-retentive@18 {
++					compatible = "riscv,idle-state";
++					reg = <0x0 0x0>;
++					riscv,sbi-suspend-param = <0x11000000>;
++					entry-latency-us = <600>;
++					exit-latency-us = <1100>;
++					min-residency-us = <2700>;
++					wakeup-latency-us = <1500>;
++				};
+ 			};
+ 
+ 			rpmi_sysreset0: rpmi-sysreset@18 {
