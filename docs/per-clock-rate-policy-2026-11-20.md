@@ -162,3 +162,46 @@ shipped v12) discriminates the two remaining hypotheses:
   AND the v20 killer is patch 0007 (P1) independently
 - DIES -> the series is broken beyond 0006; diff frwk2 against
   the shipped v12 binary for the remaining amendments
+
+## Walk step B result (2026-11-21): frwk2 dies; the failure is BUILD LAYOUT, not patch content
+
+Step B (frwk2 = 0001-0006 current series, the closest
+reconstruction of the shipped v12): DEAD clock service, same
+signature. The cros_ec_espi -517 errors the user observed are a
+downstream deferred-probe cascade of the dead MPXY chain, not an
+independent defect.
+
+The binary comparison of frwk2 vs the SHIPPED v12 settles the
+mechanism:
+- identical total size (267264) and .data size
+- .text differs by 16 bytes; string tables IDENTICAL except the
+  version stamps
+- ~37,924 differing bytes in ~8,888 scattered regions — the
+  classic signature of LINK-ORDER/layout differences (same code,
+  different addresses), not content differences
+
+CONCLUSION: the shipped v12 cannot be rebuilt reproducibly from
+ANY committed source state (6f1bb7e, d032c00, current). Its
+working behavior depends on build-artifact layout (link/init
+ordering), and the boot has an init-order sensitivity that makes
+equivalent-but-differently-laid-out firmware DIE before the RPMI
+transport comes up.
+
+This is a build-reproducibility defect at the ESOS layer:
+- every "same content" rebuild produces a different layout
+- the difference is fatal (dead transport)
+- the shipped v12 binary is the only known-good artifact
+
+The v24 arc's entire failure cascade traces here: v20 was the
+first rebuilt-from-source ESOS flash; the layout lottery killed
+its transport; every subsequent content-bisect was chasing noise.
+
+OPTIONS (user decision required):
+A. Root-cause the init-order sensitivity (find which driver
+   ordering matters, make it explicit) — the thorough path
+B. Treat the shipped v12 FIT payload as the pinned ESOS base
+   artifact (like the OpenSBI pin) and re-land P1 via surgical
+   binary patches — the pragmatic path, weakens source-truth
+C. Reproduce the v12 build's link order (find the scons/env
+   difference that orders objects differently and pin it) —
+   the reproducibility fix, unknown difficulty
