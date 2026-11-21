@@ -1,0 +1,13068 @@
+# All Global changes to build and install go here.
+# Per the below section about __spec_install_pre, any rpm
+# environment changes that affect %%install need to go
+# here before the %%install macro is pre-built.
+
+# Disable frame pointers
+%undefine _include_frame_pointers
+
+# Save default LTO flags before disabling (for use with kernel tools).
+%global _default_lto_cflags %{_lto_cflags}
+
+# Disable LTO in userspace packages (disabled for perf).
+%global _lto_cflags %{nil}
+
+# Option to enable compiling with clang instead of gcc.
+%bcond_with toolchain_clang
+
+%if %{with toolchain_clang}
+%global toolchain clang
+%endif
+
+# Compile the kernel with LTO (only supported when building with clang).
+%bcond_with clang_lto
+
+%if %{with clang_lto} && %{without toolchain_clang}
+{error:clang_lto requires --with toolchain_clang}
+%endif
+
+# RPM macros strip everything in BUILDROOT, either with __strip
+# or find-debuginfo.sh. Make use of __spec_install_post override
+# and save/restore binaries we want to package as unstripped.
+%define buildroot_unstripped %{_builddir}/root_unstripped
+%define buildroot_save_unstripped() \
+(cd %{buildroot}; cp -rav --parents -t %{buildroot_unstripped}/ %1 || true) \
+%{nil}
+%define __restore_unstripped_root_post \
+    echo "Restoring unstripped artefacts %{buildroot_unstripped} -> %{buildroot}" \
+    cp -rav %{buildroot_unstripped}/. %{buildroot}/ \
+%{nil}
+
+# The kernel's %%install section is special
+# Normally the %%install section starts by cleaning up the BUILD_ROOT
+# like so:
+#
+# %%__spec_install_pre %%{___build_pre}\
+#     [ "$RPM_BUILD_ROOT" != "/" ] && rm -rf "${RPM_BUILD_ROOT}"\
+#     mkdir -p `dirname "$RPM_BUILD_ROOT"`\
+#     mkdir "$RPM_BUILD_ROOT"\
+# %%{nil}
+#
+# But because of kernel variants, the %%build section, specifically
+# BuildKernel(), moves each variant to its final destination as the
+# variant is built.  This violates the expectation of the %%install
+# section.  As a result we snapshot the current env variables and
+# purposely leave out the removal section.  All global wide changes
+# should be added above this line otherwise the %%install section
+# will not see them.
+%global __spec_install_pre %{___build_pre}
+
+# Replace '-' with '_' where needed so that variants can use '-' in
+# their name.
+%define uname_suffix() %{lua:
+	local flavour = rpm.expand('%{?1:+%{1}}')
+	flavour = flavour:gsub('-', '_')
+	if flavour ~= '' then
+		print(flavour)
+	end
+}
+
+# This returns the main kernel tied to a debug variant. For example,
+# kernel-debug is the debug version of kernel, so we return an empty
+# string. However, kernel-64k-debug is the debug version of kernel-64k,
+# in this case we need to return "64k", and so on. This is used in
+# macros below where we need this for some uname based requires.
+%define uname_variant() %{lua:
+	local flavour = rpm.expand('%{?1:%{1}}')
+	_, _, main, sub = flavour:find("(%w+)-(.*)")
+	if main then
+		print("+" .. main)
+	end
+}
+
+
+# At the time of this writing (2019-03), RHEL8 packages use w2.xzdio
+# compression for rpms (xz, level 2).
+# Kernel has several large (hundreds of mbytes) rpms, they take ~5 mins
+# to compress by single-threaded xz. Switch to threaded compression,
+# and from level 2 to 3 to keep compressed sizes close to "w2" results.
+#
+# NB: if default compression in /usr/lib/rpm/redhat/macros ever changes,
+# this one might need tweaking (e.g. if default changes to w3.xzdio,
+# change below to w4T.xzdio):
+#
+# This is disabled on i686 as it triggers oom errors
+
+%ifnarch i686
+%define _binary_payload w3T.xzdio
+%endif
+
+Summary: The Linux kernel
+%if 0%{?fedora}
+%define secure_boot_arch x86_64
+%else
+%define secure_boot_arch x86_64 aarch64 s390x ppc64le
+%endif
+
+# Signing for secure boot authentication
+%ifarch %{secure_boot_arch}
+%global signkernel 1
+%else
+%global signkernel 0
+%endif
+
+# RHEL/CentOS/Fedora specific .SBAT entries
+%if 0%{?centos}
+%global sbat_suffix centos
+%else
+%if 0%{?fedora}
+%global sbat_suffix fedora
+%else
+%global sbat_suffix rhel
+%endif
+%endif
+
+# Sign modules on all arches
+%global signmodules 1
+
+# Add additional rhel certificates to system trusted keys.
+%global rhelkeys 1
+
+# Compress modules only for architectures that build modules
+%ifarch noarch
+%global zipmodules 0
+%else
+%global zipmodules 1
+%endif
+
+# Default compression algorithm
+%global compression xz
+%global compression_flags --compress --check=crc32 --lzma2=dict=1MiB
+%global compext xz
+
+%if 0%{?fedora}
+%define primary_target fedora
+%else
+%define primary_target rhel
+%endif
+
+#
+# genspec.sh variables
+#
+
+# kernel package name
+%global package_name kernel
+%global gemini 0
+# Include Fedora files
+%global include_fedora 0
+# Include RHEL files
+%global include_rhel 1
+# Include RT files
+%global include_rt 1
+# Include Automotive files
+%global include_automotive 0
+# Provide Patchlist.changelog file
+%global patchlist_changelog 0
+# Set released_kernel to 1 when the upstream source tarball contains a
+#  kernel release. (This includes prepatch or "rc" releases.)
+# Set released_kernel to 0 when the upstream source tarball contains an
+#  unreleased kernel development snapshot.
+%global released_kernel 0
+# Set debugbuildsenabled to 1 to build separate base and debug kernels
+#  (on supported architectures). The kernel-debug-* subpackages will
+#  contain the debug kernel.
+# Set debugbuildsenabled to 0 to not build a separate debug kernel, but
+#  to build the base kernel using the debug configuration. (Specifying
+#  the --with-release option overrides this setting.)
+%define debugbuildsenabled 1
+%define buildid .acpidebug.1
+%define specrpmversion 6.12.0
+%define specversion 6.12.0
+%define patchversion 6.12
+%define pkgrelease 284
+%define kversion 6
+%define tarfile_release 6.12.0-284.el10
+# This is needed to do merge window version magic
+%define patchlevel 12
+# This allows pkg_release to have configurable %%{?dist} tag
+%define specrelease 284%{?buildid}%{?dist}
+# This defines the kabi tarball version
+%define kabiversion 6.12.0-284.el10
+
+# If this variable is set to 1, a bpf selftests build failure will cause a
+# fatal kernel package build error
+%define selftests_must_build 0
+
+#
+# End of genspec.sh variables
+#
+
+%define pkg_release %{specrelease}
+
+# libexec dir is not used by the linker, so the shared object there
+# should not be exported to RPM provides
+%global __provides_exclude_from ^%{_libexecdir}/kselftests
+# Skip the interpreter requires of the selftest scripts: rpm runs its
+# script.req generator once per executable script (hundreds of them),
+# each run costing a fork and exec of the by then large rpmbuild process.
+%global __script_exclude_path ^%{_libexecdir}/kselftests/
+# Skip the ELF dependency generators for the selftest object files: elf.attr
+# on RHEL has no exeonly flag, so rpm forks elfdeps twice for each of the
+# ~2700 relocatable .o files there, which have no dynamic section and yield
+# nothing. [.] instead of \. because rpm strips a backslash per expansion.
+%global __elf_exclude_path %{__elf_exclude_path}|^%{_libexecdir}/kselftests/.*[.]o$
+
+# The following build options are (mostly) enabled by default, but may become
+# enabled/disabled by later architecture-specific checks.
+# Where disabled by default, they can be enabled by using --with <opt> in the
+# rpmbuild command, or by forcing these values to 1.
+# Where enabled by default, they can be disabled by using --without <opt> in
+# the rpmbuild command, or by forcing these values to 0.
+#
+# standard kernel
+%define with_up        %{?_without_up:        0} %{?!_without_up:        1}
+# build the base variants
+%define with_base      %{?_without_base:      0} %{?!_without_base:      1}
+# build also debug variants
+%define with_debug     %{?_without_debug:     0} %{?!_without_debug:     1}
+# kernel-zfcpdump (s390 specific kernel for zfcpdump)
+%define with_zfcpdump  %{?_without_zfcpdump:  0} %{?!_without_zfcpdump:  1}
+# kernel-16k (aarch64 kernel with 16K page_size)
+%define with_arm64_16k %{?_with_arm64_16k:    1} %{?!_with_arm64_16k:    0}
+# kernel-64k (aarch64 kernel with 64K page_size)
+%define with_arm64_64k %{?_without_arm64_64k: 0} %{?!_without_arm64_64k: 1}
+# kernel-rt (x86_64 and aarch64 only PREEMPT_RT enabled kernel)
+%define with_realtime  %{?_without_realtime:  0} %{?!_without_realtime:  1}
+# kernel-rt-64k (aarch64 RT kernel with 64K page_size)
+%define with_realtime_arm64_64k %{?_without_realtime_arm64_64k: 0} %{?!_without_realtime_arm64_64k: 1}
+# kernel-automotive (x86_64 and aarch64 with PREEMPT_RT enabled - currently off by default)
+%define with_automotive %{?_with_automotive:  1} %{?!_with_automotive:   0}
+
+# Supported variants
+#            with_base with_debug    with_gcov
+# up         X         X             X
+# zfcpdump   X                       X
+# arm64_16k  X         X             X
+# arm64_64k  X         X             X
+# realtime   X         X             X
+# automotive X         X             X
+
+# kernel-doc
+%define with_doc       %{?_without_doc:       0} %{?!_without_doc:       1}
+# kernel-headers
+%define with_headers   %{?_without_headers:   0} %{?!_without_headers:   1}
+%define with_cross_headers   %{?_without_cross_headers:   0} %{?!_without_cross_headers:   1}
+# perf
+%define with_perf      %{?_without_perf:      0} %{?!_without_perf:      1}
+# libperf
+%define with_libperf   %{?_without_libperf:   0} %{?!_without_libperf:   1}
+# tools
+%define with_tools     %{?_without_tools:     0} %{?!_without_tools:     1}
+# ynl
+%define with_ynl      %{?_without_ynl:      0} %{?!_without_ynl:      1}
+# kernel-debuginfo
+%define with_debuginfo %{?_without_debuginfo: 0} %{?!_without_debuginfo: 1}
+# kernel-kmap-internal: source-to-module mapping data (JSON)
+%define with_kmap      %{?_without_kmap:      0} %{?!_without_kmap:      1}
+# kernel-abi-stablelists
+%define with_kernel_abi_stablelists %{?_without_kernel_abi_stablelists: 0} %{?!_without_kernel_abi_stablelists: 1}
+# internal samples and selftests
+%define with_selftests %{?_without_selftests: 0} %{?!_without_selftests: 1}
+#
+# Additional options for user-friendly one-off kernel building:
+#
+# Only build the base kernel (--with baseonly):
+%define with_baseonly  %{?_with_baseonly:     1} %{?!_with_baseonly:     0}
+# Only build the debug variants (--with dbgonly):
+%define with_dbgonly   %{?_with_dbgonly:      1} %{?!_with_dbgonly:      0}
+# Only build the realtime kernel (--with rtonly):
+%define with_rtonly    %{?_with_rtonly:       1} %{?!_with_rtonly:       0}
+# Only build the automotive variant of the kernel (--with automotiveonly):
+%define with_automotiveonly %{?_with_automotiveonly:       1} %{?!_with_automotiveonly:       0}
+# Build the automotive kernel (--with automotive_build), this builds base variant with automotive config/options:
+%define with_automotive_build %{?_with_automotive_build:   1} %{?!_with_automotive_build:     0}
+# Control whether we perform a compat. check against published ABI.
+%define with_kabichk   %{?_without_kabichk:   0} %{?!_without_kabichk:   1}
+# Temporarily disable kabi checks until RC.
+%define with_kabichk 0
+# Control whether we perform a compat. check against DUP ABI.
+%define with_kabidupchk %{?_with_kabidupchk:  1} %{?!_with_kabidupchk:   0}
+#
+# Control whether to run an extensive DWARF based kABI check.
+# Note that this option needs to have baseline setup in SOURCE300.
+%define with_kabidwchk %{?_without_kabidwchk: 0} %{?!_without_kabidwchk: 1}
+%define with_kabidw_base %{?_with_kabidw_base: 1} %{?!_with_kabidw_base: 0}
+#
+# Control whether to install the vdso directories.
+%define with_vdso_install %{?_without_vdso_install: 0} %{?!_without_vdso_install: 1}
+#
+# should we do C=1 builds with sparse
+%define with_sparse    %{?_with_sparse:       1} %{?!_with_sparse:       0}
+#
+# Cross compile requested?
+%define with_cross    %{?_with_cross:         1} %{?!_with_cross:        0}
+#
+# build a release kernel on rawhide
+%define with_release   %{?_with_release:      1} %{?!_with_release:      0}
+
+# verbose build, i.e. no silent rules and V=1
+%define with_verbose %{?_with_verbose:        1} %{?!_with_verbose:      0}
+
+#
+# check for mismatched config options
+%define with_configchecks 0
+
+#
+# gcov support
+%define with_gcov %{?_with_gcov:1}%{?!_with_gcov:0}
+
+# Want to build a vanilla kernel build without any non-upstream patches?
+%define with_vanilla %{?_with_vanilla: 1} %{?!_with_vanilla: 0}
+
+%ifarch x86_64 aarch64 riscv64
+%define with_efiuki %{?_without_efiuki: 0} %{?!_without_efiuki: 1}
+%else
+%define with_efiuki 0
+%endif
+
+%if 0%{?fedora}
+# Kernel headers are being split out into a separate package
+%define with_headers 0
+%define with_cross_headers 0
+# no stablelist
+%define with_kernel_abi_stablelists 0
+%define with_arm64_64k 0
+%define with_realtime 0
+%define with_realtime_arm64_64k 0
+%define with_automotive 0
+%endif
+
+%if %{with_verbose}
+%define make_opts V=1
+%else
+%define make_opts -s
+%endif
+
+%if %{with toolchain_clang}
+%ifarch s390x ppc64le
+%global llvm_ias 0
+%else
+%global llvm_ias 1
+%endif
+%global clang_make_opts HOSTCC=clang CC=clang LLVM_IAS=%{llvm_ias}
+%if %{with clang_lto}
+# LLVM=1 enables use of all LLVM tools.
+%global clang_make_opts %{clang_make_opts} LLVM=1
+%endif
+%global make_opts %{make_opts} %{clang_make_opts}
+%endif
+
+# turn off debug kernel and kabichk for gcov builds
+%if %{with_gcov}
+%define with_debug 0
+%define with_kabichk 0
+%define with_kabidupchk 0
+%define with_kabidwchk 0
+%define with_kabidw_base 0
+%define with_kernel_abi_stablelists 0
+%endif
+
+# turn off kABI DWARF-based check if we're generating the base dataset
+%if %{with_kabidw_base}
+%define with_kabidwchk 0
+%endif
+
+%define make_target bzImage
+%define image_install_path boot
+
+%define KVERREL %{specversion}-%{release}.%{_target_cpu}
+%define KVERREL_RE %(echo %KVERREL | sed 's/+/[+]/g')
+%define hdrarch %_target_cpu
+%define asmarch %_target_cpu
+
+%if 0%{!?nopatches:1}
+%define nopatches 0
+%endif
+
+%if %{with_vanilla}
+%define nopatches 1
+%endif
+
+%if %{with_release}
+%define debugbuildsenabled 1
+%endif
+
+%if !%{with_debuginfo}
+%define _enable_debug_packages 0
+%endif
+%define debuginfodir /usr/lib/debug
+# Needed because we override almost everything involving build-ids
+# and debuginfo generation. Currently we rely on the old alldebug setting.
+%global _build_id_links alldebug
+
+# if requested, only build base kernel
+%if %{with_baseonly}
+%define with_debug 0
+%define with_realtime 0
+%define with_vdso_install 0
+%define with_perf 0
+%define with_libperf 0
+%define with_tools 0
+%define with_kernel_abi_stablelists 0
+%define with_selftests 0
+%endif
+
+# if requested, only build debug kernel
+%if %{with_dbgonly}
+%define with_base 0
+%define with_vdso_install 0
+%define with_perf 0
+%define with_libperf 0
+%define with_tools 0
+%define with_kernel_abi_stablelists 0
+%define with_selftests 0
+%endif
+
+# if requested, only build realtime kernel
+%if %{with_rtonly}
+%define with_realtime 1
+%define with_realtime_arm64_64k 1
+%define with_automotive 0
+%define with_up 0
+%define with_debug 0
+%define with_debuginfo 0
+%define with_vdso_install 0
+%define with_perf 0
+%define with_libperf 0
+%define with_tools 0
+%define with_kernel_abi_stablelists 0
+%define with_selftests 0
+%define with_headers 0
+%define with_efiuki 0
+%define with_zfcpdump 0
+%define with_arm64_16k 0
+%define with_arm64_64k 0
+%endif
+
+# if requested, only build the automotive variant of the kernel
+%if %{with_automotiveonly}
+%define with_automotive 1
+%define with_realtime 0
+%define with_up 0
+%define with_debug 0
+%define with_debuginfo 0
+%define with_vdso_install 0
+%define with_selftests 1
+%endif
+
+# if requested, build kernel-automotive
+%if %{with_automotive_build}
+%define with_automotive 1
+%define with_selftests 1
+%endif
+
+# RT and Automotive kernels are only built on x86_64 and aarch64
+%ifnarch x86_64 aarch64
+%define with_realtime 0
+%define with_automotive 0
+%endif
+
+%if %{with_automotive}
+# overrides compression algorithms for automotive
+%global compression zstd
+%global compression_flags --rm
+%global compext zst
+
+# automotive does not support the following variants
+%define with_realtime 0
+%define with_realtime_arm64_64k 0
+%define with_arm64_16k 0
+%define with_arm64_64k 0
+%define with_efiuki 0
+%define with_doc 0
+%define with_headers 0
+%define with_cross_headers 0
+%define with_perf 0
+%define with_libperf 0
+%define with_tools 0
+%define with_kabichk 0
+%define with_kernel_abi_stablelists 0
+%define with_kabidw_base 0
+%define signkernel 0
+%define signmodules 1
+%define rhelkeys 0
+%endif
+
+
+%if %{zipmodules}
+%global zipsed -e 's/\.ko$/\.ko.%compext/'
+# for parallel xz processes, replace with 1 to go back to single process
+%endif
+
+# turn off kABI DUP check and DWARF-based check if kABI check is disabled
+%if !%{with_kabichk}
+%define with_kabidupchk 0
+%define with_kabidwchk 0
+%endif
+
+%if %{with_vdso_install}
+%define use_vdso 1
+%endif
+
+%ifnarch noarch
+%define with_kernel_abi_stablelists 0
+%endif
+
+# Overrides for generic default options
+
+# only package docs noarch
+%ifnarch noarch
+%define with_doc 0
+%define doc_build_fail true
+%endif
+
+%if 0%{?fedora}
+# don't do debug builds on anything but aarch64 and x86_64
+%ifnarch aarch64 x86_64
+%define with_debug 0
+%endif
+%endif
+
+%define all_configs %{name}-%{specrpmversion}-*.config
+
+# don't build noarch kernels or headers (duh)
+%ifarch noarch
+%define with_up 0
+%define with_realtime 0
+%define with_automotive 0
+%define with_headers 0
+%define with_cross_headers 0
+%define with_tools 0
+%define with_perf 0
+%define with_libperf 0
+%define with_selftests 0
+%define with_debug 0
+%endif
+
+# sparse blows up on ppc
+%ifnarch ppc64le
+%define with_sparse 0
+%endif
+
+# zfcpdump mechanism is s390 only
+%ifnarch s390x
+%define with_zfcpdump 0
+%endif
+
+# 16k and 64k variants only for aarch64
+%ifnarch aarch64
+%define with_arm64_16k 0
+%define with_arm64_64k 0
+%define with_realtime_arm64_64k 0
+%endif
+
+%if 0%{?fedora}
+# This is not for Fedora
+%define with_zfcpdump 0
+%endif
+
+# Per-arch tweaks
+
+%ifarch i686
+%define asmarch x86
+%define hdrarch i386
+%define kernel_image arch/x86/boot/bzImage
+%endif
+
+%ifarch x86_64
+%define asmarch x86
+%define kernel_image arch/x86/boot/bzImage
+%endif
+
+%ifarch ppc64le
+%define asmarch powerpc
+%define hdrarch powerpc
+%define make_target vmlinux
+%define kernel_image vmlinux
+%define kernel_image_elf 1
+%define use_vdso 0
+%endif
+
+%ifarch s390x
+%define asmarch s390
+%define hdrarch s390
+%define kernel_image arch/s390/boot/bzImage
+%define vmlinux_decompressor arch/s390/boot/vmlinux
+%endif
+
+%ifarch aarch64
+%define asmarch arm64
+%define hdrarch arm64
+%define make_target vmlinuz.efi
+%define kernel_image arch/arm64/boot/vmlinuz.efi
+%endif
+
+%ifarch riscv64
+%define asmarch riscv
+%define hdrarch riscv
+%define make_target vmlinuz.efi
+%define kernel_image arch/riscv/boot/vmlinuz.efi
+%endif
+
+# Should make listnewconfig fail if there's config options
+# printed out?
+%if %{nopatches}
+%define with_configchecks 0
+%endif
+
+# To temporarily exclude an architecture from being built, add it to
+# %%nobuildarches. Do _NOT_ use the ExclusiveArch: line, because if we
+# don't build kernel-headers then the new build system will no longer let
+# us use the previous build of that package -- it'll just be completely AWOL.
+# Which is a BadThing(tm).
+
+# We only build kernel-headers on the following...
+%if 0%{?fedora}
+%define nobuildarches i386
+%else
+%define nobuildarches i386 i686
+%endif
+
+%ifarch %nobuildarches
+# disable BuildKernel commands
+%define with_up 0
+%define with_debug 0
+%define with_zfcpdump 0
+%define with_arm64_16k 0
+%define with_arm64_64k 0
+%define with_realtime 0
+%define with_realtime_arm64_64k 0
+%define with_automotive 0
+
+%define with_debuginfo 0
+%define with_perf 0
+%define with_libperf 0
+%define with_tools 0
+%define with_selftests 0
+%define _enable_debug_packages 0
+%endif
+
+%ifnarch x86_64 ppc64le s390x aarch64 riscv64
+%define with_kmap 0
+%endif
+
+# Architectures we build tools/cpupower on
+%if 0%{?fedora}
+%define cpupowerarchs %{ix86} x86_64 ppc64le aarch64
+%else
+%define cpupowerarchs i686 x86_64 ppc64le aarch64 riscv64
+%endif
+
+%if 0%{?use_vdso}
+%define _use_vdso 1
+%else
+%define _use_vdso 0
+%endif
+
+# If build of debug packages is disabled, we need to know if we want to create
+# meta debug packages or not, after we define with_debug for all specific cases
+# above. So this must be at the end here, after all cases of with_debug or not.
+%define with_debug_meta 0
+%if !%{debugbuildsenabled}
+%if %{with_debug}
+%define with_debug_meta 1
+%endif
+%define with_debug 0
+%endif
+
+# short-hand for "are we building base/non-debug variants of ...?"
+%if %{with_up} && %{with_base}
+%define with_up_base 1
+%else
+%define with_up_base 0
+%endif
+%if %{with_realtime} && %{with_base}
+%define with_realtime_base 1
+%else
+%define with_realtime_base 0
+%endif
+%if %{with_automotive} && %{with_base} && !%{with_automotive_build}
+%define with_automotive_base 1
+%else
+%define with_automotive_base 0
+%endif
+%if %{with_arm64_16k} && %{with_base}
+%define with_arm64_16k_base 1
+%else
+%define with_arm64_16k_base 0
+%endif
+%if %{with_arm64_64k} && %{with_base}
+%define with_arm64_64k_base 1
+%else
+%define with_arm64_64k_base 0
+%endif
+%if %{with_realtime_arm64_64k} && %{with_base}
+%define with_realtime_arm64_64k_base 1
+%else
+%define with_realtime_arm64_64k_base 0
+%endif
+
+#
+# Packages that need to be installed before the kernel is, because the %%post
+# scripts use them.
+#
+%define kernel_prereq  coreutils, systemd >= 203-2, /usr/bin/kernel-install
+%define initrd_prereq  dracut >= 027
+
+
+Name: %{package_name}
+License: ((GPL-2.0-only WITH Linux-syscall-note) OR BSD-2-Clause) AND ((GPL-2.0-only WITH Linux-syscall-note) OR BSD-3-Clause) AND ((GPL-2.0-only WITH Linux-syscall-note) OR CDDL-1.0) AND ((GPL-2.0-only WITH Linux-syscall-note) OR Linux-OpenIB) AND ((GPL-2.0-only WITH Linux-syscall-note) OR MIT) AND ((GPL-2.0-or-later WITH Linux-syscall-note) OR BSD-3-Clause) AND ((GPL-2.0-or-later WITH Linux-syscall-note) OR MIT) AND 0BSD AND BSD-2-Clause AND (BSD-2-Clause OR Apache-2.0) AND BSD-3-Clause AND BSD-3-Clause-Clear AND CC0-1.0 AND GFDL-1.1-no-invariants-or-later AND GPL-1.0-or-later AND (GPL-1.0-or-later OR BSD-3-Clause) AND (GPL-1.0-or-later WITH Linux-syscall-note) AND GPL-2.0-only AND (GPL-2.0-only OR Apache-2.0) AND (GPL-2.0-only OR BSD-2-Clause) AND (GPL-2.0-only OR BSD-3-Clause) AND (GPL-2.0-only OR CDDL-1.0) AND (GPL-2.0-only OR GFDL-1.1-no-invariants-or-later) AND (GPL-2.0-only OR GFDL-1.2-no-invariants-only) AND (GPL-2.0-only WITH Linux-syscall-note) AND GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) AND (GPL-2.0-or-later OR BSD-3-Clause) AND (GPL-2.0-or-later OR CC-BY-4.0) AND (GPL-2.0-or-later WITH GCC-exception-2.0) AND (GPL-2.0-or-later WITH Linux-syscall-note) AND ISC AND LGPL-2.0-or-later AND (LGPL-2.0-or-later OR BSD-2-Clause) AND (LGPL-2.0-or-later WITH Linux-syscall-note) AND LGPL-2.1-only AND (LGPL-2.1-only OR BSD-2-Clause) AND (LGPL-2.1-only WITH Linux-syscall-note) AND LGPL-2.1-or-later AND (LGPL-2.1-or-later WITH Linux-syscall-note) AND (Linux-OpenIB OR GPL-2.0-only) AND (Linux-OpenIB OR GPL-2.0-only OR BSD-2-Clause) AND Linux-man-pages-copyleft AND MIT AND (MIT OR Apache-2.0) AND (MIT OR GPL-2.0-only) AND (MIT OR GPL-2.0-or-later) AND (MIT OR LGPL-2.1-only) AND (MPL-1.1 OR GPL-2.0-only) AND (X11 OR GPL-2.0-only) AND (X11 OR GPL-2.0-or-later) AND Zlib AND (copyleft-next-0.3.1 OR GPL-2.0-or-later)
+URL: https://www.kernel.org/
+Version: %{specrpmversion}
+Release: %{pkg_release}
+# DO NOT CHANGE THE 'ExclusiveArch' LINE TO TEMPORARILY EXCLUDE AN ARCHITECTURE BUILD.
+# SET %%nobuildarches (ABOVE) INSTEAD
+%if 0%{?fedora}
+ExclusiveArch: noarch x86_64 s390x aarch64 ppc64le riscv64
+%else
+ExclusiveArch: noarch i386 i686 x86_64 s390x aarch64 ppc64le riscv64
+%endif
+ExclusiveOS: Linux
+%ifnarch %{nobuildarches}
+Requires: %{name}-core-uname-r = %{KVERREL}
+Requires: %{name}-modules-uname-r = %{KVERREL}
+Requires: %{name}-modules-core-uname-r = %{KVERREL}
+Requires: ((%{name}-modules-extra-uname-r = %{KVERREL}) if %{name}-modules-extra-matched)
+Provides: installonlypkg(kernel)
+%endif
+
+
+#
+# List the packages used during the kernel build
+#
+BuildRequires: kmod, bash, coreutils, tar, git-core, which
+BuildRequires: bzip2, xz, findutils, m4, perl-interpreter, perl-Carp, perl-devel, perl-generators, make, diffutils, gawk, %compression
+BuildRequires: gcc, binutils, redhat-rpm-config, hmaccalc, bison, flex, gcc-c++
+%if 0%{?fedora}
+BuildRequires: rust, rust-src, bindgen
+%endif
+BuildRequires: net-tools, hostname, bc, elfutils-devel
+BuildRequires: dwarves
+BuildRequires: python3
+BuildRequires: python3-devel
+BuildRequires: python3-pyyaml
+BuildRequires: kernel-rpm-macros
+# glibc-static is required for a consistent build environment (specifically
+# CONFIG_CC_CAN_LINK_STATIC=y).
+BuildRequires: glibc-static
+%if %{with_headers} || %{with_cross_headers}
+BuildRequires: rsync
+%endif
+%if %{with_doc}
+BuildRequires: xmlto, asciidoc, python3-sphinx, python3-sphinx_rtd_theme
+%endif
+%if %{with_sparse}
+BuildRequires: sparse
+%endif
+%if %{with_perf}
+BuildRequires: zlib-devel binutils-devel newt-devel perl(ExtUtils::Embed) bison flex xz-devel
+BuildRequires: audit-libs-devel python3-setuptools
+BuildRequires: java-devel
+BuildRequires: libbabeltrace-devel
+BuildRequires: libtraceevent-devel
+%ifnarch s390x
+BuildRequires: numactl-devel
+%endif
+%ifarch aarch64
+BuildRequires: opencsd-devel >= 1.0.0
+%endif
+%endif
+%if %{with_tools}
+BuildRequires: python3-docutils
+BuildRequires: gettext ncurses-devel
+BuildRequires: libcap-devel libcap-ng-devel
+# The following are rtla requirements
+BuildRequires: python3-docutils
+BuildRequires: libtraceevent-devel
+BuildRequires: libtracefs-devel
+BuildRequires: libbpf-devel
+BuildRequires: bpftool
+BuildRequires: clang
+
+%ifarch %{cpupowerarchs}
+# For libcpupower bindings
+BuildRequires: swig
+%endif
+
+%ifnarch s390x
+BuildRequires: pciutils-devel
+%endif
+%ifarch i686 x86_64
+BuildRequires: libnl3-devel
+%endif
+%endif
+
+%if %{with_tools} && %{with_ynl}
+BuildRequires: python3-pyyaml python3-jsonschema python3-pip python3-setuptools python3-wheel
+%endif
+
+BuildRequires: openssl-devel
+
+%if %{with_selftests}
+BuildRequires: clang llvm-devel fuse-devel zlib-devel binutils-devel python3-docutils python3-jsonschema
+%ifarch x86_64 riscv64
+BuildRequires: lld
+%endif
+BuildRequires: libcap-devel libcap-ng-devel rsync libmnl-devel libxml2-devel
+BuildRequires: numactl-devel
+BuildRequires: xxd
+%endif
+BuildConflicts: rhbuildsys(DiskFree) < 500Mb
+%if %{with_debuginfo}
+BuildRequires: rpm-build, elfutils
+BuildConflicts: rpm < 4.13.0.1-19
+BuildConflicts: dwarves < 1.13
+# Most of these should be enabled after more investigation
+%undefine _include_minidebuginfo
+%undefine _find_debuginfo_dwz_opts
+%undefine _unique_build_ids
+%undefine _unique_debug_names
+%undefine _unique_debug_srcs
+%undefine _debugsource_packages
+%undefine _debuginfo_subpackages
+
+# Remove -q option below to provide 'extracting debug info' messages
+%global _find_debuginfo_opts -r -q
+
+%global _missing_build_ids_terminate_build 1
+%global _no_recompute_build_ids 1
+%endif
+%if %{with_kabidwchk} || %{with_kabidw_base}
+BuildRequires: kabi-dw
+%endif
+
+%if %{signkernel}%{signmodules}
+BuildRequires: openssl
+%if %{signkernel}
+# ELN uses Fedora signing process, so exclude
+%if 0%{?rhel}%{?centos} && !0%{?eln}
+BuildRequires: system-sb-certs
+%endif
+%ifarch x86_64 aarch64 riscv64
+BuildRequires: nss-tools
+BuildRequires: pesign >= 0.10-4
+%endif
+%endif
+%endif
+
+# If CROSS_COMPILE is defined then we skip the BuildRequires because we do not
+# know which package maintains that toolchain prefix.
+%if %{with_cross}
+%if %{undefined CROSS_COMPILE}
+BuildRequires: binutils-%{_build_arch}-linux-gnu, gcc-%{_build_arch}-linux-gnu
+%define CROSS_COMPILE %{_build_arch}-linux-gnu-
+%endif
+%define cross_opts CROSS_COMPILE=%{CROSS_COMPILE}
+%define __strip %{CROSS_COMPILE}strip
+%endif
+
+# These below are required to build man pages
+%if %{with_perf}
+BuildRequires: xmlto
+%endif
+%if %{with_perf} || %{with_tools}
+BuildRequires: asciidoc
+%endif
+
+%if %{with toolchain_clang}
+BuildRequires: clang
+%endif
+
+%if %{with clang_lto}
+BuildRequires: llvm
+BuildRequires: lld
+%endif
+
+%if %{with_efiuki}
+BuildRequires: dracut >= 104
+# For dracut UEFI uki binaries
+BuildRequires: binutils
+# For the initrd
+BuildRequires: lvm2
+BuildRequires: systemd-boot-unsigned
+# For systemd-stub and systemd-pcrphase
+BuildRequires: systemd-udev >= 252-1
+# For systemd-repart
+BuildRequires: xfsprogs e2fsprogs dosfstools
+# For UKI kernel cmdline addons
+BuildRequires: systemd-ukify
+# For TPM operations in UKI initramfs
+BuildRequires: tpm2-tools
+# For UKI sb cert
+%if 0%{?rhel}%{?centos} && !0%{?eln}
+%if 0%{?centos}
+BuildRequires: centos-sb-certs >= 9.0-23
+%else
+BuildRequires: redhat-sb-certs >= 9.4-0.1
+%endif
+%endif
+%endif
+
+# Because this is the kernel, it's hard to get a single upstream URL
+# to represent the base without needing to do a bunch of patching. This
+# tarball is generated from a src-git tree. If you want to see the
+# exact git commit you can run
+#
+# xzcat -qq ${TARBALL} | git get-tar-commit-id
+Source0: linux-%{tarfile_release}.tar.xz
+
+Source1: Makefile.rhelver
+Source2: %{package_name}.changelog
+
+Source10: redhatsecurebootca5.cer
+Source13: redhatsecureboot501.cer
+
+%if %{signkernel}
+# Name of the packaged file containing signing key
+%ifarch ppc64le
+%define signing_key_filename kernel-signing-ppc.cer
+%endif
+%ifarch s390x
+%define signing_key_filename kernel-signing-s390.cer
+%endif
+
+# pesign cert name is auto-discovered during build from secureboot_key_0,
+# see pesign_name_0 shell variable
+#
+# Fedora/ELN pesign macro expects to see these cert file names, see:
+# https://github.com/rhboot/pesign/blob/main/src/pesign-rpmbuild-helper.in#L216
+%if 0%{?fedora}%{?eln}
+%define secureboot_ca_0 %{SOURCE10}
+%define secureboot_key_0 %{SOURCE13}
+%define secureboot_key_uki_0 %{secureboot_key_0}
+%endif
+
+# RHEL/centos certs come from system-sb-certs
+%if 0%{?rhel} && !0%{?eln}
+%define secureboot_ca_0 %{_datadir}/pki/sb-certs/secureboot-ca-%{_arch}.cer
+%define secureboot_key_0 %{_datadir}/pki/sb-certs/secureboot-kernel-%{_arch}.cer
+%define secureboot_key_uki_0 %{_datadir}/pki/sb-certs/secureboot-uki-virt-%{_arch}.cer
+
+# rhel && !eln
+%endif
+
+# signkernel
+%endif
+
+Source20: mod-denylist.sh
+Source21: mod-sign.sh
+Source22: filtermods.py
+
+%define modsign_cmd %{SOURCE21}
+
+%if 0%{?include_rhel}
+Source24: %{name}-aarch64-rhel.config
+Source25: %{name}-aarch64-debug-rhel.config
+Source27: %{name}-ppc64le-rhel.config
+Source28: %{name}-ppc64le-debug-rhel.config
+Source29: %{name}-s390x-rhel.config
+Source30: %{name}-s390x-debug-rhel.config
+Source31: %{name}-s390x-zfcpdump-rhel.config
+Source32: %{name}-x86_64-rhel.config
+Source33: %{name}-x86_64-debug-rhel.config
+# ARM64 64K page-size kernel config
+Source42: %{name}-aarch64-64k-rhel.config
+Source43: %{name}-aarch64-64k-debug-rhel.config
+Source44: %{name}-riscv64-rhel.config
+Source45: %{name}-riscv64-debug-rhel.config
+%endif
+
+%if %{include_rhel} || %{include_automotive}
+Source23: x509.genkey.rhel
+Source34: def_variants.yaml.rhel
+Source41: x509.genkey.centos
+%endif
+
+%if 0%{?include_fedora}
+Source50: x509.genkey.fedora
+
+Source52: %{name}-aarch64-fedora.config
+Source53: %{name}-aarch64-debug-fedora.config
+Source54: %{name}-aarch64-16k-fedora.config
+Source55: %{name}-aarch64-16k-debug-fedora.config
+Source56: %{name}-ppc64le-fedora.config
+Source57: %{name}-ppc64le-debug-fedora.config
+Source58: %{name}-s390x-fedora.config
+Source59: %{name}-s390x-debug-fedora.config
+Source60: %{name}-x86_64-fedora.config
+Source61: %{name}-x86_64-debug-fedora.config
+Source700: %{name}-riscv64-fedora.config
+Source701: %{name}-riscv64-debug-fedora.config
+
+Source62: def_variants.yaml.fedora
+%endif
+
+Source70: partial-kgcov-snip.config
+Source71: partial-kgcov-debug-snip.config
+Source72: partial-clang-snip.config
+Source73: partial-clang-debug-snip.config
+Source74: partial-clang_lto-x86_64-snip.config
+Source75: partial-clang_lto-x86_64-debug-snip.config
+Source76: partial-clang_lto-aarch64-snip.config
+Source77: partial-clang_lto-aarch64-debug-snip.config
+Source80: generate_all_configs.sh
+Source81: process_configs.sh
+
+Source83: uki.sbat.template
+Source84: uki-addons.sbat.template
+Source85: kernel.sbat.template
+
+Source86: dracut-virt.conf
+
+Source87: flavors
+
+Source151: uki_create_addons.py
+Source152: uki_addons.json
+
+# Temporary use redhatsecureboot504 for x86 UKI, see RHEL-122230
+Source153: redhatsecureboot504.cer
+
+Source100: rheldup3.x509
+Source101: rhelkpatch1.x509
+Source102: nvidiagpuoot001.x509
+Source103: rhelimaca1.x509
+Source104: rhelima.x509
+Source105: rhelima_centos.x509
+Source106: fedoraimaca.x509
+Source107: nvidiajetsonsoc.x509
+Source108: nvidiabfdpu.x509
+
+%if 0%{?fedora}%{?eln}
+%define ima_ca_cert %{SOURCE106}
+%endif
+
+%if 0%{?rhel} && !0%{?eln}
+%define ima_ca_cert %{SOURCE103}
+# rhel && !eln
+%endif
+
+%if 0%{?centos}
+%define ima_signing_cert %{SOURCE105}
+%else
+%define ima_signing_cert %{SOURCE104}
+%endif
+
+%define ima_cert_name ima.cer
+
+Source200: check-kabi
+
+Source201: Module.kabi_aarch64
+Source202: Module.kabi_ppc64le
+Source203: Module.kabi_s390x
+Source204: Module.kabi_x86_64
+Source205: Module.kabi_riscv64
+
+Source210: Module.kabi_dup_aarch64
+Source211: Module.kabi_dup_ppc64le
+Source212: Module.kabi_dup_s390x
+Source213: Module.kabi_dup_x86_64
+Source214: Module.kabi_dup_riscv64
+
+Source300: kernel-abi-stablelists-%{kabiversion}.tar.xz
+Source301: kernel-kabi-dw-%{kabiversion}.tar.xz
+
+%if 0%{include_rt}
+%if 0%{include_rhel}
+Source474: %{name}-aarch64-rt-rhel.config
+Source475: %{name}-aarch64-rt-debug-rhel.config
+Source476: %{name}-aarch64-rt-64k-rhel.config
+Source477: %{name}-aarch64-rt-64k-debug-rhel.config
+Source478: %{name}-x86_64-rt-rhel.config
+Source479: %{name}-x86_64-rt-debug-rhel.config
+%endif
+%if 0%{include_fedora}
+Source478: %{name}-aarch64-rt-fedora.config
+Source479: %{name}-aarch64-rt-debug-fedora.config
+Source480: %{name}-aarch64-rt-64k-fedora.config
+Source481: %{name}-aarch64-rt-64k-debug-fedora.config
+Source482: %{name}-x86_64-rt-fedora.config
+Source483: %{name}-x86_64-rt-debug-fedora.config
+Source484: %{name}-riscv64-rt-fedora.config
+Source485: %{name}-riscv64-rt-debug-fedora.config
+%endif
+%endif
+
+%if %{include_automotive}
+%if %{with_automotive_build}
+Source486: %{name}-aarch64-rhel.config
+Source487: %{name}-aarch64-debug-rhel.config
+Source488: %{name}-x86_64-rhel.config
+Source489: %{name}-x86_64-debug-rhel.config
+%else
+Source486: %{name}-aarch64-automotive-rhel.config
+Source487: %{name}-aarch64-automotive-debug-rhel.config
+Source488: %{name}-x86_64-automotive-rhel.config
+Source489: %{name}-x86_64-automotive-debug-rhel.config
+%endif
+%endif
+
+
+# Sources for kernel-tools
+Source2002: kvm_stat.logrotate
+
+# Sources for kernel-kmap-internal
+Source2100: kmap.py
+
+# Some people enjoy building customized kernels from the dist-git in Fedora and
+# use this to override configuration options. One day they may all use the
+# source tree, but in the mean time we carry this to support the legacy workflow
+Source3000: merge.py
+Source3001: kernel-local
+%if %{patchlist_changelog}
+Source3002: Patchlist.changelog
+%endif
+
+Source4000: README.rst
+Source4001: rpminspect.yaml
+Source4002: gating.yaml
+Source4003: plans.fmf
+
+## Patches needed for building this package
+
+%if !%{nopatches}
+
+Patch1: patch-%{patchversion}-redhat.patch
+%endif
+
+# K3 acpidebug series
+Patch900002: k3-ufs-acpi.patch
+Patch900003: k3-gpio-acpi.patch
+
+# empty final patch to facilitate testing of kernel patches
+Patch999999: linux-kernel-test.patch
+
+# END OF PATCH DEFINITIONS
+
+%description
+The %{package_name} meta package
+
+# This macro does requires, provides, conflicts, obsoletes for a kernel package.
+#	%%kernel_reqprovconf [-o] <subpackage>
+# It uses any kernel_<subpackage>_conflicts and kernel_<subpackage>_obsoletes
+# macros defined above.
+# -o: Skips main "Provides" that would satisfy general kernel requirements that
+#     special-purpose kernels shouldn't include.
+#     For example, used for zfcpdump-core to *not* provide kernel-core. (BZ 2027654)
+#
+%define kernel_reqprovconf(o) \
+%if %{-o:0}%{!-o:1}\
+Provides: kernel = %{specversion}-%{pkg_release}\
+Provides: %{name} = %{specversion}-%{pkg_release}\
+%endif\
+Provides: %{name}-%{_target_cpu} = %{specrpmversion}-%{pkg_release}%{uname_suffix %{?1}}\
+Provides: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires(pre): %{kernel_prereq}\
+Requires(pre): %{initrd_prereq}\
+Requires(pre): ((linux-firmware >= 20150904-56.git6ebf5d57) if linux-firmware)\
+Recommends: linux-firmware\
+Requires(preun): systemd >= 200\
+Conflicts: xfsprogs < 4.3.0-1\
+Conflicts: xorg-x11-drv-vmmouse < 13.0.99\
+%{expand:%%{?kernel%{?1:_%{1}}_conflicts:Conflicts: %%{kernel%{?1:_%{1}}_conflicts}}}\
+%{expand:%%{?kernel%{?1:_%{1}}_obsoletes:Obsoletes: %%{kernel%{?1:_%{1}}_obsoletes}}}\
+%{expand:%%{?kernel%{?1:_%{1}}_provides:Provides: %%{kernel%{?1:_%{1}}_provides}}}\
+# We can't let RPM do the dependencies automatic because it'll then pick up\
+# a correct but undesirable perl dependency from the module headers which\
+# isn't required for the kernel proper to function\
+AutoReq: no\
+AutoProv: yes\
+%{nil}
+
+
+%package doc
+Summary: Various documentation bits found in the kernel source
+Group: Documentation
+%description doc
+This package contains documentation files from the kernel
+source. Various bits of information about the Linux kernel and the
+device drivers shipped with it are documented in these files.
+
+You'll want to install this package if you need a reference to the
+options that can be passed to Linux kernel modules at load time.
+
+%if %{with_headers}
+%package headers
+Summary: Header files for the Linux kernel for use by glibc
+Obsoletes: glibc-kernheaders < 3.0-46
+Provides: glibc-kernheaders = 3.0-46
+%if 0%{?gemini}
+Provides: %{name}-headers = %{specversion}-%{release}
+Obsoletes: kernel-headers < %{specversion}
+%endif
+%description headers
+Kernel-headers includes the C header files that specify the interface
+between the Linux kernel and userspace libraries and programs.  The
+header files define structures and constants that are needed for
+building most standard programs and are also needed for rebuilding the
+glibc package.
+%endif
+
+%if %{with_cross_headers}
+%package cross-headers
+Summary: Header files for the Linux kernel for use by cross-glibc
+%if 0%{?gemini}
+Provides: %{name}-cross-headers = %{specversion}-%{release}
+Obsoletes: kernel-cross-headers < %{specversion}
+%endif
+%description cross-headers
+Kernel-cross-headers includes the C header files that specify the interface
+between the Linux kernel and userspace libraries and programs.  The
+header files define structures and constants that are needed for
+building most standard programs and are also needed for rebuilding the
+cross-glibc package.
+%endif
+
+%package debuginfo-common-%{_target_cpu}
+Summary: Kernel source files used by %{name}-debuginfo packages
+Provides: installonlypkg(kernel)
+%description debuginfo-common-%{_target_cpu}
+This package is required by %{name}-debuginfo subpackages.
+It provides the kernel source files common to all builds.
+
+%if %{with_perf}
+%package -n perf
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Performance monitoring for the Linux kernel
+Requires: bzip2
+%description -n perf
+This package contains the perf tool, which enables performance monitoring
+of the Linux kernel.
+
+%package -n perf-debuginfo
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Debug information for package perf
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{specrpmversion}-%{release}
+AutoReqProv: no
+%description -n perf-debuginfo
+This package provides debug information for the perf package.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/perf(\.debug)?|.*%%{_libexecdir}/perf-core/.*|.*%%{_libdir}/libperf-jvmti.so(\.debug)?|XXX' -o perf-debuginfo.list}
+
+%package -n python3-perf
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Python bindings for apps which will manipulate perf events
+%description -n python3-perf
+The python3-perf package contains a module that permits applications
+written in the Python programming language to use the interface
+to manipulate perf events.
+
+%package -n python3-perf-debuginfo
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Debug information for package perf python bindings
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{specrpmversion}-%{release}
+AutoReqProv: no
+%description -n python3-perf-debuginfo
+This package provides debug information for the perf python bindings.
+
+# the python_sitearch macro should already be defined from above
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{python3_sitearch}/perf.*so(\.debug)?|XXX' -o python3-perf-debuginfo.list}
+
+# with_perf
+%endif
+
+%if %{with_libperf}
+%package -n libperf
+Summary: The perf library from kernel source
+%description -n libperf
+This package contains the kernel source perf library.
+
+%package -n libperf-devel
+Summary: Developement files for the perf library from kernel source
+Requires: libperf = %{version}-%{release}
+%description -n libperf-devel
+This package includes libraries and header files needed for development
+of applications which use perf library from kernel source.
+
+%package -n libperf-debuginfo
+Summary: Debug information for package libperf
+Group: Development/Debug
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{version}-%{release}
+AutoReqProv: no
+%description -n libperf-debuginfo
+This package provides debug information for the libperf package.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_libdir}/libperf.so.*(\.debug)?|XXX' -o libperf-debuginfo.list}
+# with_libperf
+%endif
+
+%if %{with_tools}
+%package -n %{package_name}-tools
+Summary: Assortment of tools for the Linux kernel
+%ifarch %{cpupowerarchs}
+Provides:  cpupowerutils = 1:009-0.6.p1
+Obsoletes: cpupowerutils < 1:009-0.6.p1
+Provides:  cpufreq-utils = 1:009-0.6.p1
+Provides:  cpufrequtils = 1:009-0.6.p1
+Obsoletes: cpufreq-utils < 1:009-0.6.p1
+Obsoletes: cpufrequtils < 1:009-0.6.p1
+Obsoletes: cpuspeed < 1:1.5-16
+Requires: %{package_name}-tools-libs = %{specrpmversion}-%{release}
+%endif
+%define __requires_exclude ^%{_bindir}/python
+%description -n %{package_name}-tools
+This package contains the tools/ directory from the kernel source
+and the supporting documentation.
+
+%package -n %{package_name}-tools-libs
+Summary: Libraries for the kernels-tools
+%description -n %{package_name}-tools-libs
+This package contains the libraries built from the tools/ directory
+from the kernel source.
+
+%package -n %{package_name}-tools-libs-devel
+Summary: Assortment of tools for the Linux kernel
+Requires: %{package_name}-tools = %{version}-%{release}
+%ifarch %{cpupowerarchs}
+Provides:  cpupowerutils-devel = 1:009-0.6.p1
+Obsoletes: cpupowerutils-devel < 1:009-0.6.p1
+%endif
+Requires: %{package_name}-tools-libs = %{version}-%{release}
+Provides: %{package_name}-tools-devel
+%description -n %{package_name}-tools-libs-devel
+This package contains the development files for the tools/ directory from
+the kernel source.
+
+%package -n %{package_name}-tools-debuginfo
+Summary: Debug information for package %{package_name}-tools
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{version}-%{release}
+AutoReqProv: no
+%description -n %{package_name}-tools-debuginfo
+This package provides debug information for package %{package_name}-tools.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/bootconfig(\.debug)?|.*%%{_bindir}/centrino-decode(\.debug)?|.*%%{_bindir}/powernow-k8-decode(\.debug)?|.*%%{_bindir}/cpupower(\.debug)?|.*%%{_libdir}/libcpupower.*|.*%%{python3_sitearch}/_raw_pylibcpupower.*|.*%%{_bindir}/turbostat(\.debug)?|.*%%{_bindir}/x86_energy_perf_policy(\.debug)?|.*%%{_bindir}/tmon(\.debug)?|.*%%{_bindir}/lsgpio(\.debug)?|.*%%{_bindir}/gpio-hammer(\.debug)?|.*%%{_bindir}/gpio-event-mon(\.debug)?|.*%%{_bindir}/gpio-watch(\.debug)?|.*%%{_bindir}/iio_event_monitor(\.debug)?|.*%%{_bindir}/iio_generic_buffer(\.debug)?|.*%%{_bindir}/lsiio(\.debug)?|.*%%{_bindir}/intel-speed-select(\.debug)?|.*%%{_bindir}/page_owner_sort(\.debug)?|.*%%{_bindir}/slabinfo(\.debug)?|.*%%{_sbindir}/intel_sdsi(\.debug)?|XXX' -o %{package_name}-tools-debuginfo.list}
+
+%package -n rtla
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Real-Time Linux Analysis tools
+Requires: libtraceevent
+Requires: libtracefs
+Requires: libbpf
+%ifarch %{cpupowerarchs}
+Requires: %{package_name}-tools-libs = %{version}-%{release}
+%endif
+%description -n rtla
+The rtla meta-tool includes a set of commands that aims to analyze
+the real-time properties of Linux. Instead of testing Linux as a black box,
+rtla leverages kernel tracing capabilities to provide precise information
+about the properties and root causes of unexpected results.
+
+%if %{with_debuginfo}
+%package -n rtla-debuginfo
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Debug information for package rtla
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{version}-%{release}
+AutoReqProv: no
+%description -n rtla-debuginfo
+This package provides debug information for the rtla package.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/rtla(\.debug)?|.*%%{_bindir}/hwnoise(\.debug)?|.*%%{_bindir}/osnoise(\.debug)?|.*%%{_bindir}/timerlat(\.debug)?|XXX' -o rtla-debuginfo.list}
+%endif
+
+%package -n rv
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: RV: Runtime Verification
+%description -n rv
+Runtime Verification (RV) is a lightweight (yet rigorous) method that
+complements classical exhaustive verification techniques (such as model
+checking and theorem proving) with a more practical approach for
+complex systems.
+The rv tool is the interface for a collection of monitors that aim
+to analyze the logical and timing behavior of Linux.
+
+%if %{with_debuginfo}
+%package -n rv-debuginfo
+%if 0%{gemini}
+Epoch: %{gemini}
+%endif
+Summary: Debug information for package rv
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{version}-%{release}
+AutoReqProv: no
+%description -n rv-debuginfo
+This package provides debug information for the rv package.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_bindir}/rv(\.debug)?|XXX' -o rv-debuginfo.list}
+%endif
+
+# with_tools
+%endif
+
+%if %{with_kmap} && %{with_base}
+%package -n %{name}-kmap-internal
+Summary: Kernel source-to-module mapping data and module list
+Group: Development/System
+BuildRequires: python3
+%description -n %{name}-kmap-internal
+The %{name}-kmap-internal package contains a JSON mapping file that describes
+which C source files contributed to each kernel module and to the built-in
+vmlinux image, and which RPM package each module is shipped in.
+
+Files installed under /usr/share/%{name}-kmap-internal/:
+  kernel-map-<KVERREL>.json - unified mapping file for all kernel variants containing:
+    - variants:    list of variant names (e.g., ["stock", "rt", "automotive"])
+    - source-map:  source file mappings
+      - obj-src:   maps kernel objects to source files with variant indices
+      - src-obj:   maps source files to kernel objects with variant indices
+    - module-map:  module to RPM mappings
+      - module-rpm:  maps module names to RPM package names with variant indices
+      - rpm-modules: maps RPM package names to module names with variant indices
+%endif
+
+%if %{with_selftests}
+
+%package selftests-internal
+Summary: Kernel samples and selftests
+Requires: binutils, bpftool, iproute-tc, nmap-ncat, python3, fuse-libs, keyutils
+Provides: %{name}-selftests-internal-present
+%description selftests-internal
+Kernel sample programs and selftests.
+
+# Note that this pattern only works right to match the .build-id
+# symlinks because of the trailing nonmatching alternation and
+# the leading .*, because of find-debuginfo.sh's buggy handling
+# of matching the pattern against the symlinks file.
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%%{_libexecdir}/(ksamples|kselftests)/.*|XXX' -o selftests-debuginfo.list}
+
+%define __requires_exclude ^liburandom_read.so.*$
+
+# with_selftests
+%endif
+
+%define kernel_gcov_package() \
+%package %{?1:%{1}-}gcov\
+Summary: gcov graph and source files for coverage data collection.\
+%description %{?1:%{1}-}gcov\
+%{?1:%{1}-}gcov includes the gcov graph and source files for gcov coverage collection.\
+%{nil}
+
+%if %{with_kernel_abi_stablelists}
+%package -n %{package_name}-abi-stablelists
+Summary: The Red Hat Enterprise Linux kernel ABI symbol stablelists
+AutoReqProv: no
+%description -n %{package_name}-abi-stablelists
+The kABI package contains information pertaining to the Red Hat Enterprise
+Linux kernel ABI, including lists of kernel symbols that are needed by
+external Linux kernel modules, and a yum plugin to aid enforcement.
+%endif
+
+%if %{with_kabidw_base}
+%package kernel-kabidw-base-internal
+Summary: The baseline dataset for kABI verification using DWARF data
+Group: System Environment/Kernel
+AutoReqProv: no
+%description kernel-kabidw-base-internal
+The package contains data describing the current ABI of the Red Hat Enterprise
+Linux kernel, suitable for the kabi-dw tool.
+%endif
+
+#
+# This macro creates a kernel-<subpackage>-debuginfo package.
+#	%%kernel_debuginfo_package <subpackage>
+#
+# Explanation of the find_debuginfo_opts: We build multiple kernels (debug,
+# rt, 64k etc.) so the regex filters those kernels appropriately. We also
+# have to package several binaries as part of kernel-devel but getting
+# unique build-ids is tricky for these userspace binaries. We don't really
+# care about debugging those so we just filter those out and remove it.
+%define kernel_debuginfo_package() \
+%package %{?1:%{1}-}debuginfo\
+Summary: Debug information for package %{name}%{?1:-%{1}}\
+Requires: %{name}-debuginfo-common-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-debuginfo-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: installonlypkg(kernel)\
+AutoReqProv: no\
+%description %{?1:%{1}-}debuginfo\
+This package provides debug information for package %{name}%{?1:-%{1}}.\
+This is required to use SystemTap with %{name}%{?1:-%{1}}-%{KVERREL}.\
+%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} --keep-section '.BTF' -p '.*\/usr\/src\/kernels/.*|XXX' -o ignored-debuginfo.list -p '/.*/%%{KVERREL_RE}%{?1:[+]%{1}}/.*|/.*%%{KVERREL_RE}%{?1:\+%{1}}(\.debug)?' -o debuginfo%{?1}.list}\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-devel package.
+#	%%kernel_devel_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_devel_package(m) \
+%package %{?1:%{1}-}devel\
+Summary: Development package for building kernel modules to match the %{?2:%{2} }kernel\
+Provides: %{name}%{?1:-%{1}}-devel-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}-devel-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: kernel-devel-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Provides: %{name}-devel-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel)\
+AutoReqProv: no\
+Requires(pre): findutils\
+Requires: findutils\
+Requires: perl-interpreter\
+Requires: openssl-devel\
+Requires: elfutils-libelf-devel\
+Requires: bison\
+Requires: flex\
+Requires: make\
+Requires: gcc\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-devel-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+%description %{?1:%{1}-}devel\
+This package provides kernel headers and makefiles sufficient to build modules\
+against the %{?2:%{2} }kernel package.\
+%{nil}
+
+#
+# This macro creates an empty kernel-<subpackage>-devel-matched package that
+# requires both the core and devel packages locked on the same version.
+#	%%kernel_devel_matched_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_devel_matched_package(m) \
+%package %{?1:%{1}-}devel-matched\
+Summary: Meta package to install matching core and devel packages for a given %{?2:%{2} }kernel\
+Requires: %{package_name}%{?1:-%{1}}-devel = %{specrpmversion}-%{release}\
+Requires: %{package_name}%{?1:-%{1}}-core = %{specrpmversion}-%{release}\
+%description %{?1:%{1}-}devel-matched\
+This meta package is used to install matching core and devel packages for a given %{?2:%{2} }kernel.\
+%{nil}
+
+%define kernel_modules_extra_matched_package(m) \
+%package modules-extra-matched\
+Summary: Meta package which requires modules-extra to be installed for all kernels.\
+%description modules-extra-matched\
+This meta package provides a single reference that other packages can Require to have modules-extra installed for all kernels.\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-modules-internal package.
+#	%%kernel_modules_internal_package <subpackage> <pretty-name>
+#
+%define kernel_modules_internal_package() \
+%package %{?1:%{1}-}modules-internal\
+Summary: Extra kernel modules to match the %{?2:%{2} }kernel\
+Group: System Environment/Kernel\
+Provides: %{name}%{?1:-%{1}}-modules-internal-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-modules-internal-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: %{name}%{?1:-%{1}}-modules-internal = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel-module)\
+Provides: %{name}%{?1:-%{1}}-modules-internal-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Supplements: (%{name}-selftests-internal-present and %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}})\
+AutoReq: no\
+AutoProv: yes\
+%description %{?1:%{1}-}modules-internal\
+This package provides kernel modules for the %{?2:%{2} }kernel package for Red Hat internal usage.\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-modules-extra package.
+#	%%kernel_modules_extra_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_modules_extra_package(m) \
+%package %{?1:%{1}-}modules-extra\
+Summary: Extra kernel modules to match the %{?2:%{2} }kernel\
+Provides: %{name}%{?1:-%{1}}-modules-extra-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-modules-extra-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: %{name}%{?1:-%{1}}-modules-extra = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel-module)\
+Provides: %{name}%{?1:-%{1}}-modules-extra-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-modules-extra-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+AutoReq: no\
+AutoProv: yes\
+%description %{?1:%{1}-}modules-extra\
+This package provides less commonly used kernel modules for the %{?2:%{2} }kernel package.\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-modules package.
+#	%%kernel_modules_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_modules_package(m) \
+%package %{?1:%{1}-}modules\
+Summary: kernel modules to match the %{?2:%{2}-}core kernel\
+Provides: %{name}%{?1:-%{1}}-modules-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-modules-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: %{name}%{?1:-%{1}}-modules = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel-module)\
+Provides: %{name}%{?1:-%{1}}-modules-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-modules-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+AutoReq: no\
+AutoProv: yes\
+%description %{?1:%{1}-}modules\
+This package provides commonly used kernel modules for the %{?2:%{2}-}core kernel package.\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-modules-core package.
+#	%%kernel_modules_core_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_modules_core_package(m) \
+%package %{?1:%{1}-}modules-core\
+Summary: Core kernel modules to match the %{?2:%{2}-}core kernel\
+Provides: %{name}%{?1:-%{1}}-modules-core-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-modules-core-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: %{name}%{?1:-%{1}}-modules-core = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel-module)\
+Provides: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-modules-core-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+AutoReq: no\
+AutoProv: yes\
+%description %{?1:%{1}-}modules-core\
+This package provides essential kernel modules for the %{?2:%{2}-}core kernel package.\
+%{nil}
+
+#
+# this macro creates a kernel-<subpackage> meta package.
+#	%%kernel_meta_package <subpackage>
+#
+%define kernel_meta_package() \
+%package %{1}\
+summary: kernel meta-package for the %{1} kernel\
+Requires: %{name}-%{1}-core-uname-r = %{KVERREL}%{uname_suffix %{1}}\
+Requires: %{name}-%{1}-modules-uname-r = %{KVERREL}%{uname_suffix %{1}}\
+Requires: %{name}-%{1}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{1}}\
+Requires: ((%{name}-%{1}-modules-extra-uname-r = %{KVERREL}%{uname_suffix %{1}}) if %{name}-modules-extra-matched)\
+%if "%{1}" == "rt" || "%{1}" == "rt-debug" || "%{1}" == "rt-64k" || "%{1}" == "rt-64k-debug"\
+Requires: realtime-setup\
+%endif\
+Provides: installonlypkg(kernel)\
+%description %{1}\
+The meta-package for the %{1} kernel\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage> and its -devel and -debuginfo too.
+#	%%define variant_summary The Linux kernel compiled for <configuration>
+#	%%kernel_variant_package [-n <pretty-name>] [-m] [-o] <subpackage>
+# -m: Used with debugbuildsenabled==0 to create a "meta" debug variant that
+#     depends on base variant and skips debug/internal/partner packages.
+# -o: Skips main "Provides" that would satisfy general kernel requirements that
+#     special-purpose kernels shouldn't include.
+#
+%define kernel_variant_package(n:mo) \
+%package %{?1:%{1}-}core\
+Summary: %{variant_summary}\
+Provides: %{name}-%{?1:%{1}-}core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel)\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-core-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+Requires: %{name}-%{?1:%{1}-}-modules-core-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+%{expand:%%kernel_reqprovconf %{?1:%{1}} %{-o:%{-o}}}\
+%if %{?1:1} %{!?1:0} \
+%{expand:%%kernel_meta_package %{?1:%{1}}}\
+%endif\
+%{expand:%%kernel_devel_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%{expand:%%kernel_devel_matched_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%{expand:%%kernel_modules_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%{expand:%%kernel_modules_core_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%{expand:%%kernel_modules_extra_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%if %{-m:0}%{!-m:1}\
+%{expand:%%kernel_modules_internal_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}}}\
+%if 0%{!?fedora:1}\
+%{expand:%%kernel_modules_partner_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}}}\
+%endif\
+%{expand:%%kernel_debuginfo_package %{?1:%{1}}}\
+%endif\
+%if %{with_efiuki} && ("%{1}" != "rt" && "%{1}" != "rt-debug" && "%{1}" != "rt-64k" && "%{1}" != "rt-64k-debug")\
+%package %{?1:%{1}-}uki-virt\
+Summary: %{variant_summary} unified kernel image for virtual machines\
+Provides: installonlypkg(kernel)\
+Provides: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires(pre): %{kernel_prereq}\
+Requires(pre): systemd >= 254-1\
+%package %{?1:%{1}-}uki-virt-addons\
+Summary: %{variant_summary} unified kernel image addons for virtual machines\
+Provides: installonlypkg(kernel)\
+Requires: %{name}%{?1:-%{1}}-uki-virt = %{specrpmversion}-%{release}\
+Requires(pre): systemd >= 254-1\
+%endif\
+%if %{with_gcov}\
+%{expand:%%kernel_gcov_package %{?1:%{1}}}\
+%endif\
+%{nil}
+
+#
+# This macro creates a kernel-<subpackage>-modules-partner package.
+#	%%kernel_modules_partner_package <subpackage> <pretty-name>
+#
+%define kernel_modules_partner_package() \
+%package %{?1:%{1}-}modules-partner\
+Summary: Extra kernel modules to match the %{?2:%{2} }kernel\
+Group: System Environment/Kernel\
+Provides: %{name}%{?1:-%{1}}-modules-partner-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}%{?1:-%{1}}-modules-partner-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: %{name}%{?1:-%{1}}-modules-partner = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel-module)\
+Provides: %{name}%{?1:-%{1}}-modules-partner-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Requires: %{name}%{?1:-%{1}}-modules-core-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+AutoReq: no\
+AutoProv: yes\
+%description %{?1:%{1}-}modules-partner\
+This package provides kernel modules for the %{?2:%{2} }kernel package for Red Hat partners usage.\
+%{nil}
+
+# Now, each variant package.
+%if %{with_zfcpdump}
+%define variant_summary The Linux kernel compiled for zfcpdump usage
+%kernel_variant_package -o zfcpdump
+%description zfcpdump-core
+The kernel package contains the Linux kernel (vmlinuz) for use by the
+zfcpdump infrastructure.
+# with_zfcpdump
+%endif
+
+%if %{with_arm64_16k_base}
+%define variant_summary The Linux kernel compiled for 16k pagesize usage
+%kernel_variant_package 16k
+%description 16k-core
+The kernel package contains a variant of the ARM64 Linux kernel using
+a 16K page size.
+%endif
+
+%if %{with_arm64_16k} && %{with_debug}
+%define variant_summary The Linux kernel compiled with extra debugging enabled
+%if !%{debugbuildsenabled}
+%kernel_variant_package -m 16k-debug
+%else
+%kernel_variant_package 16k-debug
+%endif
+%description 16k-debug-core
+The debug kernel package contains a variant of the ARM64 Linux kernel using
+a 16K page size.
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_arm64_64k_base}
+%define variant_summary The Linux kernel compiled for 64k pagesize usage
+%kernel_variant_package 64k
+%description 64k-core
+The kernel package contains a variant of the ARM64 Linux kernel using
+a 64K page size.
+%endif
+
+%if %{with_arm64_64k} && %{with_debug}
+%define variant_summary The Linux kernel compiled with extra debugging enabled
+%if !%{debugbuildsenabled}
+%kernel_variant_package -m 64k-debug
+%else
+%kernel_variant_package 64k-debug
+%endif
+%description 64k-debug-core
+The debug kernel package contains a variant of the ARM64 Linux kernel using
+a 64K page size.
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_debug} && %{with_realtime}
+%define variant_summary The Linux PREEMPT_RT kernel compiled with extra debugging enabled
+%kernel_variant_package rt-debug
+%description rt-debug-core
+The kernel package contains the Linux kernel (vmlinuz), the core of any
+Linux operating system.  The kernel handles the basic functions
+of the operating system:  memory allocation, process allocation, device
+input and output, etc.
+
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_realtime_base}
+%define variant_summary The Linux kernel compiled with PREEMPT_RT enabled
+%kernel_variant_package rt
+%description rt-core
+This package includes a version of the Linux kernel compiled with the
+PREEMPT_RT real-time preemption support
+%endif
+
+%if %{with_realtime_arm64_64k_base}
+%define variant_summary The Linux PREEMPT_RT kernel compiled for 64k pagesize usage
+%kernel_variant_package rt-64k
+%description rt-64k-core
+The kernel package contains a variant of the ARM64 Linux PREEMPT_RT kernel using
+a 64K page size.
+%endif
+
+%if %{with_realtime_arm64_64k} && %{with_debug}
+%define variant_summary The Linux PREEMPT_RT kernel compiled with extra debugging enabled
+%if !%{debugbuildsenabled}
+%kernel_variant_package -m rt-64k-debug
+%else
+%kernel_variant_package rt-64k-debug
+%endif
+%description rt-64k-debug-core
+The debug kernel package contains a variant of the ARM64 Linux PREEMPT_RT kernel using
+a 64K page size.
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_debug} && %{with_automotive} && !%{with_automotive_build}
+%define variant_summary The Linux Automotive kernel compiled with extra debugging enabled
+%kernel_variant_package automotive-debug
+%description automotive-debug-core
+The kernel package contains the Linux kernel (vmlinuz), the core of any
+Linux operating system.  The kernel handles the basic functions
+of the operating system:  memory allocation, process allocation, device
+input and output, etc.
+
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_automotive_base}
+%define variant_summary The Linux kernel compiled with PREEMPT_RT enabled
+%kernel_variant_package automotive
+%description automotive-core
+This package includes a version of the Linux kernel compiled with the
+PREEMPT_RT real-time preemption support, targeted for Automotive platforms
+%endif
+
+%if %{with_up} && %{with_debug}
+%if !%{debugbuildsenabled}
+%kernel_variant_package -m debug
+%else
+%kernel_variant_package debug
+%endif
+%description debug-core
+The kernel package contains the Linux kernel (vmlinuz), the core of any
+Linux operating system.  The kernel handles the basic functions
+of the operating system:  memory allocation, process allocation, device
+input and output, etc.
+
+This variant of the kernel has numerous debugging options enabled.
+It should only be installed when trying to gather additional information
+on kernel bugs, as some of these options impact performance noticably.
+%endif
+
+%if %{with_up_base}
+# And finally the main -core package
+
+%define variant_summary The Linux kernel
+%kernel_variant_package
+%description core
+The kernel package contains the Linux kernel (vmlinuz), the core of any
+Linux operating system.  The kernel handles the basic functions
+of the operating system: memory allocation, process allocation, device
+input and output, etc.
+%endif
+
+%if %{with_up} && %{with_debug} && %{with_efiuki}
+%description debug-uki-virt
+Prebuilt debug unified kernel image for virtual machines.
+
+%description debug-uki-virt-addons
+Prebuilt debug unified kernel image addons for virtual machines.
+%endif
+
+%if %{with_up_base} && %{with_efiuki}
+%description uki-virt
+Prebuilt default unified kernel image for virtual machines.
+
+%description uki-virt-addons
+Prebuilt default unified kernel image addons for virtual machines.
+%endif
+
+%if %{with_arm64_16k} && %{with_debug} && %{with_efiuki}
+%description 16k-debug-uki-virt
+Prebuilt 16k debug unified kernel image for virtual machines.
+
+%description 16k-debug-uki-virt-addons
+Prebuilt 16k debug unified kernel image addons for virtual machines.
+%endif
+
+%if %{with_arm64_16k_base} && %{with_efiuki}
+%description 16k-uki-virt
+Prebuilt 16k unified kernel image for virtual machines.
+
+%description 16k-uki-virt-addons
+Prebuilt 16k unified kernel image addons for virtual machines.
+%endif
+
+%if %{with_arm64_64k} && %{with_debug} && %{with_efiuki}
+%description 64k-debug-uki-virt
+Prebuilt 64k debug unified kernel image for virtual machines.
+
+%description 64k-debug-uki-virt-addons
+Prebuilt 64k debug unified kernel image addons for virtual machines.
+%endif
+
+%if %{with_arm64_64k_base} && %{with_efiuki}
+%description 64k-uki-virt
+Prebuilt 64k unified kernel image for virtual machines.
+
+%description 64k-uki-virt-addons
+Prebuilt 64k unified kernel image addons for virtual machines.
+%endif
+
+%ifnarch noarch %{nobuildarches}
+%kernel_modules_extra_matched_package
+%endif
+
+%define log_msg() \
+	{ set +x; } 2>/dev/null \
+	_log_msglineno=$(grep -n %{*} %{_specdir}/${RPM_PACKAGE_NAME}.spec | grep log_msg | cut -d":" -f1) \
+	echo "kernel.spec:${_log_msglineno}: %{*}" \
+	set -x
+
+%prep
+%{log_msg "Start of prep stage"}
+
+%{log_msg "Sanity checks"}
+
+# do a few sanity-checks for --with *only builds
+%if %{with_baseonly}
+%if !%{with_up}
+%{log_msg "Cannot build --with baseonly, up build is disabled"}
+exit 1
+%endif
+%endif
+
+%if %{with_automotive}
+%if 0%{?fedora}
+%{log_msg "Cannot build automotive with a fedora baseline, must be rhel/centos/eln"}
+exit 1
+%endif
+%endif
+
+# more sanity checking; do it quietly
+if [ "%{patches}" != "%%{patches}" ] ; then
+  for patch in %{patches} ; do
+    if [ ! -f $patch ] ; then
+	%{log_msg "ERROR: Patch  ${patch##/*/}  listed in specfile but is missing"}
+      exit 1
+    fi
+  done
+fi 2>/dev/null
+
+patch_command='git --work-tree=. apply'
+ApplyPatch()
+{
+  local patch=$1
+  shift
+  if [ ! -f $RPM_SOURCE_DIR/$patch ]; then
+    exit 1
+  fi
+  if ! grep -E "^Patch[0-9]+: $patch\$" %{_specdir}/${RPM_PACKAGE_NAME}.spec ; then
+    if [ "${patch:0:8}" != "patch-%{kversion}." ] ; then
+	%{log_msg "ERROR: Patch  $patch  not listed as a source patch in specfile"}
+      exit 1
+    fi
+  fi 2>/dev/null
+  case "$patch" in
+  *.bz2) bunzip2 < "$RPM_SOURCE_DIR/$patch" | $patch_command ${1+"$@"} ;;
+  *.gz)  gunzip  < "$RPM_SOURCE_DIR/$patch" | $patch_command ${1+"$@"} ;;
+  *.xz)  unxz    < "$RPM_SOURCE_DIR/$patch" | $patch_command ${1+"$@"} ;;
+  *) $patch_command ${1+"$@"} < "$RPM_SOURCE_DIR/$patch" ;;
+  esac
+}
+
+# don't apply patch if it's empty
+ApplyOptionalPatch()
+{
+  local patch=$1
+  shift
+  %{log_msg "ApplyOptionalPatch: $1"}
+  if [ ! -f $RPM_SOURCE_DIR/$patch ]; then
+    exit 1
+  fi
+  local C=$(wc -l $RPM_SOURCE_DIR/$patch | awk '{print $1}')
+  if [ "$C" -gt 9 ]; then
+    ApplyPatch $patch ${1+"$@"}
+  fi
+}
+
+%{log_msg "Untar kernel tarball"}
+%setup -q -n kernel-%{tarfile_release} -c
+mv linux-%{tarfile_release} linux-%{KVERREL}
+
+cd linux-%{KVERREL}
+cp -a %{SOURCE1} .
+
+%{log_msg "Start of patch applications"}
+%if !%{nopatches}
+
+ApplyOptionalPatch patch-%{patchversion}-redhat.patch
+%endif
+
+ApplyOptionalPatch linux-kernel-test.patch
+ApplyPatch k3-ufs-acpi.patch
+ApplyPatch k3-gpio-acpi.patch
+
+%{log_msg "End of patch applications"}
+# END OF PATCH APPLICATIONS
+
+# Any further pre-build tree manipulations happen here.
+%{log_msg "Pre-build tree manipulations"}
+chmod +x scripts/checkpatch.pl
+mv COPYING COPYING-%{specrpmversion}-%{release}
+
+# on linux-next prevent scripts/setlocalversion from mucking with our version numbers
+rm -f localversion-next localversion-rt
+
+# Mangle /usr/bin/python shebangs to /usr/bin/python3
+# Mangle all Python shebangs to be Python 3 explicitly
+# -p preserves timestamps
+# -n prevents creating ~backup files
+# -i specifies the interpreter for the shebang
+# This fixes errors such as
+# *** ERROR: ambiguous python shebang in /usr/bin/kvm_stat: #!/usr/bin/python. Change it to python3 (or python2) explicitly.
+# We patch all sources below for which we got a report/error.
+%{log_msg "Fixing Python shebangs..."}
+%py3_shebang_fix \
+	tools/kvm/kvm_stat/kvm_stat \
+	scripts/show_delta \
+	scripts/diffconfig \
+	scripts/bloat-o-meter \
+	scripts/jobserver-exec \
+	tools \
+	Documentation \
+	scripts/clang-tools 2> /dev/null
+
+# SBAT data
+sed -e s,@KVER,%{KVERREL}, -e s,@SBAT_SUFFIX,%{sbat_suffix}, %{SOURCE83} > uki.sbat
+sed -e s,@KVER,%{KVERREL}, -e s,@SBAT_SUFFIX,%{sbat_suffix}, %{SOURCE84} > uki-addons.sbat
+sed -e s,@KVER,%{KVERREL}, -e s,@SBAT_SUFFIX,%{sbat_suffix}, %{SOURCE85} > kernel.sbat
+
+# only deal with configs if we are going to build for the arch
+%ifnarch %nobuildarches
+
+if [ -L configs ]; then
+	rm -f configs
+fi
+mkdir configs
+cd configs
+
+%{log_msg "Copy additional source files into buildroot"}
+# Drop some necessary files from the source dir into the buildroot
+cp $RPM_SOURCE_DIR/%{name}-*.config .
+cp %{SOURCE80} .
+# merge.py
+cp %{SOURCE3000} .
+# kernel-local - rename and copy for partial snippet config process
+cp %{SOURCE3001} partial-kernel-local-snip.config
+cp %{SOURCE3001} partial-kernel-local-debug-snip.config
+FLAVOR=%{primary_target} SPECPACKAGE_NAME=%{name} SPECVERSION=%{specversion} SPECRPMVERSION=%{specrpmversion} ./generate_all_configs.sh %{debugbuildsenabled}
+
+# Collect custom defined config options
+%{log_msg "Collect custom defined config options"}
+PARTIAL_CONFIGS=""
+%if %{with_gcov}
+PARTIAL_CONFIGS="$PARTIAL_CONFIGS %{SOURCE70} %{SOURCE71}"
+%endif
+%if %{with toolchain_clang}
+PARTIAL_CONFIGS="$PARTIAL_CONFIGS %{SOURCE72} %{SOURCE73}"
+%endif
+%if %{with clang_lto}
+PARTIAL_CONFIGS="$PARTIAL_CONFIGS %{SOURCE74} %{SOURCE75} %{SOURCE76} %{SOURCE77}"
+%endif
+PARTIAL_CONFIGS="$PARTIAL_CONFIGS partial-kernel-local-snip.config partial-kernel-local-debug-snip.config"
+
+GetArch()
+{
+  case "$1" in
+  *aarch64*) echo "aarch64" ;;
+  *ppc64le*) echo "ppc64le" ;;
+  *s390x*) echo "s390x" ;;
+  *x86_64*) echo "x86_64" ;;
+  *riscv64*) echo "riscv64" ;;
+  # no arch, apply everywhere
+  *) echo "" ;;
+  esac
+}
+
+# Merge in any user-provided local config option changes
+%{log_msg "Merge in any user-provided local config option changes"}
+%ifnarch %nobuildarches
+for i in %{all_configs}
+do
+  kern_arch="$(GetArch $i)"
+  kern_debug="$(echo $i | grep -q debug && echo "debug" || echo "")"
+
+  for j in $PARTIAL_CONFIGS
+  do
+    part_arch="$(GetArch $j)"
+    part_debug="$(echo $j | grep -q debug && echo "debug" || echo "")"
+
+    # empty arch means apply to all arches
+    if [ "$part_arch" == "" -o "$part_arch" == "$kern_arch" ] && [ "$part_debug" == "$kern_debug" ]
+    then
+      mv $i $i.tmp
+      ./merge.py $j $i.tmp > $i
+    fi
+  done
+  rm -f $i.tmp
+done
+%if %{with_gcov}
+%{log_msg "Disabling CONFIG_OBJTOOL_WERROR for gcov build"}
+for i in %{all_configs}
+do
+  sed -i "s|CONFIG_OBJTOOL_WERROR=y|# CONFIG_OBJTOOL_WERROR is not set|g" $i
+done
+%endif
+%endif
+
+%if %{signkernel}%{signmodules}
+
+# Add DUP and kpatch certificates to system trusted keys for RHEL
+truncate -s0 ../certs/rhel.pem
+%if 0%{?rhel}
+%if %{rhelkeys}
+%{log_msg "Add DUP and kpatch certificates to system trusted keys for RHEL"}
+openssl x509 -inform der -in %{SOURCE100} -out rheldup3.pem
+openssl x509 -inform der -in %{SOURCE101} -out rhelkpatch1.pem
+openssl x509 -inform der -in %{SOURCE102} -out nvidiagpuoot001.pem
+openssl x509 -inform der -in %{SOURCE107} -out nvidiajetsonsoc.pem
+openssl x509 -inform der -in %{SOURCE108} -out nvidiabfdpu.pem
+cat rheldup3.pem rhelkpatch1.pem nvidiagpuoot001.pem nvidiajetsonsoc.pem nvidiabfdpu.pem >> ../certs/rhel.pem
+# rhelkeys
+%endif
+%if %{signkernel}
+%ifarch s390x ppc64le
+openssl x509 -inform der -in %{secureboot_ca_0} -out secureboot.pem
+cat secureboot.pem >> ../certs/rhel.pem
+%endif
+%endif
+
+# rhel
+%endif
+
+openssl x509 -inform der -in %{ima_ca_cert} -out imaca.pem
+cat imaca.pem >> ../certs/rhel.pem
+
+for i in *.config; do
+  sed -i 's@CONFIG_SYSTEM_TRUSTED_KEYS=""@CONFIG_SYSTEM_TRUSTED_KEYS="certs/rhel.pem"@' $i
+  sed -i 's@CONFIG_EFI_SBAT_FILE=""@CONFIG_EFI_SBAT_FILE="kernel.sbat"@' $i
+done
+%endif
+
+# Adjust FIPS module name for RHEL
+%if 0%{?rhel}
+%{log_msg "Adjust FIPS module name for RHEL"}
+for i in *.config; do
+  sed -i 's/CONFIG_CRYPTO_FIPS_NAME=.*/CONFIG_CRYPTO_FIPS_NAME="Red Hat Enterprise Linux %{rhel} - Kernel Cryptographic API"/' $i
+done
+%endif
+
+%{log_msg "Set process_configs.sh $OPTS"}
+cp %{SOURCE81} .
+OPTS=""
+%if %{with_configchecks}
+	OPTS="$OPTS -w -n -c"
+%endif
+%if %{with clang_lto}
+for opt in %{clang_make_opts}; do
+  OPTS="$OPTS -m $opt"
+done
+%endif
+%{log_msg "Generate redhat configs"}
+RHJOBS=$RPM_BUILD_NCPUS SPECPACKAGE_NAME=%{name} ./process_configs.sh $OPTS %{specrpmversion}
+
+# We may want to override files from the primary target in case of building
+# against a flavour of it (eg. centos not rhel), thus override it here if
+# necessary
+update_scripts() {
+	TARGET="$1"
+
+	for i in "$RPM_SOURCE_DIR"/*."$TARGET"; do
+		NEW=${i%."$TARGET"}
+		cp "$i" "$(basename "$NEW")"
+	done
+}
+
+%{log_msg "Set scripts/SOURCES targets"}
+update_target=%{primary_target}
+if [ "%{primary_target}" == "rhel" ]; then
+: # no-op to avoid empty if-fi error
+%if 0%{?centos}
+  update_scripts $update_target
+  %{log_msg "Updating scripts/sources to centos version"}
+  update_target=centos
+%endif
+fi
+update_scripts $update_target
+
+%endif
+
+%{log_msg "End of kernel config"}
+cd ..
+# # End of Configs stuff
+
+# get rid of unwanted files resulting from patch fuzz
+find . \( -name "*.orig" -o -name "*~" \) -delete >/dev/null
+
+# remove unnecessary SCM files
+find . -name .gitignore -delete >/dev/null
+
+cd ..
+
+###
+### build
+###
+%build
+%{log_msg "Start of build stage"}
+
+%{log_msg "General arch build configuration"}
+rm -rf %{buildroot_unstripped} || true
+mkdir -p %{buildroot_unstripped}
+
+%if %{with_sparse}
+%define sparse_mflags	C=1
+%endif
+
+cp_vmlinux()
+{
+  eu-strip --remove-comment -o "$2" "$1"
+}
+
+# Note we need to disable these flags for cross builds because the flags
+# from redhat-rpm-config assume that host == target so target arch
+# flags cause issues with the host compiler.
+%if !%{with_cross}
+%define build_hostcflags  %{?build_cflags}
+%define build_hostldflags %{?build_ldflags}
+%endif
+
+%define make %{__make} %{?cross_opts} %{?make_opts} HOSTCFLAGS="%{?build_hostcflags}" HOSTLDFLAGS="%{?build_hostldflags}"
+
+InitBuildVars() {
+    %{log_msg "InitBuildVars for $1"}
+
+    %{log_msg "InitBuildVars: Initialize build variables"}
+    # Initialize the kernel .config file and create some variables that are
+    # needed for the actual build process.
+
+    Variant=$1
+
+    # Pick the right kernel config file
+    Config=%{name}-%{specrpmversion}-%{_target_cpu}${Variant:+-${Variant}}.config
+    DevelDir=/usr/src/kernels/%{KVERREL}${Variant:++${Variant}}
+
+    KernelVer=%{specversion}-%{release}.%{_target_cpu}${Variant:++${Variant}}
+
+    %{log_msg "InitBuildVars: Update Makefile"}
+    # make sure EXTRAVERSION says what we want it to say
+    # Trim the release if this is a CI build, since KERNELVERSION is limited to 64 characters
+    ShortRel=$(perl -e "print \"%{release}\" =~ s/\.pr\.[0-9A-Fa-f]{32}//r")
+    perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -${ShortRel}.%{_target_cpu}${Variant:++${Variant}}/" Makefile
+
+    # if pre-rc1 devel kernel, must fix up PATCHLEVEL for our versioning scheme
+    # if we are post rc1 this should match anyway so this won't matter
+    perl -p -i -e 's/^PATCHLEVEL.*/PATCHLEVEL = %{patchlevel}/' Makefile
+
+    %{log_msg "InitBuildVars: Copy files"}
+    %{make} %{?_smp_mflags} mrproper
+    cp configs/$Config .config
+
+    %if %{signkernel}%{signmodules}
+    cp configs/x509.genkey certs/.
+    %endif
+
+%if %{with_debuginfo} == 0
+    sed -i 's/^\(CONFIG_DEBUG_INFO.*\)=y/# \1 is not set/' .config
+%endif
+
+    Arch=`head -1 .config | cut -b 3-`
+    %{log_msg "InitBuildVars: USING ARCH=$Arch"}
+
+    KCFLAGS="%{?kcflags}"
+}
+
+#Build bootstrap bpftool
+BuildBpftool(){
+    export BPFBOOTSTRAP_CFLAGS=$(echo "%{__global_compiler_flags}" | sed -r "s/\-specs=[^\ ]+\/redhat-annobin-cc1//")
+    export BPFBOOTSTRAP_LDFLAGS=$(echo "%{__global_ldflags}" | sed -r "s/\-specs=[^\ ]+\/redhat-annobin-cc1//")
+    CFLAGS="" LDFLAGS="" make EXTRA_CFLAGS="${BPFBOOTSTRAP_CFLAGS}" EXTRA_CXXFLAGS="${BPFBOOTSTRAP_CFLAGS}" EXTRA_LDFLAGS="${BPFBOOTSTRAP_LDFLAGS}" %{?make_opts} %{?clang_make_opts} V=1 -C tools/bpf/bpftool bootstrap
+}
+
+BuildKernel() {
+    %{log_msg "BuildKernel for $4"}
+    MakeTarget=$1
+    KernelImage=$2
+    DoVDSO=$3
+    Variant=$4
+    InstallName=${5:-vmlinuz}
+
+    %{log_msg "Setup variables"}
+    DoModules=1
+    if [ "$Variant" = "zfcpdump" ]; then
+	    DoModules=0
+    fi
+
+    # When the bootable image is just the ELF kernel, strip it.
+    # We already copy the unstripped file into the debuginfo package.
+    if [ "$KernelImage" = vmlinux ]; then
+      CopyKernel=cp_vmlinux
+    else
+      CopyKernel=cp
+    fi
+
+%if %{with_gcov}
+    %{log_msg "Setup build directories"}
+    # Make build directory unique for each variant, so that gcno symlinks
+    # are also unique for each variant.
+    if [ -n "$Variant" ]; then
+        ln -s $(pwd) ../linux-%{KVERREL}-${Variant}
+    fi
+    %{log_msg "GCOV - continuing build in: $(pwd)"}
+    pushd ../linux-%{KVERREL}${Variant:+-${Variant}}
+    pwd > ../kernel${Variant:+-${Variant}}-gcov.list
+%endif
+
+    %{log_msg "Calling InitBuildVars for $Variant"}
+    InitBuildVars $Variant
+
+    %{log_msg "BUILDING A KERNEL FOR ${Variant} %{_target_cpu}..."}
+
+    %{make} ARCH=$Arch olddefconfig >/dev/null
+
+    %{log_msg "Setup build-ids"}
+    # This ensures build-ids are unique to allow parallel debuginfo
+    perl -p -i -e "s/^CONFIG_BUILD_SALT.*/CONFIG_BUILD_SALT=\"%{KVERREL}\"/" .config
+    %{make} ARCH=$Arch KCFLAGS="$KCFLAGS" WITH_GCOV="%{?with_gcov}" %{?_smp_mflags} $MakeTarget %{?sparse_mflags} %{?kernel_mflags}
+    if [ $DoModules -eq 1 ]; then
+	%{make} ARCH=$Arch KCFLAGS="$KCFLAGS" WITH_GCOV="%{?with_gcov}" %{?_smp_mflags} modules %{?sparse_mflags} || exit 1
+    fi
+
+    %{log_msg "Setup RPM_BUILD_ROOT directories"}
+    mkdir -p $RPM_BUILD_ROOT/%{image_install_path}
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/systemtap
+%if %{with_debuginfo}
+    mkdir -p $RPM_BUILD_ROOT%{debuginfodir}/%{image_install_path}
+%endif
+
+%ifarch aarch64 riscv64
+    %{log_msg "Build dtb kernel"}
+    mkdir -p $RPM_BUILD_ROOT/%{image_install_path}/dtb-$KernelVer
+    %{make} ARCH=$Arch dtbs INSTALL_DTBS_PATH=$RPM_BUILD_ROOT/%{image_install_path}/dtb-$KernelVer
+    %{make} ARCH=$Arch dtbs_install INSTALL_DTBS_PATH=$RPM_BUILD_ROOT/%{image_install_path}/dtb-$KernelVer
+    cp -r $RPM_BUILD_ROOT/%{image_install_path}/dtb-$KernelVer $RPM_BUILD_ROOT/lib/modules/$KernelVer/dtb
+    find arch/$Arch/boot/dts -name '*.dtb' -type f -delete
+%endif
+
+    %{log_msg "Cleanup temp btf files"}
+    # Remove large intermediate files we no longer need to save space
+    # (-f required for zfcpdump builds that do not enable BTF)
+    rm -f vmlinux.o .tmp_vmlinux.btf
+
+    %{log_msg "Install files to RPM_BUILD_ROOT"}
+
+    # Comment out specific config settings that may use resources not available
+    # to the end user so that the packaged config file can be easily reused with
+    # upstream make targets
+    %if %{signkernel}%{signmodules}
+      sed -i -e '/^CONFIG_SYSTEM_TRUSTED_KEYS/{
+        i\# The kernel was built with
+        s/^/# /
+        a\# We are resetting this value to facilitate local builds
+        a\CONFIG_SYSTEM_TRUSTED_KEYS=""
+        }' .config
+    %endif
+
+    # Start installing the results
+    install -m 644 .config $RPM_BUILD_ROOT/boot/config-$KernelVer
+    install -m 644 .config $RPM_BUILD_ROOT/lib/modules/$KernelVer/config
+    install -m 644 System.map $RPM_BUILD_ROOT/boot/System.map-$KernelVer
+    install -m 644 System.map $RPM_BUILD_ROOT/lib/modules/$KernelVer/System.map
+
+    %{log_msg "Create initrfamfs"}
+    # We estimate the size of the initramfs because rpm needs to take this size
+    # into consideration when performing disk space calculations. (See bz #530778)
+    dd if=/dev/zero of=$RPM_BUILD_ROOT/boot/initramfs-$KernelVer.img bs=1M count=20
+
+    if [ -f arch/$Arch/boot/zImage.stub ]; then
+      %{log_msg "Copy zImage.stub to RPM_BUILD_ROOT"}
+      cp arch/$Arch/boot/zImage.stub $RPM_BUILD_ROOT/%{image_install_path}/zImage.stub-$KernelVer || :
+      cp arch/$Arch/boot/zImage.stub $RPM_BUILD_ROOT/lib/modules/$KernelVer/zImage.stub-$KernelVer || :
+    fi
+
+%if %{with_efiuki}
+    # Preserve unsigned kernel for the UKI
+    cp $KernelImage $KernelImage.unsigned
+%endif
+
+    %if %{signkernel}
+    %{log_msg "Copy kernel for signing"}
+    if [ "$KernelImage" = vmlinux ]; then
+        # We can't strip and sign $KernelImage in place, because
+        # we need to preserve original vmlinux for debuginfo.
+        # Use a copy for signing.
+        $CopyKernel $KernelImage $KernelImage.tosign
+        KernelImage=$KernelImage.tosign
+        CopyKernel=cp
+    fi
+
+    SignImage=$KernelImage
+
+    get_pesign_name() {
+        # If it's a symlink, resolve it to get the pesign cert name
+        # e.g. secureboot-kernel-x86_64.cer -> redhatsecureboot801.cer
+        if [ -L "$1" ]; then
+            basename "$(readlink "$1")" .cer
+            return
+        fi
+        local fname
+        fname=$(basename "$1")
+        # If it's a regular file with a generic name (secureboot-*),
+        # find a pesign-named cert with matching content in the same dir
+        # e.g. secureboot-kernel-x86_64.cer has same md5 as centossecureboot801.cer
+        # e.g. centos-sb-certs-10.0-23.el10.noarch.rpm doesn't have symlinks
+        if [[ "$fname" == secureboot-* ]]; then
+            local dir mysum match
+            dir=$(dirname "$1")
+            mysum=$(md5sum "$1" | awk '{print $1}')
+            match=$(md5sum "$dir"/*.cer 2>/dev/null \
+                | grep -v 'secureboot-' \
+                | awk -v s="$mysum" '$1 == s {print $2; exit}')
+            if [ -n "$match" ]; then
+                basename "$match" .cer
+                return
+            fi
+        fi
+        # Fallback: use the filename as-is
+        basename "$1" .cer
+    }
+
+    pesign_name_0=$(get_pesign_name %{secureboot_key_0})
+    %{log_msg "kernel signing: secureboot_key_0=%{secureboot_key_0} pesign_name_0=$pesign_name_0"}
+
+    %ifarch x86_64 aarch64
+    %{log_msg "Sign kernel image"}
+    %pesign -s -i $SignImage -o vmlinuz.signed -a %{secureboot_ca_0} -c %{secureboot_key_0} -n $pesign_name_0
+    %endif
+    %ifarch s390x ppc64le
+    if [ -x /usr/bin/rpm-sign ]; then
+	rpm-sign --key "$pesign_name_0" --lkmsign $SignImage --output vmlinuz.signed
+    elif [ "$DoModules" == "1" -a "%{signmodules}" == "1" ]; then
+	chmod +x scripts/sign-file
+	./scripts/sign-file -p sha256 certs/signing_key.pem certs/signing_key.x509 $SignImage vmlinuz.signed
+    else
+	mv $SignImage vmlinuz.signed
+    fi
+    %endif
+
+    if [ ! -s vmlinuz.signed ]; then
+	%{log_msg "pesigning failed"}
+        exit 1
+    fi
+    mv vmlinuz.signed $SignImage
+    # signkernel
+    %endif
+
+    %{log_msg "copy signed kernel"}
+    $CopyKernel $KernelImage \
+                $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
+    chmod 755 $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
+    cp $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer $RPM_BUILD_ROOT/lib/modules/$KernelVer/$InstallName
+
+    # hmac sign the kernel for FIPS
+    %{log_msg "hmac sign the kernel for FIPS"}
+    %{log_msg "Creating hmac file: $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac"}
+    ls -l $RPM_BUILD_ROOT/%{image_install_path}/$InstallName-$KernelVer
+    (cd $RPM_BUILD_ROOT/%{image_install_path} && sha512hmac $InstallName-$KernelVer) > $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac;
+    cp $RPM_BUILD_ROOT/%{image_install_path}/.vmlinuz-$KernelVer.hmac $RPM_BUILD_ROOT/lib/modules/$KernelVer/.vmlinuz.hmac
+
+    if [ $DoModules -eq 1 ]; then
+	%{log_msg "Install modules in RPM_BUILD_ROOT"}
+	# Override $(mod-fw) because we don't want it to install any firmware
+	# we'll get it from the linux-firmware package and we don't want conflicts
+	%{make} %{?_smp_mflags} ARCH=$Arch INSTALL_MOD_PATH=$RPM_BUILD_ROOT %{?_smp_mflags} modules_install KERNELRELEASE=$KernelVer mod-fw=
+    fi
+
+%if %{with_gcov}
+    %{log_msg "install gcov-needed files to $BUILDROOT/$BUILD/"}
+    # install gcov-needed files to $BUILDROOT/$BUILD/...:
+    #   gcov_info->filename is absolute path
+    #   gcno references to sources can use absolute paths (e.g. in out-of-tree builds)
+    #   sysfs symlink targets (set up at compile time) use absolute paths to BUILD dir
+    find . \( -name '*.gcno' -o -name '*.[chS]' \) -exec install -D '{}' "$RPM_BUILD_ROOT/$(pwd)/{}" \;
+%endif
+
+    %{log_msg "Add VDSO files"}
+    # add an a noop %%defattr statement 'cause rpm doesn't like empty file list files
+    echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-ldsoconf.list
+    if [ $DoVDSO -ne 0 ]; then
+        %{make} ARCH=$Arch INSTALL_MOD_PATH=$RPM_BUILD_ROOT vdso_install KERNELRELEASE=$KernelVer
+        if [ -s ldconfig-kernel.conf ]; then
+             install -D -m 444 ldconfig-kernel.conf \
+                $RPM_BUILD_ROOT/etc/ld.so.conf.d/kernel-$KernelVer.conf
+	     echo /etc/ld.so.conf.d/kernel-$KernelVer.conf >> ../kernel${Variant:+-${Variant}}-ldsoconf.list
+        fi
+
+        rm -rf $RPM_BUILD_ROOT/lib/modules/$KernelVer/vdso/.build-id
+    fi
+
+    %{log_msg "Save headers/makefiles, etc. for kernel-headers"}
+    # And save the headers/makefiles etc for building modules against
+    #
+    # This all looks scary, but the end result is supposed to be:
+    # * all arch relevant include/ files
+    # * all Makefile/Kconfig files
+    # * all script/ files
+
+    rm -f $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    rm -f $RPM_BUILD_ROOT/lib/modules/$KernelVer/source
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    (cd $RPM_BUILD_ROOT/lib/modules/$KernelVer ; ln -s build source)
+    # dirs for additional modules per module-init-tools, kbuild/modules.txt
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/updates
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/weak-updates
+    # CONFIG_KERNEL_HEADER_TEST generates some extra files in the process of
+    # testing so just delete
+    find . -name *.h.s -delete
+    # first copy everything
+    cp --parents `find  -type f -name "Makefile*" -o -name "Kconfig*"` $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    if [ ! -e Module.symvers ]; then
+        touch Module.symvers
+    fi
+    cp Module.symvers $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp System.map $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    if [ -s Module.markers ]; then
+      cp Module.markers $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    fi
+
+    # create the kABI metadata for use in packaging
+    # NOTENOTE: the name symvers is used by the rpm backend
+    # NOTENOTE: to discover and run the /usr/lib/rpm/fileattrs/kabi.attr
+    # NOTENOTE: script which dynamically adds exported kernel symbol
+    # NOTENOTE: checksums to the rpm metadata provides list.
+    # NOTENOTE: if you change the symvers name, update the backend too
+    %{log_msg "GENERATING kernel ABI metadata"}
+    %compression --stdout %compression_flags < Module.symvers > $RPM_BUILD_ROOT/boot/symvers-$KernelVer.%compext
+    cp $RPM_BUILD_ROOT/boot/symvers-$KernelVer.%compext $RPM_BUILD_ROOT/lib/modules/$KernelVer/symvers.%compext
+
+%if %{with_kabichk}
+    %{log_msg "kABI checking is enabled in kernel SPEC file."}
+    chmod 0755 $RPM_SOURCE_DIR/check-kabi
+    if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu}$Variant ]; then
+        cp $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu}$Variant $RPM_BUILD_ROOT/Module.kabi
+        $RPM_SOURCE_DIR/check-kabi -k $RPM_BUILD_ROOT/Module.kabi -s Module.symvers || exit 1
+        # for now, don't keep it around.
+        rm $RPM_BUILD_ROOT/Module.kabi
+    else
+	%{log_msg "NOTE: Cannot find reference Module.kabi file."}
+    fi
+%endif
+
+%if %{with_kabidupchk}
+    %{log_msg "kABI DUP checking is enabled in kernel SPEC file."}
+    if [ -e $RPM_SOURCE_DIR/Module.kabi_dup_%{_target_cpu}$Variant ]; then
+        cp $RPM_SOURCE_DIR/Module.kabi_dup_%{_target_cpu}$Variant $RPM_BUILD_ROOT/Module.kabi
+        $RPM_SOURCE_DIR/check-kabi -k $RPM_BUILD_ROOT/Module.kabi -s Module.symvers || exit 1
+        # for now, don't keep it around.
+        rm $RPM_BUILD_ROOT/Module.kabi
+    else
+	%{log_msg "NOTE: Cannot find DUP reference Module.kabi file."}
+    fi
+%endif
+
+%if %{with_kabidw_base}
+    # Don't build kabi base for debug kernels
+    if [ "$Variant" != "zfcpdump" -a "$Variant" != "debug" ]; then
+        mkdir -p $RPM_BUILD_ROOT/kabi-dwarf
+        tar -xvf %{SOURCE301} -C $RPM_BUILD_ROOT/kabi-dwarf
+
+        mkdir -p $RPM_BUILD_ROOT/kabi-dwarf/stablelists
+        tar -xvf %{SOURCE300} -C $RPM_BUILD_ROOT/kabi-dwarf/stablelists
+
+	%{log_msg "GENERATING DWARF-based kABI baseline dataset"}
+        chmod 0755 $RPM_BUILD_ROOT/kabi-dwarf/run_kabi-dw.sh
+        $RPM_BUILD_ROOT/kabi-dwarf/run_kabi-dw.sh generate \
+            "$RPM_BUILD_ROOT/kabi-dwarf/stablelists/kabi-current/kabi_stablelist_%{_target_cpu}" \
+            "$(pwd)" \
+            "$RPM_BUILD_ROOT/kabidw-base/%{_target_cpu}${Variant:+.${Variant}}" || :
+
+        rm -rf $RPM_BUILD_ROOT/kabi-dwarf
+    fi
+%endif
+
+%if %{with_kabidwchk}
+    if [ "$Variant" != "zfcpdump" ]; then
+        mkdir -p $RPM_BUILD_ROOT/kabi-dwarf
+        tar -xvf %{SOURCE301} -C $RPM_BUILD_ROOT/kabi-dwarf
+        if [ -d "$RPM_BUILD_ROOT/kabi-dwarf/base/%{_target_cpu}${Variant:+.${Variant}}" ]; then
+            mkdir -p $RPM_BUILD_ROOT/kabi-dwarf/stablelists
+            tar -xvf %{SOURCE300} -C $RPM_BUILD_ROOT/kabi-dwarf/stablelists
+
+	    %{log_msg "GENERATING DWARF-based kABI dataset"}
+            chmod 0755 $RPM_BUILD_ROOT/kabi-dwarf/run_kabi-dw.sh
+            $RPM_BUILD_ROOT/kabi-dwarf/run_kabi-dw.sh generate \
+                "$RPM_BUILD_ROOT/kabi-dwarf/stablelists/kabi-current/kabi_stablelist_%{_target_cpu}" \
+                "$(pwd)" \
+                "$RPM_BUILD_ROOT/kabi-dwarf/base/%{_target_cpu}${Variant:+.${Variant}}.tmp" || :
+
+	    %{log_msg "kABI DWARF-based comparison report"}
+            $RPM_BUILD_ROOT/kabi-dwarf/run_kabi-dw.sh compare \
+                "$RPM_BUILD_ROOT/kabi-dwarf/base/%{_target_cpu}${Variant:+.${Variant}}" \
+                "$RPM_BUILD_ROOT/kabi-dwarf/base/%{_target_cpu}${Variant:+.${Variant}}.tmp" || :
+	    %{log_msg "End of kABI DWARF-based comparison report"}
+        else
+	    %{log_msg "Baseline dataset for kABI DWARF-BASED comparison report not found"}
+        fi
+
+        rm -rf $RPM_BUILD_ROOT/kabi-dwarf
+    fi
+%endif
+
+   %{log_msg "Cleanup Makefiles/Kconfig files"}
+    # then drop all but the needed Makefiles/Kconfig files
+    rm -rf $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts
+    rm -rf $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/include
+    cp .config $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a scripts $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    rm -rf $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts/tracing
+    rm -f $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts/spdxcheck.py
+
+%ifarch s390x
+    # CONFIG_EXPOLINE_EXTERN=y produces arch/s390/lib/expoline/expoline.o
+    # which is needed during external module build.
+    %{log_msg "Copy expoline.o"}
+    if [ -f arch/s390/lib/expoline/expoline.o ]; then
+      cp -a --parents arch/s390/lib/expoline/expoline.o $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    fi
+%endif
+
+    %{log_msg "Copy additional files for make targets"}
+    # Files for 'make scripts' to succeed with kernel-devel.
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/security/selinux/include
+    cp -a --parents security/selinux/include/classmap.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents security/selinux/include/initial_sid_to_string.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/tools/include/tools
+    cp -a --parents tools/include/tools/be_byteshift.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/tools/le_byteshift.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+    # Files for 'make prepare' to succeed with kernel-devel.
+    cp -a --parents tools/include/linux/compiler* $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/linux/types.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/build/Build.include $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/build/fixdep.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/objtool/sync-check.sh $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/bpf/resolve_btfids $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+    cp --parents security/selinux/include/policycap_names.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents security/selinux/include/policycap.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+    cp -a --parents tools/include/asm $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/asm-generic $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/linux $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/uapi/asm $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/uapi/asm-generic $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/uapi/linux $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/include/vdso $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/scripts/utilities.mak $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/lib/subcmd $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/lib/*.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/objtool/*.[ch] $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/objtool/Build $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/objtool/include/objtool/*.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/lib/bpf $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp --parents tools/lib/bpf/Build $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+    if [ -f tools/objtool/objtool ]; then
+      cp -a tools/objtool/objtool $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/tools/objtool/ || :
+    fi
+    if [ -f tools/objtool/fixdep ]; then
+      cp -a tools/objtool/fixdep $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/tools/objtool/ || :
+    fi
+    if [ -d arch/$Arch/scripts ]; then
+      cp -a arch/$Arch/scripts $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/arch/%{_arch} || :
+    fi
+    if [ -f arch/$Arch/*lds ]; then
+      cp -a arch/$Arch/*lds $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/arch/%{_arch}/ || :
+    fi
+    if [ -f arch/%{asmarch}/kernel/module.lds ]; then
+      cp -a --parents arch/%{asmarch}/kernel/module.lds $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    fi
+    find $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/scripts \( -iname "*.o" -o -iname "*.cmd" \) -exec rm -f {} +
+%ifarch ppc64le
+    cp -a --parents arch/powerpc/lib/crtsavres.[So] $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+%endif
+    if [ -d arch/%{asmarch}/include ]; then
+      cp -a --parents arch/%{asmarch}/include $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    fi
+    if [ -d tools/arch/%{asmarch}/include ]; then
+      cp -a --parents tools/arch/%{asmarch}/include $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    fi
+%ifarch aarch64
+    # arch/arm64/include/asm/xen references arch/arm
+    cp -a --parents arch/arm/include/asm/xen $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    # arch/arm64/include/asm/opcodes.h references arch/arm
+    cp -a --parents arch/arm/include/asm/opcodes.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+%endif
+    cp -a include $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/include
+    # Cross-reference from include/perf/events/sof.h
+    cp -a sound/soc/sof/sof-audio.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/sound/soc/sof
+%ifarch i686 x86_64
+    # files for 'make prepare' to succeed with kernel-devel
+    cp -a --parents arch/x86/entry/syscalls/syscall_32.tbl $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/entry/syscalls/syscall_64.tbl $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/tools/relocs_32.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/tools/relocs_64.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/tools/relocs.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/tools/relocs_common.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/tools/relocs.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/purgatory/purgatory.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/purgatory/stack.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/purgatory/setup-x86_64.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/purgatory/entry64.S $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/boot/string.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/boot/string.c $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents arch/x86/boot/ctype.h $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+
+    cp -a --parents scripts/syscalltbl.sh $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+    cp -a --parents scripts/syscallhdr.sh $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/
+
+    cp -a --parents tools/arch/x86/include/asm $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/arch/x86/include/uapi/asm $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/objtool/arch/x86/lib $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/arch/x86/lib/ $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/arch/x86/tools/gen-insn-attr-x86.awk $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+    cp -a --parents tools/objtool/arch/x86/ $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+%endif
+    %{log_msg "Clean up intermediate tools files"}
+    # Clean up intermediate tools files
+    find $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/tools \( -iname "*.o" -o -iname "*.cmd" \) -exec rm -f {} +
+
+    # Make sure the Makefile, version.h, and auto.conf have a matching
+    # timestamp so that external modules can be built
+    touch -r $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/Makefile \
+        $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/include/generated/uapi/linux/version.h \
+        $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/include/config/auto.conf
+
+%if %{with_debuginfo}
+    eu-readelf -n vmlinux | grep "Build ID" | awk '{print $NF}' > vmlinux.id
+    cp vmlinux.id $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/vmlinux.id
+
+    %{log_msg "Copy additional files for kernel-debuginfo rpm"}
+    #
+    # save the vmlinux file for kernel debugging into the kernel-debuginfo rpm
+    # (use mv + symlink instead of cp to reduce disk space requirements)
+    #
+    mkdir -p $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer
+    mv vmlinux $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer
+    ln -s $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer/vmlinux vmlinux
+    if [ -n "%{?vmlinux_decompressor}" ]; then
+	    eu-readelf -n  %{vmlinux_decompressor} | grep "Build ID" | awk '{print $NF}' > vmlinux.decompressor.id
+	    # Without build-id the build will fail. But for s390 the build-id
+	    # wasn't added before 5.11. In case it is missing prefer not
+	    # packaging the debuginfo over a build failure.
+	    if [ -s vmlinux.decompressor.id ]; then
+		    cp vmlinux.decompressor.id $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/vmlinux.decompressor.id
+		    cp %{vmlinux_decompressor} $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer/vmlinux.decompressor
+	    fi
+    fi
+
+    # build and copy the vmlinux-gdb plugin files into kernel-debuginfo
+    %{make} ARCH=$Arch %{?_smp_mflags} scripts_gdb
+    cp -a --parents scripts/gdb/{,linux/}*.py $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer
+    # this should be a relative symlink (Kbuild creates an absolute one)
+    ln -s scripts/gdb/vmlinux-gdb.py $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer/vmlinux-gdb.py
+    %py_byte_compile %{python3} $RPM_BUILD_ROOT%{debuginfodir}/lib/modules/$KernelVer/scripts/gdb
+%endif
+
+    %{log_msg "Create modnames"}
+    find $RPM_BUILD_ROOT/lib/modules/$KernelVer -name "*.ko" -type f >modnames
+
+    # mark modules executable so that strip-to-file can strip them
+    xargs --no-run-if-empty chmod u+x < modnames
+
+    # Generate a list of modules for block and networking.
+    %{log_msg "Generate a list of modules for block and networking"}
+    grep -F /drivers/ modnames | xargs --no-run-if-empty nm -upA |
+    sed -n 's,^.*/\([^/]*\.ko\):  *U \(.*\)$,\1 \2,p' > drivers.undef
+
+    collect_modules_list()
+    {
+      sed -r -n -e "s/^([^ ]+) \\.?($2)\$/\\1/p" drivers.undef |
+        LC_ALL=C sort -u > $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.$1
+      if [ ! -z "$3" ]; then
+        sed -r -e "/^($3)\$/d" -i $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.$1
+      fi
+    }
+
+    collect_modules_list networking \
+      'register_netdev|ieee80211_register_hw|usbnet_probe|phy_driver_register|rt(l_|2x00)(pci|usb)_probe|register_netdevice'
+    collect_modules_list block \
+      'ata_scsi_ioctl|scsi_add_host|scsi_add_host_with_dma|blk_alloc_queue|blk_init_queue|register_mtd_blktrans|scsi_esp_register|scsi_register_device_handler|blk_queue_physical_block_size' 'pktcdvd.ko|dm-mod.ko'
+    collect_modules_list drm \
+      'drm_open|drm_init'
+    collect_modules_list modesetting \
+      'drm_crtc_init'
+
+    %{log_msg "detect missing or incorrect license tags"}
+    # detect missing or incorrect license tags
+    ( find $RPM_BUILD_ROOT/lib/modules/$KernelVer -name '*.ko' | xargs /sbin/modinfo -l | \
+        grep -E -v 'GPL( v2)?$|Dual BSD/GPL$|Dual MPL/GPL$|GPL and additional rights$' ) && exit 1
+
+
+    if [ $DoModules -eq 0 ]; then
+        %{log_msg "Create empty files for RPM packaging"}
+        # Ensure important files/directories exist to let the packaging succeed
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-modules-core.list
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-modules.list
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-modules-extra.list
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-modules-internal.list
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-modules-partner.list
+        mkdir -p $RPM_BUILD_ROOT/lib/modules/$KernelVer/kernel
+        # Add files usually created by make modules, needed to prevent errors
+        # thrown by depmod during package installation
+        touch $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.order
+        touch $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.builtin
+    fi
+
+    # Copy the System.map file for depmod to use
+    cp System.map $RPM_BUILD_ROOT/.
+
+    if [[ "$Variant" == "rt" || "$Variant" == "rt-debug" || "$Variant" == "rt-64k" || "$Variant" == "rt-64k-debug" || "$Variant" == "automotive" || "$Variant" == "automotive-debug" ]]; then
+        %{log_msg "Skipping efiuki build"}
+    else
+%if %{with_efiuki}
+
+%if %{signkernel}%{signmodules}
+        # Sign inner vmlinuz with the transient modules signing key to allow kexec
+        KernelUnifiedVmlinuz="$KernelImage.signed.trans"
+        /lib/systemd/systemd-sbsign sign --certificate certs/signing_key.pem --private-key certs/signing_key.pem "$KernelImage.unsigned" --output $KernelUnifiedVmlinuz
+%else
+        KernelUnifiedVmlinuz="$KernelImage.unsigned"
+%endif
+
+        %{log_msg "Setup the EFI UKI kernel"}
+
+        KernelUnifiedImageDir="$RPM_BUILD_ROOT/lib/modules/$KernelVer"
+        KernelUnifiedImage="$KernelUnifiedImageDir/$InstallName-virt.efi"
+        KernelUnifiedInitrd="$KernelUnifiedImageDir/$InstallName-virt.img"
+
+        mkdir -p $KernelUnifiedImageDir
+
+        dracut --conf=%{SOURCE86} \
+           --confdir=$(mktemp -d) \
+           --no-hostonly \
+           --verbose \
+           --kver "$KernelVer" \
+           --kmoddir "$RPM_BUILD_ROOT/lib/modules/$KernelVer/" \
+           --logfile=$(mktemp) \
+           $KernelUnifiedInitrd
+
+        ukify build --linux $KernelUnifiedVmlinuz --initrd $KernelUnifiedInitrd \
+           --sbat @uki.sbat --os-release @/etc/os-release --uname $KernelVer \
+           --cmdline 'console=tty0 console=ttyS0' --output $KernelUnifiedImage
+
+        rm -f $KernelUnifiedInitrd
+
+        KernelAddonsDirOut="$KernelUnifiedImage.extra.d"
+        mkdir -p $KernelAddonsDirOut
+        python3 %{SOURCE151} %{SOURCE152} $KernelAddonsDirOut virt %{primary_target} %{_target_cpu} @uki-addons.sbat
+
+%if %{signkernel}
+        %{log_msg "Sign the EFI UKI kernel"}
+        pesign_name_uki_0=$(get_pesign_name %{secureboot_key_uki_0})
+        %{log_msg "UKI signing: secureboot_key_uki_0=%{secureboot_key_uki_0} pesign_name_uki_0=$pesign_name_uki_0"}
+        %pesign -s -i $KernelUnifiedImage -o $KernelUnifiedImage.signed -a %{secureboot_ca_0} -c %{secureboot_key_uki_0} -n $pesign_name_uki_0
+        if [ ! -s $KernelUnifiedImage.signed ]; then
+            echo "pesigning failed"
+            exit 1
+        fi
+        mv $KernelUnifiedImage.signed $KernelUnifiedImage
+
+        for addon in "$KernelAddonsDirOut"/*; do
+           %pesign -s -i $addon -o $addon.signed -a %{secureboot_ca_0} -c %{secureboot_key_uki_0} -n $pesign_name_uki_0
+           rm -f $addon
+           mv $addon.signed $addon
+        done
+%endif
+
+        # hmac sign the UKI for FIPS
+        KernelUnifiedImageHMAC="$KernelUnifiedImageDir/.$InstallName-virt.efi.hmac"
+        %{log_msg "hmac sign the UKI for FIPS"}
+        %{log_msg "Creating hmac file: $KernelUnifiedImageHMAC"}
+        (cd $KernelUnifiedImageDir && sha512hmac $InstallName-virt.efi) > $KernelUnifiedImageHMAC;
+
+# with_efiuki
+%endif
+        :  # in case of empty block
+    fi # "$Variant" == "rt" || "$Variant" == "rt-debug" || "$Variant" == "automotive" || "$Variant" == "automotive-debug"
+
+    #
+    # Generate the modules files lists
+    #
+    move_kmod_list()
+    {
+        local module_list="$1"
+        local subdir_name="$2"
+
+        mkdir -p "$RPM_BUILD_ROOT/lib/modules/$KernelVer/$subdir_name"
+
+        set +x
+        while read -r kmod; do
+            local target_file="$RPM_BUILD_ROOT/lib/modules/$KernelVer/$subdir_name/$kmod"
+            local target_dir="${target_file%/*}"
+            mkdir -p "$target_dir"
+            mv "$RPM_BUILD_ROOT/lib/modules/$KernelVer/kernel/$kmod" "$target_dir"
+        done < <(sed -e 's|^kernel/||' "$module_list")
+        set -x
+    }
+
+    create_module_file_list()
+    {
+        # subdirectory within /lib/modules/$KernelVer where kmods should go
+        local module_subdir="$1"
+        # kmod list with relative paths produced by filtermods.py
+        local relative_kmod_list="$2"
+        # list with absolute paths to kmods and other files to be included
+        local absolute_file_list="$3"
+        # if 1, this adds also all kmod directories to absolute_file_list
+        local add_all_dirs="$4"
+        local run_mod_deny="$5"
+
+        if [ "$module_subdir" != "kernel" ]; then
+            # move kmods into subdirs if needed (internal, partner, extra,..)
+            move_kmod_list $relative_kmod_list $module_subdir
+        fi
+
+        # make kmod paths absolute
+        sed -e 's|^kernel/|/lib/modules/'$KernelVer'/'$module_subdir'/|' $relative_kmod_list > $absolute_file_list
+
+	if [ "$run_mod_deny" -eq 1 ]; then
+            # run deny-mod script, this adds blacklist-* files to absolute_file_list
+            %{SOURCE20} "$RPM_BUILD_ROOT" lib/modules/$KernelVer $absolute_file_list
+	fi
+
+%if %{zipmodules}
+        # deny-mod script works with kmods as they are now (not compressed),
+        # but if they will be we need to add compext to all
+        sed -i %{?zipsed} $absolute_file_list
+%endif
+        # add also dir for the case when there are no kmods
+        # "kernel" subdir is covered in %files section, skip it here
+        if [ "$module_subdir" != "kernel" ]; then
+                echo "%dir /lib/modules/$KernelVer/$module_subdir" >> $absolute_file_list
+        fi
+
+        if [ "$add_all_dirs" -eq 1 ]; then
+            (cd $RPM_BUILD_ROOT; find lib/modules/$KernelVer/kernel -mindepth 1 -type d | sort -n) > ../module-dirs.list
+            sed -e 's|^lib|%dir /lib|' ../module-dirs.list >> $absolute_file_list
+        fi
+    }
+
+    if [ $DoModules -eq 1 ]; then
+        # save modules.dep for debugging
+        cp $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.dep ../
+
+        %{log_msg "Create module list files for all kernel variants"}
+        variants_param=""
+        if [[ "$Variant" == "rt" || "$Variant" == "rt-debug" ]]; then
+            variants_param="-r rt"
+        fi
+        if [[ "$Variant" == "rt-64k" || "$Variant" == "rt-64k-debug" ]]; then
+            variants_param="-r rt-64k"
+        fi
+        if [[ "$Variant" == "automotive" || "$Variant" == "automotive-debug" ]]; then
+            variants_param="-r automotive"
+        fi
+        # this creates ../modules-*.list output, where each kmod path is as it
+        # appears in modules.dep (relative to lib/modules/$KernelVer)
+        ret=0
+        %{SOURCE22} -l "../filtermods-$KernelVer.log" sort -d $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.dep -c configs/def_variants.yaml $variants_param -o .. || ret=$?
+        if [ $ret -ne 0 ]; then
+            echo "8< --- filtermods-$KernelVer.log ---"
+            cat "../filtermods-$KernelVer.log"
+            echo "--- filtermods-$KernelVer.log --- >8"
+
+            echo "8< --- modules.dep ---"
+            cat $RPM_BUILD_ROOT/lib/modules/$KernelVer/modules.dep
+            echo "--- modules.dep --- >8"
+            exit 1
+        fi
+
+        create_module_file_list "kernel" ../modules-core.list ../kernel${Variant:+-${Variant}}-modules-core.list 1 0
+        create_module_file_list "kernel" ../modules.list ../kernel${Variant:+-${Variant}}-modules.list 0 0
+        create_module_file_list "internal" ../modules-internal.list ../kernel${Variant:+-${Variant}}-modules-internal.list 0 1
+        create_module_file_list "kernel" ../modules-extra.list ../kernel${Variant:+-${Variant}}-modules-extra.list 0 1
+%if 0%{!?fedora:1}
+        create_module_file_list "partner" ../modules-partner.list ../kernel${Variant:+-${Variant}}-modules-partner.list 1 1
+%endif
+    fi # $DoModules -eq 1
+
+%if %{with_kmap} && %{with_base}
+    # Generate source-to-module mapping data using kmap.py.
+    # Must run before the next BuildKernel call issues make mrproper, which
+    # would wipe the .cmd files that kmap.py reads.  Skip debug variants
+    # (same source mapping as the base kernel).
+    if [[ "$Variant" != *debug* ]]; then
+        _kmap_bdir=$(pwd)
+        _kmap_basedir=%{_builddir}/kmap-data
+        _kmap_merged=$_kmap_basedir/kernel-map.json
+        _kmap_variant=${Variant:-stock}
+        _kmap_listprefix=../kernel${Variant:+-${Variant}}
+        mkdir -p $_kmap_basedir
+
+        # Build kmap.py arguments; merge with existing data if present
+        _kmap_args="--directory $_kmap_bdir --outputdir $_kmap_basedir --rhel upstream --variant $_kmap_variant --time"
+        _kmap_args="$_kmap_args --vmlinux-rpm %{name}-core-%{KVERREL}.rpm"
+        if [ -f "$_kmap_merged" ]; then
+            _kmap_args="$_kmap_args --input kernel-map.json"
+        fi
+
+        # Add module list files for module-to-RPM mapping
+        for _kmap_type in modules-core modules modules-extra modules-internal; do
+            if [ -f "${_kmap_listprefix}-${_kmap_type}.list" ]; then
+                _kmap_rpm=%{name}-${_kmap_type}-%{KVERREL}.rpm
+                _kmap_args="$_kmap_args --module-list ${_kmap_rpm}:${_kmap_listprefix}-${_kmap_type}.list"
+            fi
+        done
+%if 0%{!?fedora:1}
+        if [ -f "${_kmap_listprefix}-modules-partner.list" ]; then
+            _kmap_rpm=%{name}-modules-partner-%{KVERREL}.rpm
+            _kmap_args="$_kmap_args --module-list ${_kmap_rpm}:${_kmap_listprefix}-modules-partner.list"
+        fi
+%endif
+
+        python3 %{SOURCE2100} $_kmap_args
+    fi
+%endif
+
+    remove_depmod_files()
+    {
+        # remove files that will be auto generated by depmod at rpm -i time
+        pushd $RPM_BUILD_ROOT/lib/modules/$KernelVer/
+            # in case below list needs to be extended, remember to add a
+            # matching ghost entry in the files section as well
+            rm -f modules.{alias,alias.bin,builtin.alias.bin,builtin.bin} \
+                  modules.{dep,dep.bin,devname,softdep,symbols,symbols.bin,weakdep}
+        popd
+    }
+
+    # Cleanup
+    %{log_msg "Cleanup build files"}
+    rm -f $RPM_BUILD_ROOT/System.map
+    %{log_msg "Remove depmod files"}
+    remove_depmod_files
+
+%if %{with_cross}
+    make -C $RPM_BUILD_ROOT/lib/modules/$KernelVer/build M=scripts clean
+    make -C $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/tools/bpf/resolve_btfids clean
+    sed -i 's/REBUILD_SCRIPTS_FOR_CROSS:=0/REBUILD_SCRIPTS_FOR_CROSS:=1/' $RPM_BUILD_ROOT/lib/modules/$KernelVer/build/Makefile
+%endif
+
+    # Move the devel headers out of the root file system
+    %{log_msg "Move the devel headers to RPM_BUILD_ROOT"}
+    mkdir -p $RPM_BUILD_ROOT/usr/src/kernels
+    mv $RPM_BUILD_ROOT/lib/modules/$KernelVer/build $RPM_BUILD_ROOT/$DevelDir
+
+    # This is going to create a broken link during the build, but we don't use
+    # it after this point.  We need the link to actually point to something
+    # when kernel-devel is installed, and a relative link doesn't work across
+    # the F17 UsrMove feature.
+    ln -sf $DevelDir $RPM_BUILD_ROOT/lib/modules/$KernelVer/build
+
+%if %{with_debuginfo}
+    # Generate vmlinux.h and put it to kernel-devel path
+    # zfcpdump build does not have btf anymore
+    if [ "$Variant" != "zfcpdump" ]; then
+	%{log_msg "Build the bootstrap bpftool to generate vmlinux.h"}
+        # Build the bootstrap bpftool to generate vmlinux.h
+        BuildBpftool
+        tools/bpf/bpftool/bootstrap/bpftool btf dump file vmlinux format c > $RPM_BUILD_ROOT/$DevelDir/vmlinux.h
+    fi
+%endif
+
+    %{log_msg "Cleanup kernel-devel and kernel-debuginfo files"}
+    # prune junk from kernel-devel
+    find $RPM_BUILD_ROOT/usr/src/kernels -name ".*.cmd" -delete
+    # prune junk from kernel-debuginfo
+    find $RPM_BUILD_ROOT/usr/src/kernels -name "*.mod.c" -delete
+
+    # Red Hat UEFI Secure Boot CA cert, which can be used to authenticate the kernel
+    %{log_msg "Install certs"}
+    mkdir -p $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer
+%if %{signkernel}
+    install -m 0644 %{secureboot_ca_0} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+    %ifarch s390x ppc64le
+    if [ -x /usr/bin/rpm-sign ]; then
+        install -m 0644 %{secureboot_key_0} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+    fi
+    %endif
+%endif
+
+%if 0%{?rhel}
+    # Red Hat IMA code-signing cert, which is used to authenticate package files
+    install -m 0644 %{ima_signing_cert} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{ima_cert_name}
+%endif
+
+%if %{signmodules}
+    if [ $DoModules -eq 1 ]; then
+        # Save the signing keys so we can sign the modules in __modsign_install_post
+        cp certs/signing_key.pem certs/signing_key.pem.sign${Variant:++${Variant}}
+        cp certs/signing_key.x509 certs/signing_key.x509.sign${Variant:++${Variant}}
+        %ifarch s390x ppc64le
+        if [ ! -x /usr/bin/rpm-sign ]; then
+            install -m 0644 certs/signing_key.x509.sign${Variant:++${Variant}} $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/kernel-signing-ca.cer
+            openssl x509 -in certs/signing_key.pem.sign${Variant:++${Variant}} -outform der -out $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+            chmod 0644 $RPM_BUILD_ROOT%{_datadir}/doc/kernel-keys/$KernelVer/%{signing_key_filename}
+        fi
+        %endif
+    fi
+%endif
+
+%if %{with_gcov}
+    popd
+%endif
+}
+
+###
+# DO it...
+###
+
+# prepare directories
+rm -rf $RPM_BUILD_ROOT
+mkdir -p $RPM_BUILD_ROOT/boot
+mkdir -p $RPM_BUILD_ROOT%{_libexecdir}
+
+cd linux-%{KVERREL}
+
+%if %{with_debug}
+%if %{with_realtime}
+BuildKernel %make_target %kernel_image %{_use_vdso} rt-debug
+%endif
+
+%if %{with_realtime_arm64_64k}
+BuildKernel %make_target %kernel_image %{_use_vdso} rt-64k-debug
+%endif
+
+%if %{with_automotive} && !%{with_automotive_build}
+BuildKernel %make_target %kernel_image %{_use_vdso} automotive-debug
+%endif
+
+%if %{with_arm64_16k}
+BuildKernel %make_target %kernel_image %{_use_vdso} 16k-debug
+%endif
+
+%if %{with_arm64_64k}
+BuildKernel %make_target %kernel_image %{_use_vdso} 64k-debug
+%endif
+
+%if %{with_up}
+BuildKernel %make_target %kernel_image %{_use_vdso} debug
+%endif
+%endif
+
+%if %{with_zfcpdump}
+BuildKernel %make_target %kernel_image %{_use_vdso} zfcpdump
+%endif
+
+%if %{with_arm64_16k_base}
+BuildKernel %make_target %kernel_image %{_use_vdso} 16k
+%endif
+
+%if %{with_arm64_64k_base}
+BuildKernel %make_target %kernel_image %{_use_vdso} 64k
+%endif
+
+%if %{with_realtime_base}
+BuildKernel %make_target %kernel_image %{_use_vdso} rt
+%endif
+
+%if %{with_realtime_arm64_64k_base}
+BuildKernel %make_target %kernel_image %{_use_vdso} rt-64k
+%endif
+
+%if %{with_automotive_base}
+BuildKernel %make_target %kernel_image %{_use_vdso} automotive
+%endif
+
+%if %{with_up_base}
+BuildKernel %make_target %kernel_image %{_use_vdso}
+%endif
+
+%ifnarch noarch i686 %{nobuildarches}
+%if !%{with_debug} && !%{with_zfcpdump} && !%{with_up} && !%{with_arm64_16k} && !%{with_arm64_64k} && !%{with_realtime} && !%{with_realtime_arm64_64k} && !%{with_automotive}
+# If only building the user space tools, then initialize the build environment
+# and some variables so that the various userspace tools can be built.
+%{log_msg "Initialize userspace tools build environment"}
+InitBuildVars
+# Some tests build also modules, and need Module.symvers
+if ! [[ -e Module.symvers ]] && [[ -f $DevelDir/Module.symvers ]]; then
+    %{log_msg "Found Module.symvers in DevelDir, copying to ."}
+    cp "$DevelDir/Module.symvers" .
+fi
+%endif
+%endif
+
+%ifarch aarch64
+%global perf_build_extra_opts CORESIGHT=1
+%endif
+%global perf_make \
+  %{__make} %{?make_opts} EXTRA_CFLAGS="${RPM_OPT_FLAGS}" EXTRA_CXXFLAGS="${RPM_OPT_FLAGS}" LDFLAGS="%{__global_ldflags} -Wl,-E" %{?cross_opts} -C tools/perf V=1 NO_PERF_READ_VDSO32=1 NO_PERF_READ_VDSOX32=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_STRLCPY=1 NO_BIONIC=1 LIBTRACEEVENT_DYNAMIC=1 %{?perf_build_extra_opts} prefix=%{_prefix} PYTHON=%{__python3}
+%if %{with_perf}
+%{log_msg "Build perf"}
+# perf
+# make sure check-headers.sh is executable
+chmod +x tools/perf/check-headers.sh
+%{perf_make} DESTDIR=$RPM_BUILD_ROOT all
+%endif
+
+%if %{with_libperf}
+%global libperf_make \
+  %{__make} %{?make_opts} EXTRA_CFLAGS="${RPM_OPT_FLAGS}" LDFLAGS="%{__global_ldflags}" %{?cross_opts} -C tools/lib/perf V=1
+  %{log_msg "build libperf"}
+%{libperf_make} DESTDIR=$RPM_BUILD_ROOT
+%endif
+
+%global tools_make \
+  CFLAGS="${RPM_OPT_FLAGS} %{_default_lto_cflags}" LDFLAGS="%{__global_ldflags}" EXTRA_CFLAGS="${RPM_OPT_FLAGS} %{_default_lto_cflags}" %{make} %{?make_opts}
+
+%ifarch %{cpupowerarchs}
+    # link against in-tree libcpupower for idle state support
+    %global rtla_make %{tools_make} LDFLAGS="%{__global_ldflags} -L../../power/cpupower" INCLUDES="-I../../power/cpupower/lib"
+    # Build libcpupower Python bindings
+    %global libcpupower_python_bindings_make %{tools_make} LDFLAGS="-L%{buildroot}%{_libdir} -lcpupower"
+%else
+    %global rtla_make %{tools_make}
+%endif
+
+%if %{with_tools}
+
+%if %{with_ynl}
+pushd tools/net/ynl
+export PIP_CONFIG_FILE=/tmp/pip.config
+cat <<EOF > $PIP_CONFIG_FILE
+[install]
+no-index = true
+no-build-isolation = false
+EOF
+%{tools_make} %{?_smp_mflags} DESTDIR=$RPM_BUILD_ROOT install
+popd
+%endif
+
+%ifarch %{cpupowerarchs}
+# cpupower
+# make sure version-gen.sh is executable.
+chmod +x tools/power/cpupower/utils/version-gen.sh
+%{log_msg "build cpupower"}
+%{tools_make} %{?_smp_mflags} -C tools/power/cpupower CPUFREQ_BENCH=false DEBUG=false
+%ifarch x86_64
+    pushd tools/power/cpupower/debug/x86_64
+    %{log_msg "build centrino-decode powernow-k8-decode"}
+    %{tools_make} %{?_smp_mflags} centrino-decode powernow-k8-decode
+    popd
+%endif
+%ifarch x86_64
+   pushd tools/power/x86/x86_energy_perf_policy/
+   %{log_msg "build x86_energy_perf_policy"}
+   %{tools_make}
+   popd
+   pushd tools/power/x86/turbostat
+   %{log_msg "build turbostat"}
+   %{tools_make}
+   popd
+   pushd tools/power/x86/intel-speed-select
+   %{log_msg "build intel-speed-select"}
+   %{tools_make}
+   popd
+   pushd tools/arch/x86/intel_sdsi
+   %{log_msg "build intel_sdsi"}
+   %{tools_make} CFLAGS="${RPM_OPT_FLAGS}"
+   popd
+%endif
+%endif
+pushd tools/thermal/tmon/
+%{log_msg "build tmon"}
+%{tools_make}
+popd
+pushd tools/bootconfig/
+%{log_msg "build bootconfig"}
+%{tools_make}
+popd
+pushd tools/iio/
+%{log_msg "build iio"}
+%{tools_make}
+popd
+pushd tools/gpio/
+%{log_msg "build gpio"}
+%{tools_make}
+popd
+# build VM tools
+pushd tools/mm/
+%{log_msg "build slabinfo page_owner_sort"}
+%{tools_make} slabinfo page_owner_sort
+popd
+pushd tools/verification/rv/
+%{log_msg "build rv"}
+%{tools_make}
+popd
+pushd tools/tracing/rtla
+%{log_msg "build rtla"}
+%{rtla_make}
+popd
+%endif
+
+#set RPM_VMLINUX_H
+if [ -f $RPM_BUILD_ROOT/$DevelDir/vmlinux.h ]; then
+  RPM_VMLINUX_H=$RPM_BUILD_ROOT/$DevelDir/vmlinux.h
+elif [ -f $DevelDir/vmlinux.h ]; then
+  RPM_VMLINUX_H=$DevelDir/vmlinux.h
+fi
+echo "${RPM_VMLINUX_H}" > ../vmlinux_h_path
+
+%if %{with_selftests}
+%{log_msg "start build selftests"}
+# Unfortunately, samples/bpf/Makefile expects that the headers are installed
+# in the source tree. We installed them previously to $RPM_BUILD_ROOT/usr
+# but there's no way to tell the Makefile to take them from there.
+%{log_msg "install headers for selftests"}
+%{make} %{?_smp_mflags} headers_install
+
+# If we re building only tools without kernel, we need to generate config
+# headers and prepare tree for modules building. The modules_prepare target
+# will cover both.
+if [ ! -f include/generated/autoconf.h ]; then
+   %{log_msg "modules_prepare for selftests"}
+   %{make} %{?_smp_mflags} modules_prepare
+fi
+
+# Build BPFtool for samples/bpf
+if [ ! -f tools/bpf/bpftool/bootstrap/bpftool ]; then
+  BuildBpftool
+fi
+
+%{log_msg "build samples/bpf"}
+%{make} %{?_smp_mflags} EXTRA_CXXFLAGS="${RPM_OPT_FLAGS}" ARCH=$Arch BPFTOOL=$(pwd)/tools/bpf/bpftool/bootstrap/bpftool V=1 M=samples/bpf/ VMLINUX_H="${RPM_VMLINUX_H}" || true
+
+pushd tools/testing/selftests
+# We need to install here because we need to call make with ARCH set which
+# doesn't seem possible to do in the install section.
+%if %{selftests_must_build}
+  force_targets="FORCE_TARGETS=1"
+%else
+  force_targets=""
+%endif
+
+%{log_msg "main selftests compile"}
+
+# Some selftests (especially bpf) do not build with source fortification.
+# Since selftests are not shipped, disable source fortification for them.
+%global _fortify_level_bak %{_fortify_level}
+%undefine _fortify_level
+export CFLAGS="%{build_cflags}"
+export CXXFLAGS="%{build_cxxflags}"
+
+TARGETS="bpf cgroup kmod mm net net/can net/forwarding net/hsr net/mptcp net/netfilter net/packetdrill net/tcp_ao tc-testing memfd drivers/net/hw iommu cachestat pid_namespace rlimits timens pidfd capabilities clone3 exec filesystems firmware landlock mount mount_setattr move_mount_set_group nsfs openat2 proc safesetid seccomp tmpfs uevent vDSO"
+%{make} %{?_smp_mflags} EXTRA_CFLAGS="${RPM_OPT_FLAGS}" EXTRA_CXXFLAGS="${RPM_OPT_FLAGS}" EXTRA_LDFLAGS="%{__global_ldflags}" ARCH=$Arch V=1 TARGETS="$TARGETS" SKIP_TARGETS="" $force_targets VMLINUX_H="${RPM_VMLINUX_H}"
+
+# Restore the original level of source fortification
+%define _fortify_level %{_fortify_level_bak}
+export CFLAGS="%{build_cflags}"
+export CXXFLAGS="%{build_cxxflags}"
+
+# We must install all the targets in a single step as each `make install`
+# command overrides the kselftest-list.txt file.
+%{make} ARCH=$Arch TARGETS="${TARGETS}" SKIP_TARGETS="" $force_targets INSTALL_PATH=%{buildroot}%{_libexecdir}/kselftests install
+
+# 'make install' for bpf is broken and upstream refuses to fix it.
+# Install the needed files manually.
+%{log_msg "install selftests"}
+for dir in bpf bpf/no_alu32 bpf/cpuv4 bpf/progs; do
+	# In ARK, the rpm build continues even if some of the selftests
+	# cannot be built. It's not always possible to build selftests,
+	# as upstream sometimes dependens on too new llvm version or has
+	# other issues. If something did not get built, just skip it.
+	test -d $dir || continue
+	mkdir -p %{buildroot}%{_libexecdir}/kselftests/$dir
+	find $dir -maxdepth 1 \( -type f  -o -type l \) \
+		\( -executable -o \
+			-name '*.py' -o \
+			-name settings -o \
+			-name DENYLIST -o \
+			-name 'btf_dump_test_case_*.c' -o \
+			-name '*.ko' -o \
+			-name '*.o' -exec sh -c 'readelf -h "{}" | grep -q "^  Machine:.*BPF"' \; \
+		\) -print0 | \
+	xargs -0 cp -t %{buildroot}%{_libexecdir}/kselftests/$dir || true
+done
+
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/test_progs"
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/test_progs-no_alu32"
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/test_progs-cpuv4"
+
+# The urandom_read binary doesn't pass the check-rpaths check and upstream
+# refuses to fix it. So, we save it to buildroot_unstripped and delete it so it
+# will be hidden from check-rpaths and will automatically get restored later.
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/urandom_read"
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/no_alu32/urandom_read"
+%buildroot_save_unstripped "usr/libexec/kselftests/bpf/cpuv4/urandom_read"
+rm -f %{buildroot}/usr/libexec/kselftests/bpf/urandom_read
+rm -f %{buildroot}/usr/libexec/kselftests/bpf/no_alu32/urandom_read
+rm -f %{buildroot}/usr/libexec/kselftests/bpf/cpuv4/urandom_read
+
+
+# Copy bpftool to kselftests so selftests is packaged with 
+# the full bpftool instead of bootstrap bpftool
+cp ./bpf/tools/sbin/bpftool %{buildroot}%{_libexecdir}/kselftests/bpf/bpftool
+
+# Append RHEL-specific BPF selftests DENYLIST.rhel to the global DENYLIST that
+# is automatically picked by BPF selftest runners.
+%if 0%{?rhel}%{?centos}
+	cat ./bpf/DENYLIST.rhel >> %{buildroot}%{_libexecdir}/kselftests/bpf/DENYLIST
+%endif
+
+popd
+%{log_msg "end build selftests"}
+%endif
+
+%if %{with_doc}
+%{log_msg "start install docs"}
+# Make the HTML pages.
+%{log_msg "build html docs"}
+%{__make} PYTHON=/usr/bin/python3 htmldocs || %{doc_build_fail}
+
+# sometimes non-world-readable files sneak into the kernel source tree
+chmod -R a=rX Documentation
+find Documentation -type d | xargs chmod u+w
+%{log_msg "end install docs"}
+%endif
+
+# Module signing (modsign)
+#
+# This must be run _after_ find-debuginfo.sh runs, otherwise that will strip
+# the signature off of the modules.
+#
+# Don't sign modules for the zfcpdump variant as it is monolithic.
+
+%define __modsign_install_post \
+  if [ "%{signmodules}" -eq "1" ]; then \
+    %{log_msg "Signing kernel modules ..."} \
+    modules_dirs="$(shopt -s nullglob; echo $RPM_BUILD_ROOT/lib/modules/%{KVERREL}*)" \
+    for modules_dir in $modules_dirs; do \
+        variant_suffix="${modules_dir#$RPM_BUILD_ROOT/lib/modules/%{KVERREL}}" \
+        [ "$variant_suffix" == "+zfcpdump" ] && continue \
+	%{log_msg "Signing modules for %{KVERREL}${variant_suffix}"} \
+        %{modsign_cmd} certs/signing_key.pem.sign${variant_suffix} certs/signing_key.x509.sign${variant_suffix} $modules_dir/ \
+    done \
+  fi \
+  if [ "%{zipmodules}" -eq "1" ]; then \
+    %{log_msg "Compressing kernel modules ..."} \
+    find $RPM_BUILD_ROOT/lib/modules/ -type f -name '*.ko' | xargs -n 16 -P${RPM_BUILD_NCPUS} -r %compression %compression_flags; \
+  fi \
+%{nil}
+
+###
+### Special hacks for debuginfo subpackages.
+###
+
+# This macro is used by %%install, so we must redefine it before that.
+%define debug_package %{nil}
+
+%if %{with_debuginfo}
+
+%ifnarch noarch %{nobuildarches}
+%global __debug_package 1
+%files -f debugfiles.list debuginfo-common-%{_target_cpu}
+%endif
+
+%endif
+
+# We don't want to package debuginfo for self-tests and samples but
+# we have to delete them to avoid an error messages about unpackaged
+# files.
+# Delete the debuginfo for kernel-devel files
+%define __remove_unwanted_dbginfo_install_post \
+  if [ "%{with_selftests}" -ne "0" ]; then \
+    rm -rf $RPM_BUILD_ROOT/usr/lib/debug/usr/libexec/ksamples; \
+    rm -rf $RPM_BUILD_ROOT/usr/lib/debug/usr/libexec/kselftests; \
+  fi \
+  rm -rf $RPM_BUILD_ROOT/usr/lib/debug/usr/src; \
+%{nil}
+
+# Make debugedit and gdb-add-index use target versions of tools
+# when cross-compiling. This is supported since debugedit-5.1-5.fc42
+# https://inbox.sourceware.org/debugedit/20250220153858.963312-1-mark@klomp.org/
+%if %{with_cross}
+%define __override_target_tools_for_debugedit \
+	export OBJCOPY=%{CROSS_COMPILE}objcopy \
+	export NM=%{CROSS_COMPILE}nm \
+	export READELF=%{CROSS_COMPILE}readelf \
+%{nil}
+%endif
+
+#
+# Disgusting hack alert! We need to ensure we sign modules *after* all
+# invocations of strip occur, which is in __debug_install_post if
+# find-debuginfo.sh runs, and __os_install_post if not.
+#
+%define __spec_install_post \
+  %{?__override_target_tools_for_debugedit:%{__override_target_tools_for_debugedit}}\
+  %{?__debug_package:%{__debug_install_post}}\
+  %{__arch_install_post}\
+  %{__os_install_post}\
+  %{__remove_unwanted_dbginfo_install_post}\
+  %{__restore_unstripped_root_post}\
+  %{__modsign_install_post}\
+  %{__kmod_depcache_install_post}
+
+#
+# Avoid forking the ksym/modalias provides generators once per module
+# during file classification, which takes minutes with thousands of
+# modules. The stock kernel-rpm-macros scripts are run in parallel after
+# modules are signed and compressed, their output is cached per module,
+# and the generators are replaced by Lua macros that only read the cache.
+#
+%global kmod_depcache %{_builddir}/kmod-depcache
+
+# kernel-rpm-macros defines the ksym and modalias provides generators in its
+# attr files. The macros below replace them, so capture the stock definitions
+# first. The cache step fails the build if they are not the ones this was
+# validated with: a kernel-rpm-macros update that moves the scripts, adds
+# arguments, sets a protocol or drops the generators must be reviewed here,
+# rather than silently caching for a generator rpm no longer calls.
+%global kmod_depcache_ksyms_prov /usr/lib/rpm/redhat/find-provides.ksyms
+%global kmod_depcache_modalias_prov /usr/lib/rpm/redhat/find-provides.d/modalias.prov
+%global kmod_depcache_stock_ksyms %{?__provided_ksyms_provides}
+%global kmod_depcache_stock_modalias %{?__modalias_provides}
+
+# %1 = module path as rpm passes it (buildroot included), %2 = cache suffix,
+# %3 = generator script. The cache is keyed by that full path, so no
+# buildroot stripping is needed on either side.
+# A Lua error() would only be logged and the provides silently dropped, and
+# os.exit() is not permitted here, so on a cache miss warn and run the
+# generator for this module like rpm would.
+%define __kmod_depcache_lookup() %{lua:
+  local path = rpm.expand("%1")
+  local f = io.open(rpm.expand("%{kmod_depcache}") .. path .. "." .. rpm.expand("%2"))
+  if not f then
+    io.stderr:write("warning: no " .. rpm.expand("%2") .. " cache for " .. path .. "\\n")
+    f = io.popen("echo '" .. path .. "' | RPM_BUILD_ROOT='" ..
+                 rpm.expand("%{buildroot}") .. "' " .. rpm.expand("%3"))
+  end
+  print(f:read("a"))
+  f:close()
+}
+
+%define __provided_ksyms_provides() %{__kmod_depcache_lookup %1 ksyms %{kmod_depcache_ksyms_prov}}
+%define __modalias_provides() %{__kmod_depcache_lookup %1 modalias %{kmod_depcache_modalias_prov}}
+
+# Fill the cache read by __kmod_depcache_lookup. This runs as the last step
+# of __spec_install_post, after __modsign_install_post has signed and
+# compressed the modules, so the file names and contents are final. Every
+# .ko* file in the buildroot is fed to the stock find-provides.ksyms and
+# modalias.prov scripts, one module per invocation and RPM_BUILD_NCPUS at a
+# time, and each script's output is stored as <cache>/<full module path>.ksyms
+# and .modalias. The scripts need RPM_BUILD_ROOT, which %%install exports, to
+# tell in-tree modules (kernel() provides) from the rest (ksym() provides).
+# A failed mkdir or generator aborts the build. The %% in ${1%%/*} is rpm's
+# escape for a single %, so the shell sees ${1%/*}, the module's directory.
+%define __kmod_depcache_install_post \
+  if [ "%{?kmod_depcache_stock_ksyms}" != "%{kmod_depcache_ksyms_prov}" ] || \
+     [ "%{?kmod_depcache_stock_modalias}" != "%{kmod_depcache_modalias_prov}" ] || \
+     [ -n "%{?__provided_ksyms_protocol}%{?__modalias_protocol}" ]; then \
+    echo "error: kernel-rpm-macros provides generators differ from what the kmod depcache expects:" >&2 \
+    echo "  __provided_ksyms_provides='%{?kmod_depcache_stock_ksyms}' protocol='%{?__provided_ksyms_protocol}'" >&2 \
+    echo "  __modalias_provides='%{?kmod_depcache_stock_modalias}' protocol='%{?__modalias_protocol}'" >&2 \
+    exit 1 \
+  fi \
+  %{log_msg "Generating kernel module provides cache ..."} \
+  rm -rf %{kmod_depcache} \
+  find $RPM_BUILD_ROOT ! -type d -regextype posix-extended -regex '.*[.]ko([.](gz|bz2|xz|zst))?' -print0 | \
+  xargs -0 -r -n 1 -P${RPM_BUILD_NCPUS} sh -c ' \
+    mkdir -p "%{kmod_depcache}${1%%/*}" || exit 1 \
+    echo "$1" | %{kmod_depcache_ksyms_prov} > "%{kmod_depcache}$1.ksyms" || exit 1 \
+    echo "$1" | %{kmod_depcache_modalias_prov} > "%{kmod_depcache}$1.modalias" \
+  ' _ || exit 1 \
+%{nil}
+
+###
+### install
+###
+
+%install
+
+cd linux-%{KVERREL}
+
+# re-define RPM_VMLINUX_H, because it doesn't carry over from %build
+RPM_VMLINUX_H="$(cat ../vmlinux_h_path)"
+
+%if %{with_doc}
+docdir=$RPM_BUILD_ROOT%{_datadir}/doc/kernel-doc-%{specversion}-%{pkgrelease}
+
+# copy the source over
+mkdir -p $docdir
+tar -h -f - --exclude=man --exclude='.*' -c Documentation | tar xf - -C $docdir
+cat %{SOURCE2} | xz > $docdir/kernel.changelog.xz
+chmod 0644 $docdir/kernel.changelog.xz
+
+# with_doc
+%endif
+
+# We have to do the headers install before the tools install because the
+# kernel headers_install will remove any header files in /usr/include that
+# it doesn't install itself.
+
+%if %{with_headers}
+# Install kernel headers
+%{__make} ARCH=%{hdrarch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr headers_install
+
+find $RPM_BUILD_ROOT/usr/include \
+     \( -name .install -o -name .check -o \
+        -name ..install.cmd -o -name ..check.cmd \) -delete
+
+%endif
+
+%if %{with_cross_headers}
+HDR_ARCH_LIST='arm64 powerpc s390 x86 riscv'
+mkdir -p $RPM_BUILD_ROOT/usr/tmp-headers
+
+for arch in $HDR_ARCH_LIST; do
+	mkdir $RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch}
+	%{__make} ARCH=${arch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch} headers_install
+done
+
+find $RPM_BUILD_ROOT/usr/tmp-headers \
+     \( -name .install -o -name .check -o \
+        -name ..install.cmd -o -name ..check.cmd \) -delete
+
+# Copy all the architectures we care about to their respective asm directories
+for arch in $HDR_ARCH_LIST ; do
+	mkdir -p $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include
+	mv $RPM_BUILD_ROOT/usr/tmp-headers/arch-${arch}/include/* $RPM_BUILD_ROOT/usr/${arch}-linux-gnu/include/
+done
+
+rm -rf $RPM_BUILD_ROOT/usr/tmp-headers
+%endif
+
+%if %{with_kernel_abi_stablelists}
+# kabi directory
+INSTALL_KABI_PATH=$RPM_BUILD_ROOT/lib/modules/
+mkdir -p $INSTALL_KABI_PATH
+
+# install kabi releases directories
+tar -xvf %{SOURCE300} -C $INSTALL_KABI_PATH
+# with_kernel_abi_stablelists
+%endif
+
+%if %{with_perf}
+# perf tool binary and supporting scripts/binaries
+%{perf_make} DESTDIR=$RPM_BUILD_ROOT lib=%{_lib} install-bin
+# remove the 'trace' symlink.
+rm -f %{buildroot}%{_bindir}/trace
+
+# For both of the below, yes, this should be using a macro but right now
+# it's hard coded and we don't actually want it anyway right now.
+# Whoever wants examples can fix it up!
+
+# remove examples
+rm -rf %{buildroot}/usr/lib/perf/examples
+rm -rf %{buildroot}/usr/lib/perf/include
+
+# python-perf extension
+%{perf_make} DESTDIR=$RPM_BUILD_ROOT install-python_ext
+
+# perf man pages (note: implicit rpm magic compresses them later)
+mkdir -p %{buildroot}/%{_mandir}/man1
+%{perf_make} DESTDIR=$RPM_BUILD_ROOT install-man
+
+# remove any tracevent files, eg. its plugins still gets built and installed,
+# even if we build against system's libtracevent during perf build (by setting
+# LIBTRACEEVENT_DYNAMIC=1 above in perf_make macro). Those files should already
+# ship with libtraceevent package.
+rm -rf %{buildroot}%{_libdir}/traceevent
+%endif
+
+%if %{with_libperf}
+%{libperf_make} DESTDIR=%{buildroot} prefix=%{_prefix} libdir=%{_libdir} install install_headers
+# This is installed on some arches and we don't want to ship it
+rm -rf %{buildroot}%{_libdir}/libperf.a
+%endif
+
+%if %{with_tools}
+%ifarch %{cpupowerarchs}
+%{make} -C tools/power/cpupower DESTDIR=$RPM_BUILD_ROOT libdir=%{_libdir} mandir=%{_mandir} CPUFREQ_BENCH=false install
+%find_lang cpupower
+mv cpupower.lang ../
+%ifarch x86_64
+    pushd tools/power/cpupower/debug/x86_64
+    install -m755 centrino-decode %{buildroot}%{_bindir}/centrino-decode
+    install -m755 powernow-k8-decode %{buildroot}%{_bindir}/powernow-k8-decode
+    popd
+%endif
+chmod 0755 %{buildroot}%{_libdir}/libcpupower.so*
+%{log_msg "Build libcpupower Python bindings"}
+pushd tools/power/cpupower/bindings/python
+%{libcpupower_python_bindings_make}
+%{log_msg "Install libcpupower Python bindings"}
+%{make} INSTALL_DIR=$RPM_BUILD_ROOT%{python3_sitearch} install
+popd
+%endif
+%ifarch x86_64
+   mkdir -p %{buildroot}%{_mandir}/man8
+   pushd tools/power/x86/x86_energy_perf_policy
+   %{tools_make} DESTDIR=%{buildroot} install
+   popd
+   pushd tools/power/x86/turbostat
+   %{tools_make} DESTDIR=%{buildroot} install
+   popd
+   pushd tools/power/x86/intel-speed-select
+   %{tools_make} DESTDIR=%{buildroot} install
+   popd
+   pushd tools/arch/x86/intel_sdsi
+   %{tools_make} CFLAGS="${RPM_OPT_FLAGS}" DESTDIR=%{buildroot} install
+   popd
+%endif
+pushd tools/thermal/tmon
+%{tools_make} INSTALL_ROOT=%{buildroot} install
+popd
+pushd tools/bootconfig
+%{tools_make} DESTDIR=%{buildroot} install
+popd
+pushd tools/iio
+%{tools_make} DESTDIR=%{buildroot} install
+popd
+pushd tools/gpio
+%{tools_make} DESTDIR=%{buildroot} install
+popd
+install -m644 -D %{SOURCE2002} %{buildroot}%{_sysconfdir}/logrotate.d/kvm_stat
+pushd tools/kvm/kvm_stat
+%{__make} INSTALL_ROOT=%{buildroot} install-tools
+%{__make} INSTALL_ROOT=%{buildroot} install-man
+install -m644 -D kvm_stat.service %{buildroot}%{_unitdir}/kvm_stat.service
+popd
+# install VM tools
+pushd tools/mm/
+install -m755 slabinfo %{buildroot}%{_bindir}/slabinfo
+install -m755 page_owner_sort %{buildroot}%{_bindir}/page_owner_sort
+popd
+pushd tools/verification/rv/
+%{tools_make} DESTDIR=%{buildroot} STRIP=/bin/true install
+popd
+pushd tools/tracing/rtla/
+%{tools_make} DESTDIR=%{buildroot} STRIP=/bin/true install
+rm -f %{buildroot}%{_bindir}/hwnoise
+rm -f %{buildroot}%{_bindir}/osnoise
+rm -f %{buildroot}%{_bindir}/timerlat
+(cd %{buildroot}
+
+        ln -sf rtla ./%{_bindir}/hwnoise
+        ln -sf rtla ./%{_bindir}/osnoise
+        ln -sf rtla ./%{_bindir}/timerlat
+)
+popd
+%endif
+
+%if %{with_selftests}
+pushd samples
+install -d %{buildroot}%{_libexecdir}/ksamples
+# install bpf samples
+pushd bpf
+install -d %{buildroot}%{_libexecdir}/ksamples/bpf
+find -type f -executable -exec install -m755 {} %{buildroot}%{_libexecdir}/ksamples/bpf \;
+install -m755 *.sh %{buildroot}%{_libexecdir}/ksamples/bpf
+# test_lwt_bpf.sh compiles test_lwt_bpf.c when run; this works only from the
+# kernel tree. Just remove it.
+rm %{buildroot}%{_libexecdir}/ksamples/bpf/test_lwt_bpf.sh
+install -m644 *_kern.o %{buildroot}%{_libexecdir}/ksamples/bpf || true
+install -m644 tcp_bpf.readme %{buildroot}%{_libexecdir}/ksamples/bpf
+popd
+# install pktgen samples
+pushd pktgen
+install -d %{buildroot}%{_libexecdir}/ksamples/pktgen
+find . -type f -executable -exec install -m755 {} %{buildroot}%{_libexecdir}/ksamples/pktgen/{} \;
+find . -type f ! -executable -exec install -m644 {} %{buildroot}%{_libexecdir}/ksamples/pktgen/{} \;
+popd
+popd
+# install mm selftests
+pushd tools/testing/selftests/mm
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/mm/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/mm/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/mm/{} \;
+popd
+# install cgroup selftests
+pushd tools/testing/selftests/cgroup
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/cgroup/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/cgroup/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/cgroup/{} \;
+popd
+# install drivers/net selftests
+pushd tools/testing/selftests/drivers/net
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/{} \;
+popd
+# install drivers/net/mlxsw selftests
+pushd tools/testing/selftests/drivers/net/mlxsw
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/mlxsw/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/mlxsw/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/mlxsw/{} \;
+popd
+# install drivers/net/hw selftests
+pushd tools/testing/selftests/drivers/net/hw
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/hw/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/hw/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/hw/{} \;
+popd
+# install drivers/net/netdevsim selftests
+pushd tools/testing/selftests/drivers/net/netdevsim
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/netdevsim/{} \;
+popd
+# install drivers/net/bonding selftests
+pushd tools/testing/selftests/drivers/net/bonding
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/drivers/net/bonding/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/bonding/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/drivers/net/bonding/{} \;
+popd
+# install net/can selftests
+pushd tools/testing/selftests/net/can
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/can/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/can/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/can/{} \;
+popd
+# install net/forwarding selftests
+pushd tools/testing/selftests/net/forwarding
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/forwarding/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/forwarding/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/forwarding/{} \;
+popd
+# install net/hsr selftests
+pushd tools/testing/selftests/net/hsr
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/hsr/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/hsr/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/hsr/{} \;
+popd
+# install net/mptcp selftests
+pushd tools/testing/selftests/net/mptcp
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/mptcp/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/mptcp/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/mptcp/{} \;
+popd
+# install tc-testing selftests
+pushd tools/testing/selftests/tc-testing
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/tc-testing/{} \;
+popd
+# install net/netfilter selftests
+pushd tools/testing/selftests/net/netfilter
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/netfilter/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/netfilter/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/netfilter/{} \;
+popd
+# install net/packetdrill selftests
+pushd tools/testing/selftests/net/packetdrill
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/packetdrill/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/packetdrill/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/packetdrill/{} \;
+popd
+# install net/tcp_ao selftests
+pushd tools/testing/selftests/net/tcp_ao
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/net/tcp_ao/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/net/tcp_ao/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/net/tcp_ao/{} \;
+popd
+# install memfd selftests
+pushd tools/testing/selftests/memfd
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/memfd/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/memfd/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/memfd/{} \;
+popd
+# install iommu selftests
+pushd tools/testing/selftests/iommu
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/iommu/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/iommu/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/iommu/{} \;
+popd
+# install rlimits selftests
+pushd tools/testing/selftests/rlimits
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/rlimits/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/rlimits/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/rlimits/{} \;
+popd
+# install pid_namespace selftests
+pushd tools/testing/selftests/pid_namespace
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/pid_namespace/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/pid_namespace/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/pid_namespace/{} \;
+popd
+# install timens selftests
+pushd tools/testing/selftests/timens
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/timens/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/timens/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/timens/{} \;
+popd
+# install pidfd selftests
+pushd tools/testing/selftests/pidfd
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/pidfd/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/pidfd/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/pidfd/{} \;
+popd
+# install capabilities selftests
+pushd tools/testing/selftests/capabilities
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/capabilities/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/capabilities/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/capabilities/{} \;
+popd
+# install clone3 selftests
+pushd tools/testing/selftests/clone3
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/clone3/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/clone3/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/clone3/{} \;
+popd
+# install exec selftests
+pushd tools/testing/selftests/exec
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/exec/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/exec/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/exec/{} \;
+popd
+# install filesystems selftests
+pushd tools/testing/selftests/filesystems
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/filesystems/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/filesystems/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/filesystems/{} \;
+popd
+# install firmware selftests
+pushd tools/testing/selftests/firmware
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/firmware/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/firmware/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/firmware/{} \;
+popd
+# install landlock selftests
+pushd tools/testing/selftests/landlock
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/landlock/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/landlock/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/landlock/{} \;
+popd
+# install mount selftests
+pushd tools/testing/selftests/mount
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/mount/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/mount/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/mount/{} \;
+popd
+# install mount_setattr selftests
+pushd tools/testing/selftests/mount_setattr
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/mount_setattr/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/mount_setattr/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/mount_setattr/{} \;
+popd
+# install move_mount_set_group selftests
+pushd tools/testing/selftests/move_mount_set_group
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/move_mount_set_group/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/move_mount_set_group/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/move_mount_set_group/{} \;
+popd
+# install nsfs selftests
+pushd tools/testing/selftests/nsfs
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/nsfs/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/nsfs/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/nsfs/{} \;
+popd
+# install openat2 selftests
+pushd tools/testing/selftests/openat2
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/openat2/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/openat2/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/openat2/{} \;
+popd
+# install proc selftests
+pushd tools/testing/selftests/proc
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/proc/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/proc/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/proc/{} \;
+popd
+# install safesetid selftests
+pushd tools/testing/selftests/safesetid
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/safesetid/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/safesetid/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/safesetid/{} \;
+popd
+# install seccomp selftests
+pushd tools/testing/selftests/seccomp
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/seccomp/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/seccomp/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/seccomp/{} \;
+popd
+# install tmpfs selftests
+pushd tools/testing/selftests/tmpfs
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/tmpfs/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/tmpfs/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/tmpfs/{} \;
+popd
+# install uevent selftests
+pushd tools/testing/selftests/uevent
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/uevent/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/uevent/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/uevent/{} \;
+popd
+# install vDSO selftests
+pushd tools/testing/selftests/vDSO
+find -type d -exec install -d %{buildroot}%{_libexecdir}/kselftests/vDSO/{} \;
+find -type f -executable -exec install -D -m755 {} %{buildroot}%{_libexecdir}/kselftests/vDSO/{} \;
+find -type f ! -executable -exec install -D -m644 {} %{buildroot}%{_libexecdir}/kselftests/vDSO/{} \;
+popd
+%endif
+
+%if %{with_kmap} && %{with_base}
+# Install kmap data files produced during %build.
+_kmap_basedir=%{_builddir}/kmap-data
+_kmap_destbase=$RPM_BUILD_ROOT%{_datadir}/%{name}-kmap-internal
+mkdir -p $_kmap_destbase
+install -m 644 $_kmap_basedir/kernel-map.json $_kmap_destbase/kernel-map-%{KVERREL}.json
+%endif
+
+###
+### clean
+###
+
+###
+### scripts
+###
+
+%if %{with_tools}
+%post -n %{package_name}-tools-libs
+/sbin/ldconfig
+
+%postun -n %{package_name}-tools-libs
+/sbin/ldconfig
+%endif
+
+#
+# This macro defines a %%post script for a kernel*-devel package.
+#	%%kernel_devel_post [<subpackage>]
+# Note we don't run hardlink if ostree is in use, as ostree is
+# a far more sophisticated hardlink implementation.
+# https://github.com/projectatomic/rpm-ostree/commit/58a79056a889be8814aa51f507b2c7a4dccee526
+#
+# The deletion of *.hardlink-temporary files is a temporary workaround
+# for this bug in the hardlink binary (fixed in util-linux 2.38):
+# https://github.com/util-linux/util-linux/issues/1602
+#
+%define kernel_devel_post() \
+%{expand:%%post %{?1:%{1}-}devel}\
+if [ -f /etc/sysconfig/kernel ]\
+then\
+    . /etc/sysconfig/kernel || exit $?\
+fi\
+if [ "$HARDLINK" != "no" -a -x /usr/bin/hardlink -a ! -e /run/ostree-booted ] \
+then\
+    (cd /usr/src/kernels/%{KVERREL}%{?1:+%{1}} &&\
+     /usr/bin/find . -type f | while read f; do\
+       hardlink -c /usr/src/kernels/*%{?dist}.*/$f $f > /dev/null\
+     done;\
+     /usr/bin/find /usr/src/kernels -type f -name '*.hardlink-temporary' -delete\
+    )\
+fi\
+%if %{with_cross}\
+    echo "Building scripts and resolve_btfids"\
+    env --unset=ARCH make -C /usr/src/kernels/%{KVERREL}%{?1:+%{1}} prepare_after_cross\
+%endif\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel*-modules-extra package.
+# It also defines a %%postun script that does the same thing.
+#	%%kernel_modules_extra_post [<subpackage>]
+#
+%define kernel_modules_extra_post() \
+%{expand:%%post %{?1:%{1}-}modules-extra}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}\
+%{expand:%%postun %{?1:%{1}-}modules-extra}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel*-modules-internal package.
+# It also defines a %%postun script that does the same thing.
+#	%%kernel_modules_internal_post [<subpackage>]
+#
+%define kernel_modules_internal_post() \
+%{expand:%%post %{?1:%{1}-}modules-internal}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}\
+%{expand:%%postun %{?1:%{1}-}modules-internal}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel*-modules-partner package.
+# It also defines a %%postun script that does the same thing.
+#	%%kernel_modules_partner_post [<subpackage>]
+#
+%define kernel_modules_partner_post() \
+%{expand:%%post %{?1:%{1}-}modules-partner}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}\
+%{expand:%%postun %{?1:%{1}-}modules-partner}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel*-modules package.
+# It also defines a %%postun script that does the same thing.
+#	%%kernel_modules_post [<subpackage>]
+#
+%define kernel_modules_post() \
+%{expand:%%post %{?1:%{1}-}modules}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+if [ -f /lib/modules/%{KVERREL}%{?1:+%{1}}/vmlinuz ] &&\
+[ -f /boot/initramfs-%{KVERREL}%{?1:+%{1}}.img ] &&\
+[ ! -f %{_localstatedir}/lib/rpm-state/%{name}/installing_core_%{KVERREL}%{?1:+%{1}} ]; then\
+	mkdir -p %{_localstatedir}/lib/rpm-state/%{name}\
+	touch %{_localstatedir}/lib/rpm-state/%{name}/need_to_run_dracut_%{KVERREL}%{?1:+%{1}}\
+fi\
+%{nil}\
+%{expand:%%postun %{?1:%{1}-}modules}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}\
+%{expand:%%posttrans %{?1:%{1}-}modules}\
+if [ -f %{_localstatedir}/lib/rpm-state/%{name}/need_to_run_dracut_%{KVERREL}%{?1:+%{1}} ]; then\
+	rm -f %{_localstatedir}/lib/rpm-state/%{name}/need_to_run_dracut_%{KVERREL}%{?1:+%{1}}\
+	echo "Running: dracut -f --kver %{KVERREL}%{?1:+%{1}} /boot/initramfs-%{KVERREL}%{?1:+%{1}}.img"\
+	dracut -f --kver "%{KVERREL}%{?1:+%{1}}" /boot/initramfs-%{KVERREL}%{?1:+%{1}}.img || exit $?\
+fi\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel*-modules-core package.
+#	%%kernel_modules_core_post [<subpackage>]
+#
+%define kernel_modules_core_post() \
+%{expand:%%posttrans %{?1:%{1}-}modules-core}\
+/sbin/depmod -a %{KVERREL}%{?1:+%{1}}\
+%{nil}
+
+# This macro defines a %%posttrans script for a kernel package.
+#	%%kernel_variant_posttrans [-v <subpackage>] [-u uki-suffix]
+# More text can follow to go at the end of this variant's %%post.
+#
+%define kernel_variant_posttrans(v:u:) \
+%{expand:%%posttrans %{?-v:%{-v*}-}%{!?-u*:core}%{?-u*:uki-%{-u*}}}\
+%if 0%{!?fedora:1}\
+%if !%{with_automotive}\
+if [ -x %{_sbindir}/weak-modules ]\
+then\
+    %{_sbindir}/weak-modules --add-kernel %{KVERREL}%{?-v:+%{-v*}} || exit $?\
+fi\
+%endif\
+%endif\
+rm -f %{_localstatedir}/lib/rpm-state/%{name}/installing_core_%{KVERREL}%{?-v:+%{-v*}}\
+/bin/kernel-install add %{KVERREL}%{?-v:+%{-v*}} /lib/modules/%{KVERREL}%{?-v:+%{-v*}}/vmlinuz%{?-u:-%{-u*}.efi} || exit $?\
+if [[ ! -e "/boot/symvers-%{KVERREL}%{?-v:+%{-v*}}.%compext" ]]; then\
+    cp "/lib/modules/%{KVERREL}%{?-v:+%{-v*}}/symvers.%compext" "/boot/symvers-%{KVERREL}%{?-v:+%{-v*}}.%compext"\
+    if command -v restorecon &>/dev/null; then\
+        restorecon "/boot/symvers-%{KVERREL}%{?-v:+%{-v*}}.%compext"\
+    fi\
+fi\
+%{nil}
+
+#
+# This macro defines a %%post script for a kernel package and its devel package.
+#	%%kernel_variant_post [-v <subpackage>] [-r <replace>]
+# More text can follow to go at the end of this variant's %%post.
+#
+%define kernel_variant_post(v:r:) \
+%{expand:%%kernel_devel_post %{?-v*}}\
+%{expand:%%kernel_modules_post %{?-v*}}\
+%{expand:%%kernel_modules_core_post %{?-v*}}\
+%{expand:%%kernel_modules_extra_post %{?-v*}}\
+%{expand:%%kernel_modules_internal_post %{?-v*}}\
+%if 0%{!?fedora:1}\
+%{expand:%%kernel_modules_partner_post %{?-v*}}\
+%endif\
+%{expand:%%kernel_variant_posttrans %{?-v*:-v %{-v*}}}\
+%{expand:%%post %{?-v*:%{-v*}-}core}\
+%{-r:\
+if [ `uname -i` == "x86_64" -o `uname -i` == "i386" ] &&\
+   [ -f /etc/sysconfig/kernel ]; then\
+  /bin/sed -r -i -e 's/^DEFAULTKERNEL=%{-r*}$/DEFAULTKERNEL=kernel%{?-v:-%{-v*}}/' /etc/sysconfig/kernel || exit $?\
+fi}\
+mkdir -p %{_localstatedir}/lib/rpm-state/%{name}\
+touch %{_localstatedir}/lib/rpm-state/%{name}/installing_core_%{KVERREL}%{?-v:+%{-v*}}\
+%{nil}
+
+#
+# This macro defines a %%preun script for a kernel package.
+#	%%kernel_variant_preun [-v <subpackage>] -u [uki-suffix] -e
+# Add kernel-install's --entry-type=type1|type2|all option (if supported) to limit removal
+# to a specific boot entry type.
+#
+%define kernel_variant_preun(v:u:e) \
+%{expand:%%preun %{?-v:%{-v*}-}%{!?-u*:core}%{?-u*:uki-%{-u*}}}\
+entry_type=""\
+%{-e: \
+/bin/kernel-install --help|grep -q -- '--entry-type=' &&\
+    entry_type="--entry-type %{!?-u:type1}%{?-u:type2}" \
+}\
+/bin/kernel-install remove %{KVERREL}%{?-v:+%{-v*}} $entry_type || exit $?\
+%if !%{with_automotive}\
+if [ -x %{_sbindir}/weak-modules ]\
+then\
+    %{_sbindir}/weak-modules --remove-kernel %{KVERREL}%{?-v:+%{-v*}} || exit $?\
+fi\
+%endif\
+%{nil}
+
+%if %{with_up_base} && %{with_efiuki}
+%kernel_variant_posttrans -u virt
+%kernel_variant_preun -u virt -e
+%endif
+
+%if %{with_up_base}
+%kernel_variant_preun -e
+%kernel_variant_post
+%endif
+
+%if %{with_zfcpdump}
+%kernel_variant_preun -v zfcpdump
+%kernel_variant_post -v zfcpdump
+%endif
+
+%if %{with_up} && %{with_debug} && %{with_efiuki}
+%kernel_variant_posttrans -v debug -u virt
+%kernel_variant_preun -v debug -u virt -e
+%endif
+
+%if %{with_up} && %{with_debug}
+%kernel_variant_preun -v debug -e
+%kernel_variant_post -v debug
+%endif
+
+%if %{with_arm64_16k_base}
+%kernel_variant_preun -v 16k -e
+%kernel_variant_post -v 16k
+%endif
+
+%if %{with_debug} && %{with_arm64_16k}
+%kernel_variant_preun -v 16k-debug -e
+%kernel_variant_post -v 16k-debug
+%endif
+
+%if %{with_arm64_16k} && %{with_debug} && %{with_efiuki}
+%kernel_variant_posttrans -v 16k-debug -u virt
+%kernel_variant_preun -v 16k-debug -u virt -e
+%endif
+
+%if %{with_arm64_16k_base} && %{with_efiuki}
+%kernel_variant_posttrans -v 16k -u virt
+%kernel_variant_preun -v 16k -u virt -e
+%endif
+
+%if %{with_arm64_64k_base}
+%kernel_variant_preun -v 64k -e
+%kernel_variant_post -v 64k
+%endif
+
+%if %{with_debug} && %{with_arm64_64k}
+%kernel_variant_preun -v 64k-debug -e
+%kernel_variant_post -v 64k-debug
+%endif
+
+%if %{with_arm64_64k} && %{with_debug} && %{with_efiuki}
+%kernel_variant_posttrans -v 64k-debug -u virt
+%kernel_variant_preun -v 64k-debug -u virt -e
+%endif
+
+%if %{with_arm64_64k_base} && %{with_efiuki}
+%kernel_variant_posttrans -v 64k -u virt
+%kernel_variant_preun -v 64k -u virt -e
+%endif
+
+%if %{with_realtime_base}
+%kernel_variant_preun -v rt
+%kernel_variant_post -v rt -r kernel
+%endif
+
+%if %{with_automotive_base}
+%kernel_variant_preun -v automotive
+%kernel_variant_post -v automotive -r kernel
+%endif
+
+%if %{with_realtime} && %{with_debug}
+%kernel_variant_preun -v rt-debug
+%kernel_variant_post -v rt-debug
+%endif
+
+%if %{with_realtime_arm64_64k_base}
+%kernel_variant_preun -v rt-64k
+%kernel_variant_post -v rt-64k
+%kernel_kvm_post rt-64k
+%endif
+
+%if %{with_debug} && %{with_realtime_arm64_64k}
+%kernel_variant_preun -v rt-64k-debug
+%kernel_variant_post -v rt-64k-debug
+%kernel_kvm_post rt-64k-debug
+%endif
+
+%if %{with_automotive} && %{with_debug} && !%{with_automotive_build}
+%kernel_variant_preun -v automotive-debug
+%kernel_variant_post -v automotive-debug
+%endif
+
+###
+### file lists
+###
+
+%if %{with_headers}
+%files headers
+/usr/include/*
+%exclude %{_includedir}/cpufreq.h
+%if %{with_ynl}
+%exclude %{_includedir}/ynl
+%endif
+%endif
+
+%if %{with_cross_headers}
+%files cross-headers
+/usr/*-linux-gnu/include/*
+%endif
+
+%if %{with_kernel_abi_stablelists}
+%files -n %{package_name}-abi-stablelists
+/lib/modules/kabi-*
+%endif
+
+%if %{with_kabidw_base}
+%ifarch x86_64 s390x ppc64 ppc64le aarch64 riscv64
+%files kernel-kabidw-base-internal
+%defattr(-,root,root)
+/kabidw-base/%{_target_cpu}/*
+%endif
+%endif
+
+# only some architecture builds need kernel-doc
+%if %{with_doc}
+%files doc
+%defattr(-,root,root)
+%{_datadir}/doc/kernel-doc-%{specversion}-%{pkgrelease}/Documentation/*
+%dir %{_datadir}/doc/kernel-doc-%{specversion}-%{pkgrelease}/Documentation
+%dir %{_datadir}/doc/kernel-doc-%{specversion}-%{pkgrelease}
+%{_datadir}/doc/kernel-doc-%{specversion}-%{pkgrelease}/kernel.changelog.xz
+%endif
+
+%if %{with_perf}
+%files -n perf
+%{_bindir}/perf
+%{_libdir}/libperf-jvmti.so
+%dir %{_libexecdir}/perf-core
+%{_libexecdir}/perf-core/*
+%{_mandir}/man[1-8]/perf*
+%{_sysconfdir}/bash_completion.d/perf
+%doc linux-%{KVERREL}/tools/perf/Documentation/examples.txt
+%{_docdir}/perf-tip/tips.txt
+
+%files -n python3-perf
+%{python3_sitearch}/perf*
+
+%if %{with_debuginfo}
+%files -f perf-debuginfo.list -n perf-debuginfo
+
+%files -f python3-perf-debuginfo.list -n python3-perf-debuginfo
+%endif
+# with_perf
+%endif
+
+%if %{with_libperf}
+%files -n libperf
+%{_libdir}/libperf.so.0
+%{_libdir}/libperf.so.0.0.1
+
+%files -n libperf-devel
+%{_libdir}/libperf.so
+%{_libdir}/pkgconfig/libperf.pc
+%{_includedir}/internal/*.h
+%{_includedir}/perf/bpf_perf.h
+%{_includedir}/perf/core.h
+%{_includedir}/perf/cpumap.h
+%{_includedir}/perf/perf_dlfilter.h
+%{_includedir}/perf/event.h
+%{_includedir}/perf/evlist.h
+%{_includedir}/perf/evsel.h
+%{_includedir}/perf/mmap.h
+%{_includedir}/perf/threadmap.h
+%{_mandir}/man3/libperf.3.gz
+%{_mandir}/man7/libperf-counting.7.gz
+%{_mandir}/man7/libperf-sampling.7.gz
+%{_docdir}/libperf/examples/sampling.c
+%{_docdir}/libperf/examples/counting.c
+%{_docdir}/libperf/html/libperf.html
+%{_docdir}/libperf/html/libperf-counting.html
+%{_docdir}/libperf/html/libperf-sampling.html
+
+%if %{with_debuginfo}
+%files -f libperf-debuginfo.list -n libperf-debuginfo
+%endif
+
+# with_libperf
+%endif
+
+
+%if %{with_tools}
+%ifnarch %{cpupowerarchs}
+%files -n %{package_name}-tools
+%else
+%files -n %{package_name}-tools -f cpupower.lang
+%{_bindir}/cpupower
+%{_datadir}/bash-completion/completions/cpupower
+%ifarch x86_64
+%{_bindir}/centrino-decode
+%{_bindir}/powernow-k8-decode
+%endif
+%{_mandir}/man[1-8]/cpupower*
+%ifarch x86_64
+%{_bindir}/x86_energy_perf_policy
+%{_mandir}/man8/x86_energy_perf_policy*
+%{_bindir}/turbostat
+%{_mandir}/man8/turbostat*
+%{_bindir}/intel-speed-select
+%{_sbindir}/intel_sdsi
+%endif
+# cpupowerarchs
+%endif
+%{_bindir}/tmon
+%{_bindir}/bootconfig
+%{_bindir}/iio_event_monitor
+%{_bindir}/iio_generic_buffer
+%{_bindir}/lsiio
+%{_bindir}/lsgpio
+%{_bindir}/gpio-hammer
+%{_bindir}/gpio-event-mon
+%{_bindir}/gpio-watch
+%{_mandir}/man1/kvm_stat*
+%{_bindir}/kvm_stat
+%{_unitdir}/kvm_stat.service
+%config(noreplace) %{_sysconfdir}/logrotate.d/kvm_stat
+%{_bindir}/page_owner_sort
+%{_bindir}/slabinfo
+%if %{with_ynl}
+%{_bindir}/ynl*
+%{_docdir}/ynl
+%{_datadir}/ynl
+%{python3_sitelib}/pyynl*
+%endif
+
+%if %{with_debuginfo}
+%files -f %{package_name}-tools-debuginfo.list -n %{package_name}-tools-debuginfo
+%endif
+
+%files -n %{package_name}-tools-libs
+%ifarch %{cpupowerarchs}
+%{_libdir}/libcpupower.so.1
+%{_libdir}/libcpupower.so.0.0.1
+%endif
+
+%files -n %{package_name}-tools-libs-devel
+%ifarch %{cpupowerarchs}
+%{_libdir}/libcpupower.so
+%{_includedir}/cpufreq.h
+%{_includedir}/cpuidle.h
+%{_includedir}/powercap.h
+# libcpupower Python bindings
+%{python3_sitearch}/_raw_pylibcpupower.so
+%{python3_sitearch}/raw_pylibcpupower.py
+%{python3_sitearch}/__pycache__/raw_pylibcpupower*
+
+%endif
+%if %{with_ynl}
+%{_libdir}/libynl*
+%{_includedir}/ynl
+%endif
+
+%files -n rtla
+%{_bindir}/rtla
+%{_bindir}/hwnoise
+%{_bindir}/osnoise
+%{_bindir}/timerlat
+%{_mandir}/man1/rtla-hwnoise.1.gz
+%{_mandir}/man1/rtla-osnoise-hist.1.gz
+%{_mandir}/man1/rtla-osnoise-top.1.gz
+%{_mandir}/man1/rtla-osnoise.1.gz
+%{_mandir}/man1/rtla-timerlat-hist.1.gz
+%{_mandir}/man1/rtla-timerlat-top.1.gz
+%{_mandir}/man1/rtla-timerlat.1.gz
+%{_mandir}/man1/rtla.1.gz
+
+%if %{with_debuginfo}
+%files -f rtla-debuginfo.list -n rtla-debuginfo
+%endif
+
+%files -n rv
+%{_bindir}/rv
+%{_mandir}/man1/rv-list.1.gz
+%{_mandir}/man1/rv-mon-wip.1.gz
+%{_mandir}/man1/rv-mon-wwnr.1.gz
+%{_mandir}/man1/rv-mon.1.gz
+%{_mandir}/man1/rv-mon-sched.1.gz
+%{_mandir}/man1/rv-mon-stall.1.gz
+%{_mandir}/man1/rv.1.gz
+
+%if %{with_debuginfo}
+%files -f rv-debuginfo.list -n rv-debuginfo
+%endif
+
+# with_tools
+%endif
+
+%if %{with_selftests}
+%files selftests-internal
+%{_libexecdir}/ksamples
+%{_libexecdir}/kselftests
+%endif
+
+%if %{with_kmap} && %{with_base}
+%files -n %{name}-kmap-internal
+%defattr(-,root,root)
+%dir %{_datadir}/%{name}-kmap-internal
+%{_datadir}/%{name}-kmap-internal/kernel-map-%{KVERREL}.json
+%endif
+
+# empty meta-package
+%if %{with_up_base}
+%ifnarch %nobuildarches noarch
+%files
+%endif
+%endif
+
+# This is %%{image_install_path} on an arch where that includes ELF files,
+# or empty otherwise.
+%define elf_image_install_path %{?kernel_image_elf:%{image_install_path}}
+
+#
+# This macro defines the %%files sections for a kernel package
+# and its devel and debuginfo packages.
+#	%%kernel_variant_files [-k vmlinux] <use_vdso> <condition> <subpackage>
+#
+%define kernel_variant_files(k:) \
+%if %{2}\
+%{expand:%%files %{?1:-f kernel-%{?3:%{3}-}ldsoconf.list} %{?3:%{3}-}core}\
+%{!?_licensedir:%global license %%doc}\
+%%license linux-%{KVERREL}/COPYING-%{version}-%{release}\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/%{?-k:%{-k*}}%{!?-k:vmlinuz}\
+%ghost /%{image_install_path}/%{?-k:%{-k*}}%{!?-k:vmlinuz}-%{KVERREL}%{?3:+%{3}}\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/.vmlinuz.hmac \
+%ghost /%{image_install_path}/.vmlinuz-%{KVERREL}%{?3:+%{3}}.hmac \
+%ifarch aarch64 riscv64\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/dtb \
+%ghost /%{image_install_path}/dtb-%{KVERREL}%{?3:+%{3}} \
+%endif\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/System.map\
+%ghost /boot/System.map-%{KVERREL}%{?3:+%{3}}\
+%dir /lib/modules\
+%dir /lib/modules/%{KVERREL}%{?3:+%{3}}\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/symvers.%compext\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/config\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.builtin*\
+%ghost %attr(0644, root, root) /boot/symvers-%{KVERREL}%{?3:+%{3}}.%compext\
+%ghost %attr(0600, root, root) /boot/initramfs-%{KVERREL}%{?3:+%{3}}.img\
+%ghost %attr(0644, root, root) /boot/config-%{KVERREL}%{?3:+%{3}}\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-core.list %{?3:%{3}-}modules-core}\
+%dir /lib/modules\
+%dir /lib/modules/%{KVERREL}%{?3:+%{3}}\
+%dir /lib/modules/%{KVERREL}%{?3:+%{3}}/kernel\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/build\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/source\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/updates\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/weak-updates\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/systemtap\
+%{_datadir}/doc/kernel-keys/%{KVERREL}%{?3:+%{3}}\
+%if %{1}\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/vdso\
+%endif\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.block\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.drm\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.modesetting\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.networking\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.order\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.alias\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.alias.bin\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.builtin.alias.bin\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.builtin.bin\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.dep\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.dep.bin\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.devname\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.softdep\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.symbols\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.symbols.bin\
+%ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.weakdep\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules.list %{?3:%{3}-}modules}\
+%{expand:%%files %{?3:%{3}-}devel}\
+%defverify(not mtime)\
+/usr/src/kernels/%{KVERREL}%{?3:+%{3}}\
+%{expand:%%files %{?3:%{3}-}devel-matched}\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-extra.list %{?3:%{3}-}modules-extra}\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-internal.list %{?3:%{3}-}modules-internal}\
+%if 0%{!?fedora:1}\
+%{expand:%%files -f kernel-%{?3:%{3}-}modules-partner.list %{?3:%{3}-}modules-partner}\
+%endif\
+%if %{with_debuginfo}\
+%ifnarch noarch\
+%{expand:%%files -f debuginfo%{?3}.list %{?3:%{3}-}debuginfo}\
+%endif\
+%endif\
+%if %{with_efiuki} && "%{3}" != "rt" && "%{3}" != "rt-debug" && "%{3}" != "rt-64k" && "%{3}" != "rt-64k-debug"\
+%{expand:%%files %{?3:%{3}-}uki-virt}\
+%dir /lib/modules\
+%dir /lib/modules/%{KVERREL}%{?3:+%{3}}\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/System.map\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/symvers.%compext\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/config\
+/lib/modules/%{KVERREL}%{?3:+%{3}}/modules.builtin*\
+%attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/%{?-k:%{-k*}}%{!?-k:vmlinuz}-virt.efi\
+%attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/.%{?-k:%{-k*}}%{!?-k:vmlinuz}-virt.efi.hmac\
+%ghost /%{image_install_path}/efi/EFI/Linux/%{?-k:%{-k*}}%{!?-k:*}-%{KVERREL}%{?3:+%{3}}.efi\
+%{expand:%%files %{?3:%{3}-}uki-virt-addons}\
+%dir /lib/modules/%{KVERREL}%{?3:+%{3}}/%{?-k:%{-k*}}%{!?-k:vmlinuz}-virt.efi.extra.d/ \
+/lib/modules/%{KVERREL}%{?3:+%{3}}/%{?-k:%{-k*}}%{!?-k:vmlinuz}-virt.efi.extra.d/*.addon.efi\
+%endif\
+%if %{?3:1} %{!?3:0}\
+%{expand:%%files %{3}}\
+%endif\
+%if %{with_gcov}\
+%ifnarch %nobuildarches noarch\
+%{expand:%%files -f kernel-%{?3:%{3}-}gcov.list %{?3:%{3}-}gcov}\
+%endif\
+%endif\
+%endif\
+%{nil}
+
+%kernel_variant_files %{_use_vdso} %{with_up_base}
+%if %{with_up}
+%kernel_variant_files %{_use_vdso} %{with_debug} debug
+%endif
+%if %{with_arm64_16k}
+%kernel_variant_files %{_use_vdso} %{with_debug} 16k-debug
+%endif
+%if %{with_arm64_64k}
+%kernel_variant_files %{_use_vdso} %{with_debug} 64k-debug
+%endif
+%kernel_variant_files %{_use_vdso} %{with_realtime_base} rt
+%if %{with_realtime}
+%kernel_variant_files %{_use_vdso} %{with_debug} rt-debug
+%endif
+%kernel_variant_files %{_use_vdso} %{with_automotive_base} automotive
+%if %{with_automotive} && !%{with_automotive_build}
+%kernel_variant_files %{_use_vdso} %{with_debug} automotive-debug
+%endif
+
+%if %{with_debug_meta}
+%files debug
+%files debug-core
+%files debug-devel
+%files debug-devel-matched
+%files debug-modules
+%files debug-modules-core
+%files debug-modules-extra
+%if %{with_arm64_16k}
+%files 16k-debug
+%files 16k-debug-core
+%files 16k-debug-devel
+%files 16k-debug-devel-matched
+%files 16k-debug-modules
+%files 16k-debug-modules-extra
+%endif
+%if %{with_arm64_64k}
+%files 64k-debug
+%files 64k-debug-core
+%files 64k-debug-devel
+%files 64k-debug-devel-matched
+%files 64k-debug-modules
+%files 64k-debug-modules-extra
+%endif
+%endif
+%kernel_variant_files %{_use_vdso} %{with_zfcpdump} zfcpdump
+%kernel_variant_files %{_use_vdso} %{with_arm64_16k_base} 16k
+%kernel_variant_files %{_use_vdso} %{with_arm64_64k_base} 64k
+%kernel_variant_files %{_use_vdso} %{with_realtime_arm64_64k_base} rt-64k
+%if %{with_realtime_arm64_64k}
+%kernel_variant_files %{_use_vdso} %{with_debug} rt-64k-debug
+%endif
+
+%ifnarch noarch %{nobuildarches}
+%files modules-extra-matched
+%endif
+
+# plz don't put in a version string unless you're going to tag
+# and build.
+#
+#
+%changelog
+* Fri Nov 21 2026 Brian Harrington <redbeard@dead-city.org> - 6.12.0-284.acpidebug.1
+- K3 acpidebug: GPIO_SPACEMIT_K1 built-in (EC first-probe fix), upstream spacemit UFS driver + ACPI platform-data path, gpio immutable irqchip + ACPI fallback + quiesce
+
+* Mon Nov 16 2026 Andrea Bolognani <abologna@redhat.com> [6.12.0-284.rv.0.el10]
+- RISC-V: KVM: Do not touch the envcfg CSRs on the SiFive P550 (Davidlohr Bueso)
+- redhat/configs: riscv: Enable CONFIG_DMA_CMA (Jennifer Berringer)
+- redhat/configs: riscv: Enable CONFIG_USB_DWC3_DUAL_ROLE (Jennifer Berringer)
+- redhat/configs: Disable CONFIG_RISCV_ISA_SSQOSID (Jennifer Berringer)
+- riscv: dts: spacemit: k3-pico-itx: Set Ethernet MAC from EEPROM (Jennifer Berringer)
+- riscv: dts: spacemit: k3-com260-ifx-tq: Enable USB and PCIe (Jennifer Berringer)
+- riscv: dts: spacemit: k3-com260: Set Ethernet MAC from EEPROM (Troy Mitchell)
+- riscv: dts: spacemit: k3-com260: Add SPI NOR flash (Troy Mitchell)
+- riscv: dts: spacemit: k3-com260: Move SD card to the module (Troy Mitchell)
+- riscv: dts: spacemit: k3-com260-ifx: Drop wrong SD card vmmc-supply (Troy Mitchell)
+- riscv: dts: spacemit: Add K3 CoM260 IFX TQ support (Troy Mitchell)
+- redhat/configs: riscv: Disable vector user copy (Jennifer Berringer)
+- i2c: designware: add atomic transfer support for IRQ-off contexts (Baineng Shou)
+- riscv: disable local interrupts and stop other CPUs before reboot/shutdown (Troy Mitchell)
+- riscv: dts: starfive: jh7110: Update DT for display subsystem (Michal Wilczynski)
+- phy: starfive: Add jh7110-inno-hdmi-phy driver (Michal Wilczynski)
+- phy: Add common Innosilicon HDMI PHY helpers (Michal Wilczynski)
+- drm/bridge: starfive: Add JH7110 HDMI controller driver (Michal Wilczynski)
+- soc: starfive: Add jh7110-vout-subsystem driver (Michal Wilczynski)
+- soc: starfive: Add jh7110-hdmi-subsystem driver (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Make the register clock source selectable (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Make the PHY configuration table optional (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Add .mode_valid platform operation (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Add .disable platform operation (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Allow the register map to come from a parent (Michal Wilczynski)
+- drm/bridge: inno-hdmi: Split probe out of bind (Michal Wilczynski)
+- drm/bridge: inno-hdmi: fix swapped HSYNC and VSYNC polarity (Michal Wilczynski)
+- drm: verisilicon: add a driver for Verisilicon display controllers (Jennifer Berringer)
+- redhat/configs: riscv: Enable StarFive JH7110 DRM (Jennifer Berringer)
+- drm/imagination: allow probe when no power-domains are described (Sterling-Ash)
+- riscv: dts: spacemit: k1-milkv-jupiter: enable GPU (Jennifer Berringer)
+- riscv: dts: spacemit: k1-orangepi-rv2: enable GPU (Iker Pedrosa)
+- riscv: dts: spacemit: k1: add PowerVR GPU device node (Iker Pedrosa)
+- pmdomain: spacemit: Add power domain driver (Yixun Lan)
+- dt-bindings: power: spacemit: Add power domain controller IDs (Yixun Lan)
+- clk: spacemit: register pm domain auxiliary driver (Yixun Lan)
+- clk: spacemit: rename to generic ccu aux register function (Yixun Lan)
+- drm/spacemit: Backport fixups (Jennifer Berringer)
+- riscv: dts: spacemit: k3-pico-itx: enable the DisplayPort output (Cody Kang)
+- riscv: dts: spacemit: k3: add display nodes (Cody Kang)
+- drm/spacemit: add Innosilicon DP/eDP controller bridge driver (Cody Kang)
+- drm/spacemit: add Saturn DPU DRM device driver (Cody Kang)
+- drm/spacemit: add Saturn DPU KMS pipeline (Cody Kang)
+- drm/spacemit: add Saturn DPU hardware backend (Cody Kang)
+- drm/spacemit: add Saturn DPU core types, cmdlist and display MMU (Cody Kang)
+- drm/spacemit: add Saturn DPU register model (Cody Kang)
+- clk: spacemit: k3: parent eDP/DP pixel clock to the PHY PLL (Cody Kang)
+- phy: spacemit: add Innosilicon DP TX PHY driver (Cody Kang)
+- redhat/configs: riscv: Enable SpacemiT K3 DRM (Jennifer Berringer)
+- riscv: dts: spacemit: k3-com260-ifx: Add USB Type-C (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Add reserved memory (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Add DMA pool (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Enable pdma (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Add USB Type-C DRD (Jennifer Berringer)
+- riscv: dts: spacemit: Add espi nodes for K3 (Jennifer Berringer)
+- riscv: dts: spacemit: k3-deepcomputing-fml13v05: enable pcie0_rc (Jennifer Berringer)
+- platform/chrome: Add cros_ec_espi driver (Jennifer Berringer)
+- platform/chrome: Prevent build for big-endian systems (Jennifer Berringer)
+- bus: spacemit-k3-espi: Add driver for SpacemiT ESPI (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Add thermal sensor (Jennifer Berringer)
+- thermal: spacemit: Add K3 thermal sensor driver (Jennifer Berringer)
+- usb: typec: fusb301: Add support for Fairchild fusb301 (Jennifer Berringer)
+- phy: spacemit: Add USB3 PHY driver for SpacemiT K3 (Jennifer Berringer)
+- riscv: dts: spacemit: enable USB2.0 controllers on Milk-V Jupiter (Jennifer Berringer)
+- riscv: dts: spacemit: enable USB2.0 controllers on OrangePi RV2 (Junzhong Pan)
+- riscv: dts: spacemit: enable USB2.0 controllers on BananaPi F3 (Junzhong Pan)
+- riscv: dts: spacemit: add USB2.0 controller nodes for K1 (Junzhong Pan)
+- usb: chipidea: usb2: add SpacemiT K1 support (Junzhong Pan)
+- usb: chipidea: usb2: add optional reset support (Junzhong Pan)
+- usb: chipidea: usb2: use devm_clk_get_optional_enabled() (Junzhong Pan)
+- riscv: dts: spacemit: k3-deepcomputing-fml13v05: Enable SD card support (Sandie Cao)
+- riscv: dts: spacemit: k3-deepcomputing-fml13v05: add USB controller and USB phy support (Sandie Cao)
+- riscv: dts: spacemit: k3-deepcomputing-fml13v05: add P1 PMIC regulator tree (Sandie Cao)
+- riscv: dts: spacemit: Add Milk-V Jupiter board (M1) (Aurelien Jarno)
+- riscv: dts: spacemit: Add a common board dtsi for Milk-V Jupiter boards (Aurelien Jarno)
+- riscv: dts: spacemit: k3-com260-ifx: Add PCIe nodes (Jennifer Berringer)
+- riscv: dts: spacemit: k3: Add PCIe device node (Inochi Amaoto)
+- riscv: dts: spacemit: k3: Add UFS support (Yixun Lan)
+- scsi: ufs: spacemit: k3: Add UFS Host Controller driver (Yixun Lan)
+- PCI: spacemit-k1: Add Spacemit K3 PCIe host controller support (Inochi Amaoto)
+- PCI: spacemit-k1: Add device id update helper (Inochi Amaoto)
+- PCI: spacemit-k1: Add multiple PHY handles support (Inochi Amaoto)
+- PCI: spacemit-k1: Add device data support (Inochi Amaoto)
+- phy: core: Add managed phy bulk data helper functions (Inochi Amaoto)
+- phy: core: Add phy bulk data helper functions (Inochi Amaoto)
+- phy: core: Add common helper for get phy phandle by index (Inochi Amaoto)
+- phy: core: Add common helper to add phy phandle device link (Inochi Amaoto)
+- clk: spacemit: k3: set rcpu clock as critical (Yixun Lan)
+- riscv: mm: exclude invalid THP PMDs from page table check (Yunhui Cui)
+- redhat/configs: enable ESPI driver (Jennifer Berringer)
+- redhat/configs: Enable non-upstream SpacemiT configs (Jennifer Berringer)
+- drm/amdgpu: disable dynamic speed switch on SpacemiT K3 (Icenowy Zheng)
+- drm/ttm: downgrade cached to write_combined when snooping not available (Jennifer Berringer)
+- drm/ttm: save the device's DMA coherency status in ttm_device (Jennifer Berringer)
+- redhat/configs: Use clk_ignore_unused (Jennifer Berringer)
+- riscv: dts: eic7700: add FUSB303B USB-C node (Jennifer Berringer)
+- riscv: dts: eic7700: add scu_syscon node (Jennifer Berringer)
+- riscv: dts: eic7700: add fancontrol node (Jennifer Berringer)
+- riscv: dts: eic7700: add pwm node (Jennifer Berringer)
+- usb: typec: fusb303b: Fix compile errors (Jennifer Berringer)
+- usb: typec: fusb303b: Update FUSB303B driver (Jennifer Berringer)
+- usb: typec: Add FUSB303B driver (Jennifer Berringer)
+- hwmon: fan-control: Add eswin-fan-control driver (Jennifer Berringer)
+- pwm: eswin: Add driver for ESWIN EIC7700 PWM (Jennifer Berringer)
+- redhat/configs: Enable TYPEC_FUSB303B for riscv (Jennifer Berringer)
+- redhat/configs: enable eic7700 fan control (Jennifer Berringer)
+- riscv: dts: eswin: eic7700-hifive-premier-p550: enable Ethernet controller (Zhi Li)
+- riscv: dts: eic7700: add PVT nodes (Jennifer Berringer)
+- riscv: dts: hifive-premier-p550: Enable USB (Jennifer Berringer)
+- riscv: dts: eic7700: Add usb nodes (Jennifer Berringer)
+- riscv: dts: hifive-premier-p550: enable SATA (Jennifer Berringer)
+- riscv: dts: eic7700: add SATA PHY and SATA (Jennifer Berringer)
+- riscv: dts: eic7700: add hspcrg node (Jennifer Berringer)
+- riscv: dts: hifive-premier-p550: Add Reserve Memory Node (Jennifer Berringer)
+- riscv: dts: hifive-premier-p550: enable PCIe (Jennifer Berringer)
+- riscv: dts: eic7700: add PCIe node (Jennifer Berringer)
+- riscv: dts: hifive-premier-p550: enable EMMC and SD card (Jennifer Berringer)
+- riscv: dts: eic7700: add EMMC and SD card node (Jennifer Berringer)
+- riscv: dts: eswin: remove hsp simple-pm-bus (Jennifer Berringer)
+- riscv: dts: eswin: eic7700: Use physical memory ranges for DMA (Samuel Holland)
+- riscv: mm: Check for NULL of_root in riscv_init_memory_alias (Jennifer Berringer)
+- riscv: mm: Use physical memory aliases to apply PMAs (Samuel Holland)
+- dt-bindings: riscv: Describe physical memory regions (Samuel Holland)
+- riscv: Fix logic for selecting DMA_DIRECT_REMAP (Samuel Holland)
+- riscv: alternative: Allow calls with alternate link registers (Samuel Holland)
+- riscv: alternative: Add an ALTERNATIVE_3 macro (Samuel Holland)
+- riscv: mm: Expose all page table bits to assembly code (Samuel Holland)
+- riscv: mm: Fix up memory types when writing page tables (Samuel Holland)
+- riscv: ptdump: Only show N and MT bits when enabled in the kernel (Samuel Holland)
+- riscv: mm: Deduplicate _PAGE_CHG_MASK definition (Samuel Holland)
+- riscv: mm: Simplify set_p4d() and set_pgd() (Samuel Holland)
+- riscv: mm: Always use page table accessor functions (Jennifer Berringer)
+- riscv: hibernate: Replace open-coded pXXp_get() (Samuel Holland)
+- mm: Allow page table accessors to be non-idempotent (Samuel Holland)
+- mm: Always use page table accessor functions (Jennifer Berringer)
+- mm: Move the fallback definitions of pXXp_get() (Samuel Holland)
+- redhat/configs: riscv: enable XLINUXMEMALIAS (Jennifer Berringer)
+- riscv: dts: eswin: add watchdog support (Pritesh Patel)
+- riscv: dts: eswin: add I2C controller support (Pritesh Patel)
+- riscv: dts: eswin: add hsp bus node (Pinkesh Vaghela)
+- riscv: dts: eswin: eic7700: add pinctrl support (Yulin Lu)
+- riscv: dts: eswin: add clock generator for EIC7700 SoC (Pritesh Patel)
+- riscv: dts: eswin: add reset generator for EIC7700 SoC (Pritesh Patel)
+- cache: sifive_ccache: Enable all ways on EIC7700 (Pinkesh Vaghela)
+- riscv: signal: protect regs->status RMW from concurrent preemption (Guobin Zhang)
+- riscv: Fix SR_SUM leakage across context switches (Yunhui Cui)
+- drm/atomic-state-helper: Add drm_atomic_helper_bridge_create_state() (Jennifer Berringer)
+- drm/bridge: Add new atomic_create_state callback (Jennifer Berringer)
+- drm/bridge: Switch private_obj initialization to atomic_create_state (Jennifer Berringer)
+- drm/atomic-helper: Add private_obj atomic_create_state helper (Jennifer Berringer)
+- drm/atomic: Add new atomic_create_state callback to drm_private_obj (Jennifer Berringer)
+- drm/atomic: Make drm_atomic_private_obj_init fallible (Jennifer Berringer)
+- serial: 8250_dw: Use a fixed CPR value for UltraRISC DP1000 UART (Jennifer Berringer) [RHEL-258937]
+- serial: 8250_dw: build Renesas RZN1 CPR value from DW_UART_CPR_* definitions (Jennifer Berringer)
+- serial: 8250_dwlib: move DesignWare register definitions to header (Jennifer Berringer) [RHEL-258937]
+- serial: 8250_dw: Add Sophgo SG2044 quirk (Jennifer Berringer) [RHEL-258937]
+- i2c: dw: Update the master_xfer callback name (Jennifer Berringer)
+- mm/dirty: replace READ_ONCE() with pudp_get() (Jennifer Berringer)
+- mm: replace READ_ONCE() with standard page table accessors (Jennifer Berringer)
+- mm/ptdump: replace READ_ONCE() with standard page table accessors (Jennifer Berringer)
+- firmware/sysfb: Avoid simple-framebuffer behind DT PCI host bridges (Jennifer Berringer) [RHEL-258937]
+- riscv: dts: ultrarisc: Add Milk-V Titan board device tree (Jennifer Berringer) [RHEL-258937]
+- riscv: dts: ultrarisc: Add Shenzhen Rongda M0 board device tree (Jennifer Berringer) [RHEL-258937]
+- riscv: dts: ultrarisc: Add initial device tree for UltraRISC DP1000 (Jennifer Berringer) [RHEL-258937]
+- PCI: dwc: Skip MEM outbound iATU setup for identity mappings (Jennifer Berringer) [RHEL-258937]
+- clk: ultrarisc: Register DP1000 clock provider earlier (Jennifer Berringer) [RHEL-258937]
+- driver: core: platform: add subsys_platform_driver() macro (Brian Masney)
+- driver: core: add subsys_driver() macro (Brian Masney)
+- nvmem: layouts: onie-tlv: fix device_node reference leak in error path (Jennifer Berringer) [RHEL-258937]
+- nvmem: layouts: onie-tlv: fix hang on unknown types (Jennifer Berringer) [RHEL-258937]
+- nvmem: layouts: fix nvmem_layout_bus_uevent (Jennifer Berringer) [RHEL-258937]
+- nvmem: layouts: fix automatic module loading (Jennifer Berringer) [RHEL-258937]
+- dmaengine: dw-axi-dmac: Use bitfield helpers for registers (Jennifer Berringer) [RHEL-258937]
+- dmaengine: dw-axi-dmac: Fix CH_CFG2 channel priority position (Jennifer Berringer) [RHEL-258937]
+- dmaengine: dw-axi-dmac: Fix LLI dump out-of-bounds access (Jennifer Berringer) [RHEL-258937]
+- dmaengine: dw-axi-dmac: Fix AXI burst length encoding (Jennifer Berringer) [RHEL-258937]
+- dmaengine: dw-axi-dmac: convert clock handling to clk_bulk API (Jennifer Berringer) [RHEL-258937]
+- PCI: eswin: Publish the platform driver OF alias (Jennifer Berringer) [RHEL-258937]
+- PCI: ultrarisc: Skip MEM outbound iATU setup on DP1000 (Jennifer Berringer) [RHEL-258937]
+- PCI: dwc: Allow drivers to skip MEM outbound iATU setup (Jennifer Berringer) [RHEL-258937]
+- pinctrl: generic: serialise pinctrl_generic_dt_node_to_map() (Jennifer Berringer) [RHEL-258937]
+- clk: ultrarisc: Add DP1000 clock driver (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: clock: ultrarisc: Add DP1000 Clock Controller (Jennifer Berringer) [RHEL-258937]
+- clk: composite: Export devm composite pdata helper (Jennifer Berringer) [RHEL-258937]
+- PCI: starfive: Fix unchecked pm_runtime_get_sync() in probe (Jennifer Berringer) [RHEL-258937]
+- PCI: starfive: Fix Runtime PM handling and teardown ordering (Jennifer Berringer) [RHEL-258937]
+- PCI: ultrarisc: Use module_platform_driver() (Jennifer Berringer) [RHEL-258937]
+- PCI: ultrarisc: Get and enable DP1000 PCIe controller clocks (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: PCI: ultrarisc: Add required DP1000 PCIe clocks (Jennifer Berringer) [RHEL-258937]
+- pinctrl: generic: free maps on pinctrl_generic_to_map() failure (Jennifer Berringer) [RHEL-258937]
+- pinctrl: ultrarisc: Add UltraRISC DP1000 pinctrl driver (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: pinctrl: Add UltraRISC DP1000 pinctrl controller (Jennifer Berringer) [RHEL-258937]
+- pinctrl: generic: change signature of pinctrl_generic_to_map() to pass void data (Jennifer Berringer) [RHEL-258937]
+- pinctrl: avoid duplicate function definitions (Jennifer Berringer) [RHEL-258937]
+- pinctrl: Add OF dependency for PINCTRL_GENERIC_MUX (Jennifer Berringer) [RHEL-258937]
+- pinctrl: extract pinctrl_generic_to_map() from pinctrl_generic_pins_function_dt_node_to_map() (Jennifer Berringer) [RHEL-258937]
+- pinctrl: Export pinctrl_get_group_selector() (Jennifer Berringer) [RHEL-258937]
+- PCI: ultrarisc: Add UltraRISC DP1000 PCIe Root Complex driver (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: PCI: Add UltraRISC DP1000 PCIe controller (Jennifer Berringer) [RHEL-258937]
+- riscv: add UltraRISC SoC family Kconfig support (Jennifer Berringer) [RHEL-258937]
+- gpio: dwapb: Mask interrupts at hardware initialization (Jennifer Berringer) [RHEL-258937]
+- gpio: dwapb: Defer clock gating until noirq (Jennifer Berringer) [RHEL-258937]
+- gpio: dwapb: reduce allocation to single kzalloc (Jennifer Berringer) [RHEL-258937]
+- efi: sysfb_efi: Reduce number of references to global screen_info (Jennifer Berringer) [RHEL-258937]
+- efi: sysfb_efi: Convert swap width and height quirk to a callback (Jennifer Berringer) [RHEL-258937]
+- efi: sysfb_efi: Fix lfb_linelength calculation when applying quirks (Jennifer Berringer) [RHEL-258937]
+- efi: sysfb_efi: Replace open coded swap with the macro (Jennifer Berringer) [RHEL-258937]
+- pinctrl: fix kismet issues with GENERIC_PINCTRL (Jennifer Berringer) [RHEL-258937]
+- pinctrl: add generic functions + pins mapper (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: interrupt-controller: Add UltraRISC DP1000 PLIC (Jennifer Berringer) [RHEL-258937]
+- dt-bindings: vendor-prefixes: Add UltraRISC (Jennifer Berringer) [RHEL-258937]
+- gpio: dwapb: Use modern PM macros (Jennifer Berringer) [RHEL-258937]
+- gpio: dwapb: use new generic GPIO chip API (Jennifer Berringer) [RHEL-258937]
+- gpio: generic: provide helpers for reading and writing registers (Jennifer Berringer) [RHEL-258937]
+- gpio: generic: provide to_gpio_generic_chip() (Jennifer Berringer) [RHEL-258937]
+- pinctrl: allow to mark pin functions as requestable GPIOs (Jennifer Berringer) [RHEL-258937]
+- pinctrl: make struct pinfunction a pointer in struct function_desc (Jennifer Berringer) [RHEL-258937]
+- pinctrl: imx: don't access the pin function radix tree directly (Jennifer Berringer) [RHEL-258937]
+- pinctrl: check the return value of pinmux_ops::get_function_name() (Jennifer Berringer) [RHEL-258937] {CVE-2025-40030}
+- pinmux: fix race causing mux_owner NULL with active mux_usecount (Jennifer Berringer) [RHEL-258937] {CVE-2025-38632}
+- pinctrl: provide pinmux_generic_add_pinfunction() (Jennifer Berringer) [RHEL-258937]
+- pinctrl: pinmux: open-code PINCTRL_FUNCTION_DESC() (Jennifer Berringer) [RHEL-258937]
+- pinmux: Use sequential access to access desc->pinmux data (Jennifer Berringer) [RHEL-258937] {CVE-2024-47141}
+- redhat/configs: riscv: Enable UltraRISC DP1000 (Jennifer Berringer) [RHEL-258937]
+- net: stmmac: Add UltraRISC DP1000 GMAC support (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: eic7700: Use common RGMII delay handling (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: sophgo: Use common RGMII delay handling (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: Add common internal RGMII delay handling (Jennifer Berringer) [RHEL-291521]
+- net: spacemit: k1_emac: Remove comma after sentinel-entry in match-table (Jennifer Berringer) [RHEL-291521]
+- net: spacemit: clear TX descriptor on fragment mapping failure (Jennifer Berringer) [RHEL-291521] {CVE-2026-98592}
+- net: stmmac: move probe/remove calling of init/exit (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: remove unnecessary .pkt_route queue initialisation (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: remove unnecessary .prio queue initialisation (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: remove unnecessary .use_prio queue initialisation (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: setup default RX channel map in stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of queues_to_use to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of unicast_filter_entries to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of multicast_filter_bins to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of maxmtu to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of clk_csr to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: move initialisation of phy_addr to stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: add stmmac_plat_dat_alloc() (Jennifer Berringer) [RHEL-291521]
+- net: stmmac: Add a devlink attribute to control timestamping mode (Jennifer Berringer) [RHEL-291521]
+- redhat/configs: riscv: Enable DWMAC_ULTRARISC (Jennifer Berringer) [RHEL-291521]
+- r8169: fix RTL8116af can not enter s0idle and c10 (Jennifer Berringer) [RHEL-291522]
+- r8169: add support for RTL8127atf (Jennifer Berringer) [RHEL-291522]
+- r8169: add support for RTL8116af (Jennifer Berringer) [RHEL-291522]
+- r8169: add support for phylink (Jennifer Berringer) [RHEL-291522]
+- net: phy: phylink: add helper to modify pause (Jennifer Berringer) [RHEL-291522]
+- r8169: add speed in private struct (Jennifer Berringer) [RHEL-291522]
+- net: phylink: initialise link_state before a forced major config (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: fix in-band capabilities for 2.5G PHYs (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: demystify PHYSR register location (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: get rid of magic number in rtlgen_read_status() (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: use paged access for MDIO_MMD_VEND2 in C22 mode (Jennifer Berringer) [RHEL-291522]
+- net: phy: move mmd_phy_read and mmd_phy_write to phylib.h (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: implement configuring in-band an (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: fix whitespace in struct phy_driver initializers (Jennifer Berringer) [RHEL-291522]
+- net: phylink: introduce helpers for replaying link callbacks (Jennifer Berringer) [RHEL-291522]
+- net: phylink: simplify phylink_resolve() -> phylink_major_config() path (Jennifer Berringer) [RHEL-291522]
+- r8169: add support for RTL8127ATF (Fiber SFP) (Jennifer Berringer) [RHEL-291522]
+- net: phy: realtek: add dummy PHY driver for RTL8127ATF (Jennifer Berringer) [RHEL-291522]
+
+* Wed Nov 11 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-284.el10]
+- net/smc: protect clcsock lifetime in smc_getname (CKI Backport Bot) [RHEL-303999] {CVE-2026-99032}
+- redhat/configs: automotive: fix up Toradex i.MX8MP configs (Jared Kangas) [RHEL-302823]
+- s390/cpum_cf: Check session mask before cpu offline (Ramesh Chhetri) [RHEL-302465]
+- s390/zcrypt: Validate length for CCA ECC private key requests (CKI Backport Bot) [RHEL-302553] {CVE-2026-68451}
+- s390/zcrypt: Validate length for CCA AES cipher key requests (CKI Backport Bot) [RHEL-302552] {CVE-2026-68452}
+- riscv: dts: spacemit: set ETH MAC from eeprom for OrangePi (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: Replace incorrect CLINT node with ACLINT nodes (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3-com260-ifx: Add rfkill nodes (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3-com260-ifx: Add USB nodes (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3-com260: keep dldo4 enabled (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: add rfkill node for WLAN on the K3 Pico-ITX board (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: add rfkill node for Bluetooth on Pico-ITX board (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: add USB3 B and C controllers for Pico-ITX board (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: move USB3 phy to board level (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: set console baud rate on OrangePi RV2 (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: orangepi-r2s: Add cpu scaling for K1 SoC (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: orangepi-rv2: Add cpu scaling for K1 SoC (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k1-musepi-pro: add cpu scaling (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: add i2s0-i2s5 nodes (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: Add CTF2301 on K3 CoM260 (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: Add K3 I2C6 pinctrl state (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: enable onboard eeprom for OrangePi (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: sort nodes on OrangePi RV2 (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: fix IMSIC num-guest-ids (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: spacemit: k3: Drop guest properties from M-level IMSIC (Jennifer Berringer) [RHEL-278456]
+- irqchip/aclint-sswi: Add support for SpacemiT K3 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: thead,c900-aclint-sswi: Add SpacemiT K3 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: thead,c900-aclint-mswi: Add SpacemiT K3 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: timer: thead,c900-aclint-mtimer: Add SpacemiT K3 (Jennifer Berringer) [RHEL-278456]
+- hwmon: (lm63) Add Sensylink CTF2301 support (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: hwmon: Add Sensylink CTF2301 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: hwmon: Move LM63 family to a dedicated binding (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: vendor-prefixes: Add Sensylink (Jennifer Berringer) [RHEL-278456]
+- clk: spacemit: k3: add CPU PLL rate tables (Jennifer Berringer) [RHEL-278456]
+- spi: fsl-qspi: Reprogram the clock rate when the operation frequency changes (Jennifer Berringer) [RHEL-278456]
+- dmaengine: mmp_pdma: fix wrong sg length in mmp_pdma_prep_slave_sg() (Jennifer Berringer) [RHEL-278456] {CVE-2026-98298}
+- dmaengine: mmp_pdma: fix wrong extended DRCMR base for SpacemiT K3 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: hwmon: Add MPS mpq82d00 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: trivial-devices: Add Murata D1U74T PSU (Jennifer Berringer) [RHEL-278456]
+- hwmon: (lm63) Mask PWM frequency multiplier to supported bits (Jennifer Berringer) [RHEL-278456]
+- hwmon: (lm63) Add locking to avoid TOCTOU (Jennifer Berringer) [RHEL-278456]
+- irqchip/aslint-sswi: Fix error check of of_io_request_and_map() result (Jennifer Berringer) [RHEL-278456]
+- irqchip/aslint-sswi: Request IO memory resource (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: Add Anlogic DR1V90 ACLINT MSWI (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: timer: Add Anlogic DR1V90 ACLINT MTIMER (Jennifer Berringer) [RHEL-278456]
+- irqchip/aclint-sswi: Add Nuclei UX900 support (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: Add Anlogic DR1V90 ACLINT SSWI (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: trivial-devices: add mps,mp9945 (Jennifer Berringer) [RHEL-278456]
+- irqchip/aslint-sswi: Resolve hart index (Jennifer Berringer) [RHEL-278456]
+- irqchip/aclint-sswi: Reduce data scope (Jennifer Berringer) [RHEL-278456]
+- irqchip/aclint-sswi: Remove unneeded includes (Jennifer Berringer) [RHEL-278456]
+- irqchip/thead-c900-aclint-sswi: Generalize aclint-sswi driver and add MIPS P800 support (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: Add MIPS P8700 aclint-sswi (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: trivial-devices: Add undocumented hwmon devices (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: trivial-devices: Add Analog Devices ADT7411 (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: hwmon: Add bindings for mpq8785 driver (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: Add Sophgo SG2044 CLINT mswi (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: timer: Add Sophgo SG2044 ACLINT timer (Jennifer Berringer) [RHEL-278456]
+- irqchip/riscv: Ensure ordering of memory writes and IPI writes (Jennifer Berringer) [RHEL-278456]
+- irqchip: Add T-HEAD C900 ACLINT SSWI driver (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: interrupt-controller: Add T-HEAD C900 ACLINT SSWI device (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: hwmon: add support for ti,amc6821 (Jennifer Berringer) [RHEL-278456]
+- clk: starfive: jh7110-isp: fix refcount leak in jh7110_ispcrg_probe() (Jennifer Berringer) [RHEL-278456]
+- clk: starfive: jh7110-vout: Allow pixel clock rate propagation (Jennifer Berringer) [RHEL-278456]
+- clk: starfive: jh7110: reject oscillator lookup errors (Jennifer Berringer) [RHEL-278456]
+- phy: starfive: jh7110-dphy: fail init when the PLL does not lock (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: starfive: Correct pwm nodes (Jennifer Berringer) [RHEL-278456]
+- phy: starfive: Fix runtime PM cleanup in JH7110 DPHY RX probe (Jennifer Berringer) [RHEL-278456]
+- phy: starfive: Fix runtime PM cleanup in JH7110 DPHY TX probe (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: jh7110: Avoid ifdeffery (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: jh7110: Use __counted_by() flexarray (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: jh7110: use struct_size (Jennifer Berringer) [RHEL-278456]
+- riscv: dts: starfive: jh7110: Drop CAMSS node (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: jh7110-sys: Cleanup header includes (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: use dynamic GPIO base allocation (Jennifer Berringer) [RHEL-278456]
+- dt-bindings: memory-controllers: add StarFive JH7110 SoC DMC (Jennifer Berringer) [RHEL-278456]
+- pinctrl: starfive: jh7100: use new GPIO line value setter callbacks (Jennifer Berringer) [RHEL-278456]
+- clk: starfive: Make _clk_get become a common helper function (Jennifer Berringer) [RHEL-278456]
+- clk: starfive: jh7110-pll: Mark the probe function as __init (Jennifer Berringer) [RHEL-278456]
+- redhat/configs: riscv: Enable CONFIG_ACLINT_SSWI (Jennifer Berringer) [RHEL-278456]
+- net/smc: fix use-after-free of the LLC qentry in smc_llc_srv_add_link() (Jan Polensky) [RHEL-294747] {CVE-2026-80981}
+- s390/vfio-ap: Fix missing lock required to access list of ap_matrix_mdev objects (Ramesh Chhetri) [RHEL-293889] {CVE-2026-89956}
+- slip: remove slip_hangup() to fix use-after-free in slip_receive_buf() (Michal Schmidt) [RHEL-282019] {CVE-2026-90057}
+- slip: fix use-after-free in sl_sync() (Michal Schmidt) [RHEL-282019] {CVE-2026-81001}
+- net: slip: serialize receive against buffer reallocation (Michal Schmidt) [RHEL-290910] {CVE-2026-68143}
+- slip: bound decode() reads against the compressed packet length (Michal Schmidt) [RHEL-282019] {CVE-2026-45843}
+- slip: reject VJ receive packets on instances with no rstate array (Michal Schmidt) [RHEL-282019] {CVE-2026-45842}
+- net: smc: fix splice entry lifetime imbalance in smc_rx_splice (CKI Backport Bot) [RHEL-293308] {CVE-2026-74631}
+- s390/boot: Avoid IPL parameter append past command line (CKI Backport Bot) [RHEL-292353] {CVE-2026-98403}
+- s390/boot: Add sized_strscpy() to enable strscpy() usage (CKI Backport Bot) [RHEL-292353]
+- ipv4: Convert ->flowi4_tos to dscp_t. (Mohammad Heib) [RHEL-179880]
+- gtp: Prepare ip4_route_output_gtp() to .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare inet_rtm_getroute() to .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- gre: Prepare ipgre_open() to .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- gre: Drop ip_route_output_gre(). (Mohammad Heib) [RHEL-179880]
+- l2tp: Use inet_sk_init_flowi4() in l2tp_ip_sendmsg(). (Mohammad Heib) [RHEL-179880]
+- ipv4: Use inet_sk_init_flowi4() in __ip_queue_xmit(). (Mohammad Heib) [RHEL-179880]
+- ipv4: Use inet_sk_init_flowi4() in inet_csk_rebuild_route(). (Mohammad Heib) [RHEL-179880]
+- ipv4: Use inet_sk_init_flowi4() in ip4_datagram_release_cb(). (Mohammad Heib) [RHEL-179880]
+- ipv4: Define inet_sk_init_flowi4() and use it in inet_sk_rebuild_header(). (Mohammad Heib) [RHEL-179880]
+- xfrm: Convert struct xfrm_dst_lookup_params -> tos to dscp_t. (Mohammad Heib) [RHEL-179880]
+- xfrm: Convert xfrm_dst_lookup() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- xfrm: Convert xfrm_bundle_create() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- xfrm: Convert xfrm_get_tos() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- netfilter: nf_dup4: Convert nf_dup_ipv4_route() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- netfilter: nft_fib: Convert nft_fib4_eval() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- netfilter: rpfilter: Convert rpfilter_mt() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- netfilter: flow_offload: Convert nft_flow_route() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- netfilter: ipv4: Convert ip_route_me_harder() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- bpf: lwtunnel: Prepare bpf_lwt_xmit_reroute() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- bpf: ipv4: Prepare __bpf_redirect_neigh_v4() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare ip_route_output() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- vrf: Prepare vrf_process_v4_outbound() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipvlan: Prepare ipvlan_process_v4_outbound() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare ip_rt_get_source() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare ipmr_rt_fib_lookup() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare icmp_reply() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Prepare fib_compute_spec_dst() to future .flowi4_tos conversion. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert __fib_validate_source() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert fib_validate_source() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_mc_validate_source() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_input_mc() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert __mkroute_input() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_mkroute_input() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_use_hint() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_input_slow() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_input_rcu() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_input_noref() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert ip_route_input() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- ipv4: Convert icmp_route_lookup() to dscp_t. (Mohammad Heib) [RHEL-179880]
+- pinctrl: amd: Clear S4 wake bits when firmware has _AEI (Krzysztof Pawlinski) [RHEL-222514]
+- pinctrl: amd: Support new ACPI ID AMDI0033 (Krzysztof Pawlinski) [RHEL-222514]
+- pinctrl: amd: Cleanup header includes (Krzysztof Pawlinski) [RHEL-222514]
+- pinctrl: amd: Don't access irq_data's hwirq member directly (Krzysztof Pawlinski) [RHEL-222514]
+- pinctrl: amd: Add PM debugging message for turning on/off wakes (Krzysztof Pawlinski) [RHEL-222514]
+- pinctrl: amd: use new GPIO line value setter callbacks (Krzysztof Pawlinski) [RHEL-222514]
+- iommu/arm-smmu-v3: Disable the impl before disabling the SMMU on shutdown (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Drop old iopf ref only after attach succeeds (Jakub Brnak) [RHEL-214193]
+- iommufd/selftest: Return dmabuf fd from IOMMU_TEST_OP_DMABUF_GET again (Jakub Brnak) [RHEL-214193]
+- iommupt/kunit: Use if_changed_rule for the kunit (Jakub Brnak) [RHEL-214193]
+- redhat/configs: set CONFIG_SWIOTLB_DEFAULT_SIZE_MB to 64 (Jakub Brnak) [RHEL-214193]
+- swiotlb: fix default_swiotlb_limit() for non-growable default pool (Jakub Brnak) [RHEL-214193]
+- iommu/dma: skip swiotlb bounce for DMA_ATTR_MMIO in iommu_dma_map_phys (Jakub Brnak) [RHEL-214193]
+- dma-mapping: don't trace the DMA address when the allocation fails (Jakub Brnak) [RHEL-214193]
+- swiotlb: use the adjusted address for the highmem page lookup (Jakub Brnak) [RHEL-214193] {CVE-2026-98254}
+- dma-coherent: report a failed reserved memory assignment (Jakub Brnak) [RHEL-214193]
+- powerpc/iommu: Fix the overflow validation in iommu_tce_check_ioba (Jakub Brnak) [RHEL-214193] {CVE-2026-98282}
+- iommu/amd: Remove unused macro (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Remove redundant checks from interrupt handler path (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Make iommu_sva_set_dev_pasid as static (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix ineffective error check in nested domain allocation (Jakub Brnak) [RHEL-214193] {CVE-2026-98002}
+- iommu/amd: Fix premature break in init_iommu_one() again (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Do not reallocate GA log buffers on resume (Jakub Brnak) [RHEL-214193] {CVE-2026-98003}
+- iommu/s390: Fix NULL dereference in iova_to_phys() with ZPCI_TABLE_TYPE_RFX (Jakub Brnak) [RHEL-214193] {CVE-2026-97593}
+- iommu/riscv: Avoid waiting on failed command enqueue (Jakub Brnak) [RHEL-214193]
+- iommu/riscv: Serialize command queue publishing (Jakub Brnak) [RHEL-214193] {CVE-2026-98004}
+- iommu/riscv: Add command queue lock (Jakub Brnak) [RHEL-214193]
+- dma-contiguous: fix truncation of numa_cma / cma_pernuma sizes >= 2G (Jakub Brnak) [RHEL-214193]
+- dma/swiotlb: decouple high watermark tracking from CONFIG_DEBUG_FS (Jakub Brnak) [RHEL-214193]
+- dma/swiotlb: introduce Kconfig option for compile-time default pool size (Jakub Brnak) [RHEL-214193]
+- dma-direct: Improve readability of the dma_direct_map_sg() for P2PDMA case (Jakub Brnak) [RHEL-214193]
+- iommu/dma: simplify dma_iova_destroy() and drop the free_iova helper (Jakub Brnak) [RHEL-214193]
+- dma-coherent: use KiB in DMA allocation logs (Jakub Brnak) [RHEL-214193]
+- dma-coherent: fix spacing coding style issue (Jakub Brnak) [RHEL-214193]
+- rust: iommu: add device lifetime to IoPageTable (Jakub Brnak) [RHEL-214193]
+- iommufd: Fix UAF in selftest IOPF reporting (Jakub Brnak) [RHEL-214193] {CVE-2026-89445}
+- iommu/iommufd: Fix NULL pointer deref in iommufd_ioas_change_process when racing with iopt_map_file_pages (Jakub Brnak) [RHEL-214193] {CVE-2026-80817}
+- iommufd: Add an ioctl to query PA from IOVA for noiommu mode (Jakub Brnak) [RHEL-214193]
+- iommufd: Allow binding to a noiommu device (Jakub Brnak) [RHEL-214193]
+- iommufd: Move igroup allocation to a function (Jakub Brnak) [RHEL-214193]
+- iommufd: Support a HWPT without an iommu driver for noiommu (Jakub Brnak) [RHEL-214193]
+- iommufd: Simplify iommufd_device_remove_vdev() (Jakub Brnak) [RHEL-214193]
+- iommufd: Fix grammar and spelling in comments (Jakub Brnak) [RHEL-214193]
+- iommu: Fix dev_iommu memory leak when device_add fails in iommu_mock_device_add (Jakub Brnak) [RHEL-214193] {CVE-2026-89449}
+- iommufd/selftest: Fix dmabuf leak in iommufd_test_dmabuf_get() (Jakub Brnak) [RHEL-214193]
+- iommufd/selftest: Avoid selftest dirty bitmap size wrap (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Add SNP page mode 0 support (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix GN bit setting in COMPLETE_PPR_REQUEST command (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Rate limit INVALID_PPR_REQUEST error logging (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix missing CMD_COMPLETE_PPR response for invalid PPR requests (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Introduce PPR_TAG_LAST_PAGE() macro (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix incorrect device ID in invalid PASID error message (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Flush context cache with correct SID when tearing down aliases (Jakub Brnak) [RHEL-214193] {CVE-2026-90240}
+- iommu/vt-d: Tear down scalable-mode context on probe failure (Jakub Brnak) [RHEL-214193] {CVE-2026-90241}
+- iommu/vt-d: Fix iopf_refcount leak on RID domain replacement (Jakub Brnak) [RHEL-214193] {CVE-2026-90242}
+- iommu/vt-d: Clear Present bit before tearing down copied context entry (Jakub Brnak) [RHEL-214193] {CVE-2026-90243}
+- iommu/vt-d: Fix copied_tables bitmap leak on error in copy_translation_tables (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Cache max domain ID to avoid redundant calculation (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Support the new DMA_REMAP_OPT_OUT flag bit (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Remove dmar_disabled (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Remove the 'force_on' variable (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Call dmar_can_force_on() for tboot opt-in (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Use dmar_can_force_on() for platform opt-in (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Consolidate dmar policy management and force_on logic (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Remove dead code when CONFIG_INTEL_IOMMU is not set (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Force requesting ACS when tboot is enabled (Jakub Brnak) [RHEL-214193] {CVE-2026-89448}
+- iommu/vt-d: Fix no_iommu to disable platform opt-in (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Use kstrtoint_from_user() in dmar_perf_latency_write() (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Fix CACHE_TAG_NESTING_DEVTLB polluting shared variables in flush loop (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Use logical OR operator for privilege mode check (Jakub Brnak) [RHEL-214193]
+- iommu/dma: Restore locking around msi_page_list (Jakub Brnak) [RHEL-214193] {CVE-2026-90244}
+- iommupt: Return zero for invalid iova_to_phys() ranges (Jakub Brnak) [RHEL-214193]
+- iommufd: Release current IOAS on xa_store() failure (Jakub Brnak) [RHEL-214193] {CVE-2026-89446}
+- iommufd: Avoid locking internal accesses during unmap (Jakub Brnak) [RHEL-214193] {CVE-2026-89447}
+- iommu/sva: Set handle->dev before the SVA handle is visible (Jakub Brnak) [RHEL-214193] {CVE-2026-89451}
+- iommu/arm-smmu-v3: Replace sort_nonatomic() with sort() (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Support IDR5.DS and widen the TLBI SCALE field (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Convert to use atomic poll timeout (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Add HAFT support for SVA (Jakub Brnak) [RHEL-214193]
+- iommu/iova: Move CPU magazine init to first insert (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Put PCI device after handling PPR faults (Jakub Brnak) [RHEL-214193] {CVE-2026-89453}
+- iommu/tegra241-cmdqv: Rate-limit the error ISR's log message (Jakub Brnak) [RHEL-214193]
+- iommu/tegra241-cmdqv: Fix VINTF0 leak on the init-failure path (Jakub Brnak) [RHEL-214193] {CVE-2026-90424}
+- iommu/tegra241-cmdqv: Require exactly one Stream ID for a vSID (Jakub Brnak) [RHEL-214193] {CVE-2026-90425}
+- iommu/tegra241-cmdqv: Reject a vSID wider than the SID_MATCH field (Jakub Brnak) [RHEL-214193] {CVE-2026-89450}
+- iommu/tegra241-cmdqv: Free the error IRQ before tearing down VINTFs (Jakub Brnak) [RHEL-214193] {CVE-2026-90426}
+- iommu/tegra241-cmdqv: Don't fall back to a freed smmu after devm_krealloc() (Jakub Brnak) [RHEL-214193] {CVE-2026-90427}
+- iommu/tegra241-cmdqv: Don't run the error ISR before probe sets up vintfs (Jakub Brnak) [RHEL-214193] {CVE-2026-90428}
+- iommu/tegra241-cmdqv: Harden error-map index handling in the error ISR (Jakub Brnak) [RHEL-214193]
+- iommu/tegra241-cmdqv: Synchronize the error ISR against VINTF (de)init (Jakub Brnak) [RHEL-214193] {CVE-2026-90429}
+- iommu/tegra241-cmdqv: Publish an LVCMDQ only after it is fully initialized (Jakub Brnak) [RHEL-214193] {CVE-2026-90430}
+- iommu/arm-smmu-v3: Enable CFGI/TLBI-repeat workaround on Tegra264 (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3-iommufd: Report CFGI/TLBI-repeat erratum (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Add CFGI/TLBI-repeat workaround (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Factor out CMDQ batch force-sync conditions (Jakub Brnak) [RHEL-214193]
+- iommu/tegra241-cmdqv: Fix CMD_SYNC use-after-free on teardown (Jakub Brnak) [RHEL-214193] {CVE-2026-80818}
+- iommu/arm-smmu-v3: Manage teardown with devm (Jakub Brnak) [RHEL-214193] {CVE-2026-93205}
+- iommu/arm-smmu-v3: Declare eats_s1chk and eats_trans as host-endian u64 (Jakub Brnak) [RHEL-214193]
+- iommu: arm: Remove redundant dev_err()/dev_err_probe() (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix undefined behavior in devid_write debugfs function (Jakub Brnak) [RHEL-214193] {CVE-2026-92505}
+- iommu/amd: Fix grammar and typos in comments (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Fix grammar in comment (Jakub Brnak) [RHEL-214193]
+- iova: Fix spelling of "reserved" in comment (Jakub Brnak) [RHEL-214193]
+- iommu: Fix possessive "its" in group remove kdoc (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Fix spelling of "guarantees" in comment (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-qcom: Add SM8450 MDSS compatible (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Dynamically verify Southbridge IOAPIC via PCI config space (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Fix false positive in SB IOAPIC IVRS validation (Jakub Brnak) [RHEL-214193]
+- iommu/amd: Prevent SB IOAPIC from overriding IVRS validation errors (Jakub Brnak) [RHEL-214193]
+- rust: iommu: replace core::mem::zeroed with Zeroable::zeroed (Jakub Brnak) [RHEL-214193]
+- iommu/mediatek-v1: Fix off-by-one in MT2701_LARB_NR_MAX (Jakub Brnak) [RHEL-214193]
+- iommu/vt-d: Fail probe on ATS configuration failure (Jakub Brnak) [RHEL-214193]
+- iommu/arm-smmu-v3: Standardize ATS enablement failure reporting (Jakub Brnak) [RHEL-214193]
+- PCI/ATS: Validate STU for VFs in pci_prepare_ats() (Jakub Brnak) [RHEL-214193]
+- PCI/ATS: Ensure pci_ats_supported() is PF-aware for VFs (Jakub Brnak) [RHEL-214193]
+- iommu/riscv: Drop superfluous zeros in pci_device_id array (Jakub Brnak) [RHEL-214193]
+- powerpc/pseries/iommu: switch to Default DMA window during kdump (Jakub Brnak) [RHEL-214193]
+- arm64: mm: Treat all devices as dma-coherent when CLIDR_EL1.LoC == 0 (Jakub Brnak) [RHEL-214193]
+- xfrm: call xfrm_dev_state_delete when xfrm_state_migrate fails to add the state (Kamal Heib) [RHEL-138519]
+- xfrm: make state as DEAD before final put when migrate fails (Kamal Heib) [RHEL-138519]
+- xfrm: Refactor migration setup during the cloning process (Kamal Heib) [RHEL-138519]
+- xfrm: Remove unnecessary strscpy_pad() size arguments (Kamal Heib) [RHEL-138519]
+- xfrm: replace deprecated strncpy with strscpy_pad (Kamal Heib) [RHEL-138519]
+- xfrm: prevent configuration of interface index when offload is used (Kamal Heib) [RHEL-138519]
+- xfrm: validate assignment of maximal possible SEQ number (Kamal Heib) [RHEL-138519]
+- xfrm: Migrate offload configuration (Kamal Heib) [RHEL-138519]
+- esp: fix skb leak with espintcp and async crypto (Kamal Heib) [RHEL-138519]
+- net: plumb drop reasons to __dev_queue_xmit() (Kamal Heib) [RHEL-138519]
+- net: Provide a PREEMPT_RT specific check for netdev_queue::_xmit_lock (Kamal Heib) [RHEL-138519]
+- net: dropreason: add SKB_DROP_REASON_RECURSION_LIMIT (Kamal Heib) [RHEL-138519]
+- net: prevent NULL deref in ip[6]tunnel_xmit() (Kamal Heib) [RHEL-138519]
+- net: increase IP_TUNNEL_RECURSION_LIMIT to 5 (Kamal Heib) [RHEL-138519]
+- net: add xmit recursion limit to tunnel xmit functions (Kamal Heib) [RHEL-138519]
+- bonding: crypto offload enabled, non-offload slave failover, rekey failed (Kamal Heib) [RHEL-138519]
+- net: always dissect GSO packets in __virtio_net_hdr_to_skb() (Davide Caratti) [RHEL-280570]
+- ipv4: validate checksum_start before completing checksum (CKI Backport Bot) [RHEL-280570] {CVE-2026-99999}
+- scsi: ufs: core: Serialize AHIT register access between sysfs and host driver (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Always notify POST_CHANGE even on gear switch failure (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Hold a clock reference across the probe (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Prevent calling phy_exit() before phy_init() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Call ufs_qcom_cfg_timers() in clock scaling path (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Map devfreq OPP freq to UniPro Core Clock freq (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Check gear against max gear in vop freq_to_gear() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Remove dead code in ufs_qcom_cfg_timers() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix RPMB link error by reversing Kconfig dependencies (Jennifer Berringer) [RHEL-274016]
+- redhat/configs: riscv: Enable SCSI_UFSHCD and dependencies (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Keep internal commands dispatchable during error handling (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Set task state before io_schedule_timeout() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: debugfs: Reserve space for a string terminator (Jennifer Berringer) [RHEL-274016] {CVE-2026-92477}
+- scsi: ufs: rpmb: Use unaligned accessors for RPMB frames (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: rpmb: Validate request frame length before parsing (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Validate connected lane counts (Jennifer Berringer) [RHEL-274016] {CVE-2026-92478}
+- scsi: ufs: Avoid NULL CQE dereference when reporting invalid tags (Jennifer Berringer) [RHEL-274016] {CVE-2026-92479}
+- scsi: ufs: core: Validate string descriptors (Jennifer Berringer) [RHEL-274016] {CVE-2026-92480}
+- scsi: ufs: core: Avoid possible memory reclaim deadlock in TX EQTR context (Jennifer Berringer) [RHEL-274016] {CVE-2026-93057}
+- scsi: ufs: core: Initialize hba->rpmbs list in ufshcd (Jennifer Berringer) [RHEL-274016] {CVE-2026-80690}
+- scsi: ufs: core: Revert "Delegate the interrupt service routine to a threaded IRQ handler" (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Cancel RTC work in active-active suspend (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: tracing: Do not dereference pointers in TP_printk() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Handle PM commands timeout before SCSI EH (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: Fix wrong value printed in unexpected UPIU response case (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add support to retrain TX Equalization via debugfs (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add helpers to pause and resume command processing (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add debugfs entries for TX Equalization params (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add support for TX Equalization (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add UFS_HS_G6 and UFS_HS_GEAR_MAX to enum ufs_hs_gear_tag (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Pass force_pmc to ufshcd_config_pwr_mode() as a parameter (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce a new ufshcd vops negotiate_pwr_mode() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Avoid IRQ thread wakeup during active UIC command (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix SError in ufshcd_rtc_work() during UFS suspend (Jennifer Berringer) [RHEL-274016] {CVE-2026-43415}
+- scsi: ufs: core: Move link recovery for hibern8 exit failure to wl_resume (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix RPMB region size detection for UFS 2.2 (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Flush exception handling work when RPM level is zero (Jennifer Berringer) [RHEL-274016] {CVE-2026-43275}
+- scsi: ufs: core: Configure MCQ after link startup (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add ufshcd_update_evt_hist() for UFS suspend error (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix a deadlock in the frequency scaling code (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix an error handler crash (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix EH failure after W-LUN resume error (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Use scsi_device_busy() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix single doorbell mode support (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove an unnecessary NULL pointer check (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Switch to scsi_get_internal_cmd() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move code out of ufshcd_wait_for_dev_cmd() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Make blk_mq_tagset_busy_iter() skip reserved requests (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove the ufshcd_lrb task_tag member (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Pass a SCSI pointer instead of an LRB pointer (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Optimize the hot path (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Do not clear driver-private command data (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Make the reserved slot a reserved request (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Use hba->reserved_slot (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Call ufshcd_init_lrb() later (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Allocate the SCSI host earlier (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Rework the SCSI host queue depth calculation code (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Rework ufshcd_eh_device_reset_handler() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Rework ufshcd_mcq_compl_pending_transfer() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change the monitor function argument types (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Only call ufshcd_should_inform_monitor() for SCSI commands (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change the type of one ufshcd_send_command() argument (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change the type of one ufshcd_add_command_trace() argument (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Only call ufshcd_add_command_trace() for SCSI commands (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change the type of one ufshcd_add_cmd_upiu_trace() argument (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move an assignment in ufshcd_mcq_process_cqe() (Jennifer Berringer) [RHEL-274016]
+- scsi: scsi_debug: Abort SCSI commands via an internal command (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Add scsi_{get,put}_internal_cmd() helpers (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Introduce .queue_reserved_command() (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Support allocating a pseudo SCSI device (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Make the budget map optional (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Move two statements (Jennifer Berringer) [RHEL-274016]
+- scsi: core: Support allocating reserved commands (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add OP-TEE based RPMB driver for UFS devices (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: fix incorrect buffer duplication in ufshcd_read_string_desc() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Convert string descriptor format macros to enum (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Simplify ufshcd_mcq_sq_cleanup() using guard() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove a goto label from ufshcd_uic_cmd_compl() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the ufshcd_enable_intr() declaration (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove UFS_DEV_COMP (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change the type of uic_command::cmd_active (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Improve documentation in include/ufs/ufshci.h (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Fix shutdown/suspend race condition (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Adjust sync length for FASTAUTO mode (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Handle clock scaling for high gear in PM flow (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Adjust clock scaling for PM flow (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Correct clock scaling with PM QoS flow (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Replace hard coded vcc-off delay with a variable (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove UFS_DEVICE_QUIRK_DELAY_AFTER_LPM quirk (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Support dumping CQ entry in MCQ Mode (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Update CQ Entry to UFS 4.1 format (Jennifer Berringer) [RHEL-274016]
+- rpmb: move rpmb_frame struct and constants to common header (Jennifer Berringer) [RHEL-274016]
+- mmc: core: Improve RPMB frame handling code (Jennifer Berringer) [RHEL-274016]
+- mmc: core: Fix variable shadowing in mmc_route_rpmb_frames() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Add support to dump testbus registers (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Add support to dump MCQ registers (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Add support to dump HW and SW hibern8 count (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix invalid probe error return value (Jennifer Berringer) [RHEL-274016] {CVE-2025-68316}
+- scsi: ufs: core: Add a quirk to suppress link_startup_again (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Revert "Make HID attributes visible" (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Reduce link startup failure logging (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix a race condition related to the "hid" attribute group (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Declare tx_lanes witout initialization (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Initialize value of an attribute returned by uic cmd (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix error handler host_sem issue (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Include UTP error in INT_FATAL_ERRORS (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: sysfs: Make HID attributes visible (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix PM QoS mutex initialization (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix runtime suspend error deadlock (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Add support for limiting HS gear and rate (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: pltfrm: Add DT support to limit HS gear and gear rate (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Remove redundant re-assignment to hs_rate (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: dt-bindings: Document gear and rate limit properties (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix data race in CPU latency PM QoS request handling (Jennifer Berringer) [RHEL-274016] {CVE-2025-40130}
+- scsi: ufs: core: Change MCQ interrupt enable flow (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Disable timestamp functionality if not supported (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Disable auto-hibern8 during power mode changes (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Enhance recovery on hibernation exit failure (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the tracing enumeration types into a new file (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Reduce the size of struct ufshcd_lrb (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Only collect timestamps if monitoring is enabled (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Improve IOPS (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: host: mediatek: Fix PWM mode switch issue (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: mcq: Fix memory allocation checks for SQE and CQE (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Rename ufshcd_wait_for_doorbell_clr() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix the return value documentation (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove WARN_ON_ONCE() call from ufshcd_uic_cmd_compl() (Jennifer Berringer) [RHEL-274016] {CVE-2025-39803}
+- scsi: ufs: core: Fix IRQ lock inversion for the SCSI host lock (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove error print for devm_add_action_or_reset() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix interrupt handling for MCQ Mode (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-pci: Remove control of UIC Completion interrupt for Intel MTL (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Do not write interrupt enable register unnecessarily (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Set and clear UIC Completion interrupt as needed (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove duplicated code in ufshcd_send_bsg_uic_cmd() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move ufshcd_enable_intr() and ufshcd_disable_intr() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-pci: Remove UFS PCI driver's ->late_init() call back (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-pci: Fix default runtime and system PM levels (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-pci: Fix hibernate state transition for Intel MTL-like host controllers (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: Replace deprecated PCI functions (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Use str_true_false() helper in UFS_FLAG() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Use link recovery when h8 exit fails during runtime resume (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add ufshcd_dme_rmw() to modify DME attributes (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Improve return value documentation (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: Clear ucd_rsp_ptr for UPIU requests once (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add HID support (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix spelling of a sysfs attribute name (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix clk scaling to be conditional in reset and restore (Jennifer Berringer) [RHEL-274016]
+- scsi: core: ufs: Fix a hang in the error handler (Jennifer Berringer) [RHEL-274016] {CVE-2025-38119}
+- scsi: ufs: core: Don't perform UFS clkscaling during host async scan (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: mcq: Delete ufshcd_release_scsi_cmd() in ufshcd_mcq_abort() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Support updating device command timeout (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Change hwq_id type and value (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Increase the UIC command timeout further (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Print error value as hex format in ufshcd_err_handler() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix WB resize using wrong offset (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add WB buffer resize support (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Delegate the interrupt service routine to a threaded IRQ handler (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Track when MCQ ESI is enabled (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Drop last_intr_status/ts stats (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove redundant query_complete trace (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add NULL check in ufshcd_mcq_compl_pending_transfer() (Jennifer Berringer) [RHEL-274016] {CVE-2025-37826}
+- scsi: ufs: Introduce quirk to extend PA_HIBERN8TIME for UFS devices (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Add quirks for Samsung UFS devices (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: mcq: Add NULL check in ufshcd_mcq_abort() (Jennifer Berringer) [RHEL-274016] {CVE-2025-37828}
+- scsi: ufs: core: Add device level exception support (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Rename ufshcd_wb_presrv_usrspc_keep_vcc_on() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix a race condition related to device commands (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Export ufshcd_dme_reset() and ufshcd_dme_enable() (Jennifer Berringer) [RHEL-274016]
+- scsi: ABI: sysfs-driver-ufs: Add missing UFS sysfs attributes (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Toggle Write Booster during clock scaling base on gear speed (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Check if scaling up is required when disable clkscale (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Enable multi-level gear scaling (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Implement the freq_to_gear_speed() vop (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add a vop to map clock frequency to gear speed (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Pass target_freq to clk scale pre and post change (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Pass target_freq to clk_scale_notify() vop (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add hba parameter to trace events (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: Constify the third pwr_change_notify() argument (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Critical health condition (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Enable UFS Shared ICE Feature (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: bsg: Fix crash when arpmb command fails (Jennifer Berringer) [RHEL-274016] {CVE-2025-21873}
+- scsi: ufs: core: Set default runtime/system PM levels before ufshcd_hba_init() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix ufshcd_is_ufs_dev_busy() and ufshcd_eh_timed_out() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix error return with query response (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix use-after free in init error and remove paths (Jennifer Berringer) [RHEL-258457] {CVE-2025-21739}
+- scsi: ufs: Fix toggling of clk_gating.state when clock gating is not allowed (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Ensure clk_gating.lock is used only after initialization (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Simplify temperature exception event handling (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Fix the HIGH/LOW_TEMP Bit Definitions (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: bsg: Set bsg_queue to NULL after removal (Jennifer Berringer) [RHEL-274016] {CVE-2024-54458}
+- scsi: ufs: bsg: Delete bsg_dev when setting up bsg fails (Jennifer Berringer) [RHEL-274016]
+- scsi: Revert "scsi: ufs: core: Probe for EXT_IID support" (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Do not hold any lock in ufshcd_hba_stop() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce a new clock_scaling lock (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce a new clock_gating lock (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Prepare to introduce a new clock_gating lock (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce ufshcd_has_pending_tasks() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Power down the controller/device during system suspend for SM8550/SM8650 SoCs (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Allow passing platform specific OF data (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Honor runtime/system PM levels if set by host controller drivers (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Power off the PHY if it was already powered on in ufs_qcom_power_up_sequence() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Update compl_time_stamp_local_clock after completing a cqe (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Add missing post notify for power mode change (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: sysfs: Prevent div by zero (Jennifer Berringer) [RHEL-274016] {CVE-2024-56622}
+- scsi: ufs: pltfrm: Dellocate HBA during ufshcd_pltfrm_remove() (Jennifer Berringer) [RHEL-274016] {CVE-2024-57872}
+- scsi: ufs: pltfrm: Drop PM runtime reference count after ufshcd_remove() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: pltfrm: Disable runtime PM during removal of glue drivers (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: qcom: Only free platform MSIs when ESI is enabled (Jennifer Berringer) [RHEL-274016] {CVE-2024-56620}
+- scsi: ufs: core: Cancel RTC work during ufshcd_remove() (Jennifer Berringer) [RHEL-274016] {CVE-2024-56621}
+- scsi: ufs: core: Add ufshcd_send_bsg_uic_cmd() for UFS BSG (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: Switch back to struct platform_driver::remove() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Restore SM8650 support (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-mediatek: Configure individual LU queue flags (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: exynos: Allow UFS Gear 4 (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move code out of an if-statement (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the MCQ scsi_add_host() call (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove code that is no longer needed (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Expand the ufshcd_device_init(hba, true) call (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the ufshcd_device_init(hba, true) call (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the ufshcd_device_init() calls (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Convert a comment into an explicit check (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce ufshcd_process_probe_result() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Call ufshcd_add_scsi_host() later (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce ufshcd_post_device_init() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Introduce ufshcd_add_scsi_host() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove redundant host_lock calls around UTRLCLR. (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove redundant host_lock calls around UTMRLCLR (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove redundant host_lock calls around UTMRLDBR (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Improve ufshcd_mcq_sq_cleanup() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Simplify ufshcd_err_handling_prepare() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Simplify ufshcd_exception_event_handler() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Simplify ufshcd_try_to_abort_task() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Remove goto statements from ufshcd_try_to_abort_task() (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Move the ufshcd_mcq_enable_esi() definition (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Make DMA mask configuration more flexible (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Use ufshcd_wait_for_register() in HCE init (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: check asymmetric connected lanes (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: ufs-qcom: Add fixup_dev_quirks vops (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Zero utp_upiu_req at the beginning of each command (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Do not open code read_poll_timeout (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Always initialize the UIC done completion (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Make ufshcd_uic_cmd_compl() easier to analyze (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Make ufshcd_uic_cmd_compl() easier to read (Jennifer Berringer) [RHEL-274016]
+- scsi: ufs: core: Improve the struct ufs_hba documentation (Jennifer Berringer) [RHEL-274016]
+- Merge branch 'sched/cache' (Phil Auld) [RHEL-172169]
+- sched/fair: Fix RCU usage in NOHZ exit path on CPU offline (Phil Auld) [RHEL-172169]
+- sched/fair: Add SIS_UTIL support to select_idle_capacity() (Phil Auld) [RHEL-172169]
+- sched/fair: Skip SCHED_IDLE rq for SCHED_IDLE task (Phil Auld) [RHEL-172169]
+- sched/fair: Attach sched_domain_shared to sd_asym_cpucapacity (Phil Auld) [RHEL-172169]
+- sched/fair: More complex proportional newidle balance (Phil Auld) [RHEL-172169]
+- sched/fair: Drop redundant RCU read lock in NOHZ kick path (Phil Auld) [RHEL-172169]
+- sched/fair: Prefer fully-idle SMT cores in asym-capacity idle selection (Phil Auld) [RHEL-172169]
+- sched/fair: Reject misfit pulls onto busy SMT siblings on asym-capacity (Phil Auld) [RHEL-172169]
+- sched/fair: Simplify SIS_UTIL handling in select_idle_cpu() (Phil Auld) [RHEL-172169]
+- sched/fair: Simplify the entry condition for update_idle_cpu_scan() (Phil Auld) [RHEL-172169]
+- sched/fair: Remove superfluous rcu_read_lock() in the wakeup path (Phil Auld) [RHEL-172169]
+
+* Mon Nov 09 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-283.el10]
+- platform/x86/intel/pmt: complete pcidev to device update (Dennis Chen) [RHEL-278306]
+- s390/vfio_ccw: Cancel existing workqueues (Jan Polensky) [RHEL-295172] {CVE-2026-80553}
+- firmware: arm_ffa: Tear down driver during shutdown (Jennifer Berringer) [RHEL-254447]
+- firmware: arm_ffa: Defer probe until pKVM is initialized (Jennifer Berringer) [RHEL-254447]
+- firmware: arm_ffa: Set the core device as FF-A device parent (Jennifer Berringer) [RHEL-254447]
+- firmware: arm_ffa: Register core as a platform driver (Jennifer Berringer) [RHEL-254447]
+- Revert "firmware: arm_ffa: Change initcall level of ffa_init() to rootfs_initcall" (Jennifer Berringer) [RHEL-254447]
+- redhat: kernel.spec: skip elfdeps for kselftests object files (Jan Stancek)
+- redhat: kernel.spec: skip script.req for kselftests (Jan Stancek)
+- redhat: kernel.spec: cache module provides to avoid per-file forks (Jan Stancek)
+- scsi: libiscsi: Validate the task named by a management response (CKI Backport Bot) [RHEL-298428] {CVE-2026-99152}
+- scsi: libiscsi: Validate the ITT reflected in a Reject PDU (CKI Backport Bot) [RHEL-298481] {CVE-2026-99153}
+- rh_message.h: remove devices and minor cleanup (Benjamin Marzinski) [RHEL-250324 RHEL-269671 RHEL-269672]
+- net: openvswitch: conntrack: fix helper UAF due to extensions realloc (Timothy Redaelli) [RHEL-287325] {CVE-2026-98490}
+- net: openvswitch: conntrack: remove 'add_helper' dead code (Timothy Redaelli) [RHEL-287325] {CVE-2026-98490}
+- platform/x86/amd: hfi: Support for ranking table versions (Krzysztof Pawlinski) [RHEL-222515]
+- vsock/virtio: bind uarg before filling zerocopy skb (Jon Maloy) [RHEL-290905] {CVE-2026-63970}
+- vsock/virtio: fix zerocopy completion for multi-skb sends (Jon Maloy) [RHEL-290909] {CVE-2026-53365}
+- vsock/virtio: fix MSG_ZEROCOPY pinned-pages accounting (Jon Maloy) [RHEL-290909] {CVE-2026-53365}
+- mm/mempolicy: skip zone device folios when queueing folios (Rafael Aquini) [RHEL-154480]
+- mm/madvise: skip zone device folios in cold/pageout PMD range (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: skip zone device folios in madvise_free_huge_pmd() (Rafael Aquini) [RHEL-154480]
+- mm/migrate_device: avoid out-of-bounds writes for compound folios (Rafael Aquini) [RHEL-154480] {CVE-2026-89967}
+- mm/migrate_device: fix cache flush when replacing huge zero PMD (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: skip device-private PMDs in madvise_free_huge_pmd (Rafael Aquini) [RHEL-154480] {CVE-2026-93218}
+- mm/madvise: skip device-private PMDs in cold and pageout walks (Rafael Aquini) [RHEL-154480] {CVE-2026-93217}
+- mm/mempolicy: skip non-present PMDs when queueing folios (Rafael Aquini) [RHEL-154480] {CVE-2026-89758}
+- mm/migrate_device: pin large folios before splitting (Rafael Aquini) [RHEL-154480]
+- mm/page_vma_mapped: fix device-private PMD handling (Rafael Aquini) [RHEL-154480] {CVE-2026-68163}
+- selftests/mm: remove hardcoded THP sizing assumptions in hmm tests (Rafael Aquini) [RHEL-154480]
+- selftests/mm/hmm-tests: new throughput tests including THP (Rafael Aquini) [RHEL-154480]
+- fs/proc/task_mmu: do not warn on seeing non-migration pmd entry (Rafael Aquini) [RHEL-154480] {CVE-2026-72173}
+- mm/huge_memory: preserve pmd_swp_uffd_wp on device-private PMD downgrade (Rafael Aquini) [RHEL-154480] {CVE-2026-72180}
+- lib/test_hmm: fix memory leak in dmirror_migrate_to_system() (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: use correct flags for device private PMD entry (Rafael Aquini) [RHEL-154480] {CVE-2026-53155}
+- lib/test_hmm: use kvfree() to free kvcalloc() allocations (Rafael Aquini) [RHEL-154480]
+- mm/migrate_device: fix pgtable leak in migrate_vma_insert_huge_pmd_page (Rafael Aquini) [RHEL-154480] {CVE-2026-63953}
+- mm/migrate_device: fix spinlock leak in migrate_vma_insert_huge_pmd_page (Rafael Aquini) [RHEL-154480] {CVE-2026-64129}
+- mm/zone_device: do not touch device folio after calling ->folio_free() (Rafael Aquini) [RHEL-154480] {CVE-2026-46277}
+- mm/migrate_device: remove dead migration entry check in migrate_vma_collect_huge_pmd() (Rafael Aquini) [RHEL-154480]
+- mm: Fix a hmm_range_fault() livelock / starvation problem (Rafael Aquini) [RHEL-154480] {CVE-2026-43404}
+- selftests/mm: hmm-tests: don't hardcode THP size to 2MB (Rafael Aquini) [RHEL-154480]
+- mm: centralize+fix comments about compound_mapcount() in new sync_with_folio_pmd_zap() (Rafael Aquini) [RHEL-154480]
+- powerpc/64s: Fix unmap race with PMD migration entries (Rafael Aquini) [RHEL-154480] {CVE-2026-53108}
+- mm/zone_device: reinitialize large zone device private folios (Rafael Aquini) [RHEL-154480]
+- mm/ksm: fix pte_unmap_unlock of wrong address in break_ksm_pmd_entry (Rafael Aquini) [RHEL-154480]
+- mm/memremap: fix spurious large folio warning for FS-DAX (Rafael Aquini) [RHEL-154480]
+- fs/proc/task_mmu.c: fix make_uffd_wp_huge_pte() huge pte handling (Rafael Aquini) [RHEL-154480]
+- mm: replace remaining pte_to_swp_entry() with softleaf_from_pte() (Rafael Aquini) [RHEL-154480]
+- mm: eliminate further swapops predicates (Rafael Aquini) [RHEL-154480]
+- mm: remove is_hugetlb_entry_[migration, hwpoisoned]() (Rafael Aquini) [RHEL-154480]
+- mm: remove non_swap_entry() and use softleaf helpers instead (Rafael Aquini) [RHEL-154480]
+- mm: remove remaining is_swap_pmd() users and is_swap_pmd() (Rafael Aquini) [RHEL-154480]
+- mm: introduce pmd_is_huge() and use where appropriate (Rafael Aquini) [RHEL-154480]
+- mm: replace pmd_to_swp_entry() with softleaf_from_pmd() (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: refactor change_huge_pmd() non-present logic (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: refactor copy_huge_pmd() non-present logic (Rafael Aquini) [RHEL-154480]
+- mm: avoid unnecessary use of is_swap_pmd() (Rafael Aquini) [RHEL-154480]
+- fs/proc/task_mmu: refactor pagemap_pmd_range() (Rafael Aquini) [RHEL-154480]
+- mm: use leaf entries in debug pgtable + remove is_swap_pte() (Rafael Aquini) [RHEL-154480]
+- mm: eliminate is_swap_pte() when softleaf_from_pte() suffices (Rafael Aquini) [RHEL-154480]
+- mm: avoid unnecessary uses of is_swap_pte() (Rafael Aquini) [RHEL-154480]
+- mm: introduce leaf entry type and use to simplify leaf entry logic (Rafael Aquini) [RHEL-154480]
+- mm: correctly handle UFFD PTE markers (Rafael Aquini) [RHEL-154480]
+- selftests/mm/hmm-tests: partial unmap, mremap and anon_write tests (Rafael Aquini) [RHEL-154480]
+- selftests/mm/hmm-tests: new tests for zone device THP migration (Rafael Aquini) [RHEL-154480]
+- lib/test_hmm: add large page allocation failure testing (Rafael Aquini) [RHEL-154480]
+- mm/migrate_device: add THP splitting during migration (Rafael Aquini) [RHEL-154480]
+- mm/memremap: add driver callback support for folio splitting (Rafael Aquini) [RHEL-154480]
+- lib/test_hmm: add zone device private THP test infrastructure (Rafael Aquini) [RHEL-154480]
+- mm/memory/fault: add THP fault handling for zone device private pages (Rafael Aquini) [RHEL-154480]
+- mm/migrate_device: implement THP migration of zone device pages (Rafael Aquini) [RHEL-154480]
+- mm/migrate_device: handle partially mapped folios during collection (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: implement device-private THP splitting (Rafael Aquini) [RHEL-154480]
+- mm/rmap: extend rmap and migration support device-private entries (Rafael Aquini) [RHEL-154480]
+- mm/huge_memory: add device-private THP support to PMD operations (Rafael Aquini) [RHEL-154480]
+- mm/zone_device: rename page_free callback to folio_free (Rafael Aquini) [RHEL-154480]
+- mm/zone_device: support large zone device private folios (Rafael Aquini) [RHEL-154480]
+- ksm: replace function unmerge_ksm_pages with break_ksm (Rafael Aquini) [RHEL-154480]
+- ksm: perform a range-walk in break_ksm (Rafael Aquini) [RHEL-154480]
+- Revert "mm/ksm: convert break_ksm() from walk_page_range_vma() to folio_walk" (Rafael Aquini) [RHEL-154480]
+- mm/khugepaged: guard is_zero_pfn() calls with pte_present() (Rafael Aquini) [RHEL-154480]
+- mm: fix some typos in mm module (Rafael Aquini) [RHEL-154480]
+- lib/test_hmm: reduce stack usage (Rafael Aquini) [RHEL-154480]
+- fs/proc/task_mmu: fix pagemap flags with PMD THP entries on 32bit (Rafael Aquini) [RHEL-154480]
+- exec: Cleanup POSIX timers right after de_thread() (Luiz Capitulino) [RHEL-282064] {CVE-2026-98260}
+- perf vendor events arm64: fix swapped MetricGroup for Tegra410 L1 prefetcher metrics (Michael Petlan) [RHEL-246661]
+- perf vendor events arm64: Fix Tegra410 Olympus event 0x0197 (Michael Petlan) [RHEL-246661]
+- ALSA: seq: midi: Serialize input teardown with event_input (CKI Backport Bot) [RHEL-282948] {CVE-2026-90207}
+- ALSA: seq: midi: Optimize event_input locking with RCU (CKI Backport Bot) [RHEL-282948] {CVE-2026-90207}
+- fcntl/pidfd: redefine PIDFD_SELF_THREAD_GROUP (Oleg Nesterov) [RHEL-280230]
+- uapi/fcntl: mark range as reserved (Oleg Nesterov) [RHEL-280230]
+- ALSA: pcm: Serialize PCM mmap with buffer reallocation to fix page UAF (CKI Backport Bot) [RHEL-276115] {CVE-2026-98116}
+- sched/cache: Refresh LLC capacity across CPU hotplug, to fix capacity underestimation bug (Phil Auld) [RHEL-115158]
+- sched/cache: Skip kernel threads for cache aware scheduling to rubustify the code (Phil Auld) [RHEL-115158]
+- sched/cache: Introduce task_struct->sched_cache_grp to fix UAF (Phil Auld) [RHEL-115158]
+- sched/fair: Avoid creating misfits during cache-aware balancing (Phil Auld) [RHEL-115158]
+- sched/cache: Decouple sched_cache_group from mm to fix UAF (Phil Auld) [RHEL-115158]
+- sched/cache: Honor migrate_llc_task semantics in active load balance, to fix LLC mis-scheduling bug (Phil Auld) [RHEL-115158]
+- sched/cache: Keep nr_pref_llc_running in the runnable domain, to fix LLC mis-scheduling bug (Phil Auld) [RHEL-115158]
+- sched/topology: Add a cpus_read_lock to rebuild_sched_domains() (Phil Auld) [RHEL-115158]
+- sched/topology: Provide arch_llc_mask for cache aware scheduling (Phil Auld) [RHEL-115158]
+- sched/cache: Fix stale preferred_llc for a new task (Phil Auld) [RHEL-115158]
+- sched/cache: Fix has_multi_llcs iff at least one partition has multiple LLCs (Phil Auld) [RHEL-115158]
+- sched/cache: Fix cache aware scheduling enabling for multi LLCs system (Phil Auld) [RHEL-115158]
+- sched/cache: Fix race condition during sched domain rebuild (Phil Auld) [RHEL-115158]
+- sched/cache: Fix checking active load balance by only considering the CFS task (Phil Auld) [RHEL-115158]
+- sched/cache: Fix unpaired account_llc_enqueue/dequeue (Phil Auld) [RHEL-115158]
+- sched/cache: Annotate lockless accesses to mm->sc_stat.cpu (Phil Auld) [RHEL-115158]
+- sched/cache: Fix potential NULL mm pointer access (Phil Auld) [RHEL-115158]
+- sched/cache: Fix rcu warning when accessing sd_llc domain (Phil Auld) [RHEL-115158]
+- sched/cache: Add user control to adjust the aggressiveness of cache-aware scheduling (Phil Auld) [RHEL-115158]
+- sched/cache: Avoid cache-aware scheduling for memory-heavy processes (Phil Auld) [RHEL-115158]
+- sched/cache: Calculate the LLC size and store it in sched_domain (Phil Auld) [RHEL-115158]
+- sched/cache: Skip cache-aware scheduling for single-threaded processes (Phil Auld) [RHEL-115158]
+- sched/cache: Disable cache aware scheduling for processes with high thread counts (Phil Auld) [RHEL-115158]
+- sched/cache: Allow only 1 thread of the process to calculate the LLC occupancy (Phil Auld) [RHEL-115158]
+- sched/cache: Allow the user space to turn on and off cache aware scheduling (Phil Auld) [RHEL-115158]
+- sched/cache: Enable cache aware scheduling for multi LLCs NUMA node (Phil Auld) [RHEL-115158]
+- sched/topology: Fix sched_domain_span() (Phil Auld) [RHEL-115158]
+- sched/core: Check for rcu_read_lock_any_held() in idle_get_state() (Phil Auld) [RHEL-115158]
+- sched/topology: Remove sched_domain_shared allocation with sd_data (Phil Auld) [RHEL-115158]
+- sched/topology: Switch to assigning "sd->shared" from s_data (Phil Auld) [RHEL-115158]
+- sched/topology: Allocate per-CPU sched_domain_shared in s_data (Phil Auld) [RHEL-115158]
+- sched/topology: Extract "imb_numa_nr" calculation into a separate helper (Phil Auld) [RHEL-115158]
+- sched/topology: Compute sd_weight considering cpuset partitions (Phil Auld) [RHEL-115158]
+- sched/cache: Respect LLC preference in task migration and detach (Phil Auld) [RHEL-115158]
+- sched/cache: Handle moving single tasks to/from their preferred LLC (Phil Auld) [RHEL-115158]
+- sched/cache: Add migrate_llc_task migration type for cache-aware balancing (Phil Auld) [RHEL-115158]
+- sched/cache: Prioritize tasks preferring destination LLC during balancing (Phil Auld) [RHEL-115158]
+- sched/cache: Check local_group only once in update_sg_lb_stats() (Phil Auld) [RHEL-115158]
+- sched/cache: Count tasks prefering destination LLC in a sched group (Phil Auld) [RHEL-115158]
+- sched/cache: Calculate the percpu sd task LLC preference (Phil Auld) [RHEL-115158]
+- sched/cache: Introduce per CPU's tasks LLC preference counter (Phil Auld) [RHEL-115158]
+- sched/cache: Track LLC-preferred tasks per runqueue (Phil Auld) [RHEL-115158]
+- sched/cache: Assign preferred LLC ID to processes (Phil Auld) [RHEL-115158]
+- sched/cache: Make LLC id continuous (Phil Auld) [RHEL-115158]
+- sched/cache: Introduce helper functions to enforce LLC migration policy (Phil Auld) [RHEL-115158]
+- sched/cache: Record per LLC utilization to guide cache aware scheduling decisions (Phil Auld) [RHEL-115158]
+- sched/cache: Limit the scan number of CPUs when calculating task occupancy (Phil Auld) [RHEL-115158]
+- configs: Ensure SCHED_CACHE is enabled (Phil Auld) [RHEL-115158]
+- sched/cache: Introduce infrastructure for cache-aware load balancing (Phil Auld) [RHEL-115158]
+- x86/topology: Add paramter to split LLC (Phil Auld) [RHEL-115158]
+- openvswitch: vport: fix self-deadlock on release of tunnel ports (CKI Backport Bot) [RHEL-253880] {CVE-2026-31678}
+- openvswitch: defer tunnel netdev_put to RCU release (CKI Backport Bot) [RHEL-253880] {CVE-2026-31678}
+- cgroup: Avoid iteration of dying tasks with zero refcount (Waiman Long) [RHEL-244809] {CVE-2026-98163}
+- exit: hold a reference to thread_pid across proc_flush_pid (Waiman Long) [RHEL-244809] {CVE-2026-97903}
+- selftests/cgroup: Drop invalid boot isolation comparison (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Preserve CPU hotplug write errors (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Add test for partition root invalidation returning wrong CPUs (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Use WRITE_ONCE() for shared prs_err updates (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Fix minor defects in test_cpuset (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Remove redundant cg_enter_current() call in test_core (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Add test for cpuset affinity on controller disable (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Handle the special case of non-moving tasks in cpuset_can_attach() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Support multiple destination cpusets for cpuset_*attach() (Waiman Long) [RHEL-244809]
+- selftests/cgroup: fix missing TAP output in test_hugetlb_memcg (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Support multiple source cpusets for cpuset_*attach() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Move mpol_rebind_mm/cpuset_migrate_mm() calls inside cpuset_attach_task() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Make attach_ctx.old_cs track task group leader (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Expand the scope of cpuset_can_attach_check() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Add a cpuset_reserve_dl_bw() helper (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Put all task attach related variables into attach_ctx (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Prevent race between task attach and cpuset state change (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Fix node inconsistencies between cpuset_update_tasks_nodemask() and cpuset_attach() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Make nr_deadline_tasks an atomic_t (Waiman Long) [RHEL-244809] {CVE-2026-93150}
+- selftests/cgroup: Adjust cpu test duration based on HZ (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Rebind/migrate mm only for threadgroup leader in cpuset_update_tasks_nodemask() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Avoid unnecessary cpus & mems update in cpuset_hotplug_update_tasks() (Waiman Long) [RHEL-244809]
+- sched/isolation: Defer freeing of cpumask memblock memory to initcall (Waiman Long) [RHEL-244809] {CVE-2026-93253}
+- tick: Include ktime.h and jiffies.h in linux/tick.h (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: rebind mm mempolicy to effective_mems, not mems_allowed (Waiman Long) [RHEL-244809] {CVE-2026-72010}
+- bpf,fork: wipe ->bpf_storage before bailouts that access it (Waiman Long) [RHEL-244809] {CVE-2026-72110}
+- cgroup: Migrate tasks to the root css when a controller is rebound (Waiman Long) [RHEL-244809]
+- docs: cgroup: Fix stale source file paths (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Free sched domains on rebuild guard failure (Waiman Long) [RHEL-244809]
+- cgroup: pair max limit READ_ONCE() with WRITE_ONCE() (Waiman Long) [RHEL-244809]
+- selftests/cgroup: enable memory controller in hugetlb memcg test (Waiman Long) [RHEL-244809]
+- cgroup/rdma: Drop unnecessary READ_ONCE() on event counters (Waiman Long) [RHEL-244809]
+- cgroup: Defer kill_css_finish() in cgroup_apply_control_disable() (Waiman Long) [RHEL-244809]
+- cgroup: Add per-subsys-css kill_css_finish deferral (Waiman Long) [RHEL-244809]
+- cgroup: Move populated counters to cgroup_subsys_state (Waiman Long) [RHEL-244809]
+- cgroup: Annotate unlocked nr_populated_* accesses with READ_ONCE/WRITE_ONCE (Waiman Long) [RHEL-244809]
+- cgroup: Inline cgroup_has_tasks() in cgroup.h (Waiman Long) [RHEL-244809]
+- cgroup/rdma: document rdma.peak, rdma.events and rdma.events.local (Waiman Long) [RHEL-244809]
+- cgroup/rdma: add rdma.events.local for per-cgroup allocation failure attribution (Waiman Long) [RHEL-244809]
+- cgroup/rdma: add rdma.events to track resource limit exhaustion (Waiman Long) [RHEL-244809]
+- cgroup/rdma: add rdma.peak for per-device peak usage tracking (Waiman Long) [RHEL-244809]
+- selftests/cgroup: check malloc return value in alloc_anon functions (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Skip hardwall ancestor scan in cpuset v2 in cpuset_current_node_allowed() (Waiman Long) [RHEL-244809]
+- selftests/cgroup: fix misleading debug message in test_cgfreezer_time_child (Waiman Long) [RHEL-244809]
+- selftests/cgroup: fix child process escaping to parent cleanup in test_cpucg_nice (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Add NULL check after malloc in cgroup_util.c (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Fix incorrect variable check in online_cpus() (Waiman Long) [RHEL-244809]
+- cgroup/rdma: refactor resource parsing with match_table_t/match_token() (Waiman Long) [RHEL-244809]
+- selftests: Fix Makefile target for nsfs (Waiman Long) [RHEL-244809]
+- pidfd: refuse access to tasks that have started exiting harder (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Add test cases for sibling CPU exclusion on partition update (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Use effective_xcpus in partcmd_update add/del mask calculation (Waiman Long) [RHEL-244809]
+- kernel/fork: validate exit_signal in kernel_clone() (Waiman Long) [RHEL-244809]
+- cgroup: rstat: relax NMI guard after switch to try_cmpxchg (Waiman Long) [RHEL-244809]
+- cgroup/rstat: validate cpu before css_rstat_cpu() access (Waiman Long) [RHEL-244809] {CVE-2026-64036}
+- irq_work: Fix use-after-free in irq_work_single() on PREEMPT_RT (Waiman Long) [RHEL-244809] {CVE-2026-64073}
+- sched_ext: Use HK_TYPE_DOMAIN_BOOT to detect isolcpus= domain isolation (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Return only actually allocated CPUs during partition invalidation (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Reserve DL bandwidth only for root-domain moves (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Reset DL migration state on can_attach() failure (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: move PF_EXITING check before __GFP_HARDWALL in cpuset_current_node_allowed() (Waiman Long) [RHEL-244809]
+- sched/isolation: Make HK_TYPE_KTHREAD an alias of HK_TYPE_DOMAIN (Waiman Long) [RHEL-244809]
+- ipvs: Guard access of HK_TYPE_KTHREAD cpumask with RCU (Waiman Long) [RHEL-244809]
+- docs: cgroup-v1: Update charge-commit section (Waiman Long) [RHEL-244809]
+- cgroup: Defer css percpu_ref kill on rmdir until cgroup is depopulated (Waiman Long) [RHEL-244809] {CVE-2026-46223}
+- docs: cgroup: fix typo 'protetion' -> 'protection' (Waiman Long) [RHEL-244809]
+- cgroup: Increment nr_dying_subsys_* from rmdir context (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: record DL BW alloc CPU for attach rollback (Waiman Long) [RHEL-244809]
+- cgroup/rdma: fix integer overflow in rdmacg_try_charge() (Waiman Long) [RHEL-244809]
+- nstree: fix func. parameter kernel-doc warnings (Waiman Long) [RHEL-244809]
+- unshare: fix nsproxy leak in ksys_unshare() on set_cred_ucounts() failure (Waiman Long) [RHEL-244809]
+- workqueue: Remove HK_TYPE_WQ from affecting wq_unbound_cpumask (Waiman Long) [RHEL-244809]
+- cgroup/rdma: fix swapped arguments in pr_warn() format string (Waiman Long) [RHEL-244809]
+- cgroup/dmem: remove region parameter from dmemcg_parse_limit (Waiman Long) [RHEL-244809]
+- cgroup: replace global cgroup_file_kn_lock with per-cgroup_file lock (Waiman Long) [RHEL-244809]
+- cgroup: add lockless fast-path checks to cgroup_file_notify() (Waiman Long) [RHEL-244809]
+- cgroup: reduce cgroup_file_kn_lock hold time in cgroup_file_notify() (Waiman Long) [RHEL-244809]
+- cgroup: Expose some cgroup helpers (Waiman Long) [RHEL-244809]
+- cgroup: Fix cgroup_drain_dying() testing the wrong condition (Waiman Long) [RHEL-244809]
+- selftests/cgroup: Don't require synchronous populated update on task exit (Waiman Long) [RHEL-244809]
+- cgroup: Wait for dying tasks to leave on rmdir (Waiman Long) [RHEL-244809]
+- cgroup: Don't expose dead tasks in cgroup (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Call rebuild_sched_domains() directly in hotplug (Waiman Long) [RHEL-244809]
+- bpf: drop kthread_exit from noreturn_deny (Waiman Long) [RHEL-244809]
+- selftests: fix mntns iteration selftests (Waiman Long) [RHEL-244809]
+- kthread: consolidate kthread exit paths to prevent use-after-free (Waiman Long) [RHEL-244809] {CVE-2026-43402}
+- cgroup/cpuset: fix null-ptr-deref in rebuild_sched_domains_cpuslocked (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Call housekeeping_update() without holding cpus_read_lock (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Defer housekeeping_update() calls from CPU hotplug to workqueue (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Move housekeeping_update()/rebuild_sched_domains() together (Waiman Long) [RHEL-244809]
+- kselftest/cgroup: Simplify test_cpuset_prs.sh by removing "S+" command (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Set isolated_cpus_updating only if isolated_cpus is changed (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Clarify exclusion rules for cpuset internal variables (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Fix incorrect use of cpuset_update_tasks_cpumask() in update_cpumasks_hier() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Fix incorrect change to effective_xcpus in partition_xcpus_del() (Waiman Long) [RHEL-244809]
+- cgroup: fix race between task migration and iteration (Waiman Long) [RHEL-244809] {CVE-2026-43439}
+- s390/smp: Avoid calling rebuild_sched_domains() early (Waiman Long) [RHEL-244809]
+- cgroup: use nodes_and() output where appropriate (Waiman Long) [RHEL-244809]
+- nodemask: propagate boolean for nodes_and{,not} (Waiman Long) [RHEL-244809]
+- cpuset: fix overlap of partition effective CPUs (Waiman Long) [RHEL-244809]
+- cgroup: increase maximum subsystem count from 16 to 32 (Waiman Long) [RHEL-244809]
+- cgroup: Remove stale cpu.rt.max reference from documentation (Waiman Long) [RHEL-244809]
+- cpuset: replace direct lockdep_assert_held() with lockdep_assert_cpuset_lock_held() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Move the v1 empty cpus/mems check to cpuset1_validate_change() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Don't invalidate sibling partitions on cpuset.cpus conflict (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Don't fail cpuset.cpus change in v2 (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Consistently compute effective_xcpus in update_cpumasks_hier() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Streamline rm_siblings_excl_cpus() (Waiman Long) [RHEL-244809]
+- cpuset: remove dead code in cpuset-v1.c (Waiman Long) [RHEL-244809]
+- cpuset: remove v1-specific code from generate_sched_domains (Waiman Long) [RHEL-244809]
+- cpuset: separate generate_sched_domains for v1 and v2 (Waiman Long) [RHEL-244809]
+- cpuset: move update_domain_attr_tree to cpuset_v1.c (Waiman Long) [RHEL-244809]
+- cpuset: add cpuset1_init helper for v1 initialization (Waiman Long) [RHEL-244809]
+- cpuset: add cpuset1_online_css helper for v1-specific operations (Waiman Long) [RHEL-244809]
+- cpuset: add lockdep_assert_cpuset_lock_held helper (Waiman Long) [RHEL-244809]
+- cpuset: Remove unnecessary checks in rebuild_sched_domains_locked (Waiman Long) [RHEL-244809]
+- cgroup: switch to css_is_online() helper (Waiman Long) [RHEL-244809]
+- selftests: cgroup: Replace sleep with cg_read_key_long_poll() for waiting on nr_dying_descendants (Waiman Long) [RHEL-244809]
+- doc: Add housekeeping documentation (Waiman Long) [RHEL-244809]
+- kthread: Document kthread_affine_preferred() (Waiman Long) [RHEL-244809]
+- kthread: Comment on the purpose and placement of kthread_affine_node() call (Waiman Long) [RHEL-244809]
+- kthread: Honour kthreads preferred affinity after cpuset changes (Waiman Long) [RHEL-244809]
+- sched/arm64: Move fallback task cpumask to HK_TYPE_DOMAIN (Waiman Long) [RHEL-244809]
+- sched: Switch the fallback task allowed cpumask to HK_TYPE_DOMAIN (Waiman Long) [RHEL-244809]
+- kthread: Rely on HK_TYPE_DOMAIN for preferred affinity management (Waiman Long) [RHEL-244809]
+- kthread: Include kthreadd to the managed affinity list (Waiman Long) [RHEL-244809]
+- kthread: Include unbound kthreads in the managed affinity list (Waiman Long) [RHEL-244809]
+- kthread: Refine naming of affinity related fields (Waiman Long) [RHEL-244809]
+- PCI: Remove superfluous HK_TYPE_WQ check (Waiman Long) [RHEL-244809]
+- sched/isolation: Remove HK_TYPE_TICK test from cpu_is_isolated() (Waiman Long) [RHEL-244809]
+- cpuset: Remove cpuset_cpu_is_isolated() (Waiman Long) [RHEL-244809]
+- timers/migration: Remove superfluous cpuset isolation test (Waiman Long) [RHEL-244809]
+- cpuset: Propagate cpuset isolation update to timers through housekeeping (Waiman Long) [RHEL-244809]
+- cpuset: Propagate cpuset isolation update to workqueue through housekeeping (Waiman Long) [RHEL-244809]
+- PCI: Flush PCI probe workqueue on cpuset isolated partition change (Waiman Long) [RHEL-244809]
+- sched/isolation: Flush vmstat workqueues on cpuset isolated partition change (Waiman Long) [RHEL-244809]
+- sched/isolation: Flush memcg workqueues on cpuset isolated partition change (Waiman Long) [RHEL-244809]
+- cpuset: Update HK_TYPE_DOMAIN cpumask from cpuset (Waiman Long) [RHEL-244809]
+- sched/isolation: Convert housekeeping cpumasks to rcu pointers (Waiman Long) [RHEL-244809]
+- cpuset: Provide lockdep check for cpuset lock held (Waiman Long) [RHEL-244809]
+- cpu: Provide lockdep check for CPU hotplug lock write-held (Waiman Long) [RHEL-244809]
+- timers/migration: Prevent from lockdep false positive warning (Waiman Long) [RHEL-244809]
+- block: Protect against concurrent isolated cpuset change (Waiman Long) [RHEL-244809]
+- net: Keep ignoring isolated cpuset change (Waiman Long) [RHEL-244809]
+- driver core: cpu: Convert /sys/devices/system/cpu/isolated to use HK_TYPE_DOMAIN_BOOT (Waiman Long) [RHEL-244809]
+- cpuset: Convert boot_hk_cpus to use HK_TYPE_DOMAIN_BOOT (Waiman Long) [RHEL-244809]
+- sched/isolation: Save boot defined domain flags (Waiman Long) [RHEL-244809]
+- mm: vmstat: Prepare to protect against concurrent isolated cpuset change (Waiman Long) [RHEL-244809]
+- memcg: Prepare to protect against concurrent isolated cpuset change (Waiman Long) [RHEL-244809]
+- cpu: Revert "cpu/hotplug: Prevent self deadlock on CPU hot-unplug" (Waiman Long) [RHEL-244809]
+- PCI: Prepare to protect against concurrent isolated cpuset change (Waiman Long) [RHEL-244809]
+- kernel: cgroup: Add LGPL-2.1 SPDX license ID to legacy_freezer.c (Waiman Long) [RHEL-244809]
+- kernel: cgroup: Add SPDX-License-Identifier lines (Waiman Long) [RHEL-244809]
+- cgroup: Eliminate cgrp_ancestor_storage in cgroup_root (Waiman Long) [RHEL-244809]
+- cpuset: fix warning when disabling remote partition (Waiman Long) [RHEL-244809] {CVE-2025-71142}
+- cpuset: Treat cpusets in attaching as populated (Waiman Long) [RHEL-244809]
+- docs: cgroup: No special handling of unpopulated memcgs (Waiman Long) [RHEL-244809]
+- docs: cgroup: Note about sibling relative reclaim protection (Waiman Long) [RHEL-244809]
+- docs: cgroup: Explain reclaim protection target (Waiman Long) [RHEL-244809]
+- cpuset: remove need_rebuild_sched_domains (Waiman Long) [RHEL-244809]
+- cpuset: remove global remote_children list (Waiman Long) [RHEL-244809]
+- cpuset: simplify node setting on error (Waiman Long) [RHEL-244809]
+- cgroup: include missing header for struct irq_work (Waiman Long) [RHEL-244809]
+- cgroup: Fix sleeping from invalid context warning on PREEMPT_RT (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Globally track isolated_cpus update (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Ensure domain isolated CPUs stay in root or isolated partition (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Move up prstate_housekeeping_conflict() helper (Waiman Long) [RHEL-244809]
+- cgroup: Defer task cgroup unlink until after the task is done switching out (Waiman Long) [RHEL-244809]
+- cgroup: Move dying_tasks cleanup from cgroup_task_release() to cgroup_task_free() (Waiman Long) [RHEL-244809]
+- cgroup: Rename cgroup lifecycle hooks to cgroup_task_*() (Waiman Long) [RHEL-244809]
+- cgroup/cpuset: Don't track # of local child partitions (Waiman Long) [RHEL-244809]
+- freezer: Clarify that only cgroup1 freezer uses PM freezer (Waiman Long) [RHEL-244809]
+- rculist: move list_for_each_rcu() to where it belongs (Waiman Long) [RHEL-244809]
+- Documentation: Add real-time to core-api (Waiman Long) [RHEL-244809]
+- Documentation: locking: Add local_lock_nested_bh() to locktypes (Waiman Long) [RHEL-244809]
+- mnt_ns_tree_remove(): DTRT if mnt_ns had never been added to mnt_ns_list (Waiman Long) [RHEL-244809]
+- nstree: make iterator generic (Waiman Long) [RHEL-244809]
+- ns: remove ns_alloc_inum() (Waiman Long) [RHEL-244809]
+- uts: use ns_common_init() (Waiman Long) [RHEL-244809]
+- user: use ns_common_init() (Waiman Long) [RHEL-244809]
+- time: use ns_common_init() (Waiman Long) [RHEL-244809]
+- pid: use ns_common_init() (Waiman Long) [RHEL-244809]
+- net: use ns_common_init() (Waiman Long) [RHEL-244809]
+- mnt: use ns_common_init() (Waiman Long) [RHEL-244809]
+- ipc: use ns_common_init() (Waiman Long) [RHEL-244809]
+- cgroup: use ns_common_init() (Waiman Long) [RHEL-244809]
+- ns: uniformly initialize ns_common (Waiman Long) [RHEL-244809]
+- nsfs: add nsfs.h header (Waiman Long) [RHEL-244809]
+- ns: move to_ns_common() to ns_common.h (Waiman Long) [RHEL-244809]
+- copy_sighand: Handle architectures where sizeof(unsigned long) < sizeof(u64) (Waiman Long) [RHEL-244809]
+- pid: use ns_capable_noaudit() when determining net sysctl permissions (Waiman Long) [RHEL-244809]
+- kthread: update comment for __to_kthread (Waiman Long) [RHEL-244809]
+- mntns: use stable inode number for initial mount ns (Waiman Long) [RHEL-244809]
+- netns: use stable inode number for initial mount ns (Waiman Long) [RHEL-244809]
+- nsfs: move root inode number to uapi (Waiman Long) [RHEL-244809]
+- sched,freezer: Remove unnecessary warning in __thaw_task (Waiman Long) [RHEL-244809]
+- exit: combine work under lock in synchronize_group_exit() and coredump_task_exit() (Waiman Long) [RHEL-244809]
+- release_task: kill the no longer needed get/put_pid(thread_pid) (Waiman Long) [RHEL-244809]
+- pid: drop irq disablement around pidmap_lock (Waiman Long) [RHEL-244809]
+- pid: perform free_pid() calls outside of tasklist_lock (Waiman Long) [RHEL-244809]
+- pid: sprinkle tasklist_lock asserts (Waiman Long) [RHEL-244809]
+- exit: hoist get_pid() in release_task() outside of tasklist_lock (Waiman Long) [RHEL-244809]
+- exit: perform add_device_randomness() without tasklist_lock (Waiman Long) [RHEL-244809]
+- pid: Do not set pid_max in new pid namespaces (Waiman Long) [RHEL-244809]
+- selftests: add tests for mntns iteration (Waiman Long) [RHEL-244809]
+- seltests: move nsfs into filesystems subfolder (Waiman Long) [RHEL-244809]
+- fs: simplify rwlock to spinlock (Waiman Long) [RHEL-244809]
+- fs: lockless mntns lookup for nsfs (Waiman Long) [RHEL-244809]
+- fs: lockless mntns rbtree lookup (Waiman Long) [RHEL-244809]
+- fs: add mount namespace to rbtree late (Waiman Long) [RHEL-244809]
+- mount: remove inlude/nospec.h include (Waiman Long) [RHEL-244809]
+- pid: allow pid_max to be set per pid namespace (Waiman Long) [RHEL-244809]
+- list: Remove duplicated and unused macro list_for_each_reverse (Waiman Long) [RHEL-244809]
+- namespace: Use atomic64_inc_return() in alloc_mnt_ns() (Waiman Long) [RHEL-244809]
+- iomap: guard io_size EOF trim against concurrent truncate underflow (Brian Foster) [RHEL-164505]
+- iomap: release the folio batch on iomap callback failures (Brian Foster) [RHEL-164505]
+- iomap: avoid memset iomap when iter is done (Brian Foster) [RHEL-164505]
+- iomap: fix invalid folio access when i_blkbits differs from I/O granularity (Brian Foster) [RHEL-164505]
+- iomap: don't mark folio uptodate if read IO has bytes pending (Brian Foster) [RHEL-164505]
+- iomap: fix invalid folio access after folio_end_read() (Brian Foster) [RHEL-164505]
+- iomap: wait for batched folios to be stable in __iomap_get_folio (Brian Foster) [RHEL-164505]
+- iomap: replace folio_batch allocation with stack allocation (Brian Foster) [RHEL-164505]
+- iomap: allocate s_dio_done_wq for async reads as well (Brian Foster) [RHEL-164505]
+- iomap: fix iomap_read_end() for already uptodate folios (Brian Foster) [RHEL-164505]
+- iomap: invert the polarity of IOMAP_DIO_INLINE_COMP (Brian Foster) [RHEL-164505]
+- iomap: support write completions from interrupt context (Brian Foster) [RHEL-164505]
+- iomap: rework REQ_FUA selection (Brian Foster) [RHEL-164505]
+- iomap: always run error completions in user context (Brian Foster) [RHEL-164505]
+- fs, iomap: remove IOCB_DIO_CALLER_COMP (Brian Foster) [RHEL-164505]
+- iomap: use find_next_bit() for uptodate bitmap scanning (Brian Foster) [RHEL-164505]
+- iomap: use find_next_bit() for dirty bitmap scanning (Brian Foster) [RHEL-164505]
+- iomap: simplify when reads can be skipped for writes (Brian Foster) [RHEL-164505]
+- iomap: simplify ->read_folio_range() error handling for reads (Brian Foster) [RHEL-164505]
+- iomap: optimize pending async writeback accounting (Brian Foster) [RHEL-164505]
+- iomap: account for unaligned end offsets when truncating read range (Brian Foster) [RHEL-164505]
+- iomap: rename bytes_pending/bytes_accounted to bytes_submitted/bytes_not_submitted (Brian Foster) [RHEL-164505]
+- iomap: remove old partial eof zeroing optimization (Brian Foster) [RHEL-164505]
+- xfs: fill dirty folios on zero range of unwritten mappings (Brian Foster) [RHEL-164505]
+- xfs: always trim mapping to requested range for zero range (Brian Foster) [RHEL-164505]
+- iomap: optional zero range dirty folio processing (Brian Foster) [RHEL-164505]
+- iomap: remove pos+len BUG_ON() to after folio lookup (Brian Foster) [RHEL-164505]
+- filemap: add helper to look up dirty folios in a range (Brian Foster) [RHEL-164505]
+- iomap: make iomap_read_folio() a void return (Brian Foster) [RHEL-164505]
+- iomap: move buffered io bio logic into new file (Brian Foster) [RHEL-164505]
+- iomap: add caller-provided callbacks for read and readahead (Brian Foster) [RHEL-164505]
+- iomap: set accurate iter->pos when reading folio ranges (Brian Foster) [RHEL-164505]
+- iomap: track pending read bytes more optimally (Brian Foster) [RHEL-164505]
+- iomap: Use folio_next_pos() (Brian Foster) [RHEL-164505]
+- filemap: Add folio_next_pos() (Brian Foster) [RHEL-164505]
+- iomap: use largest_zero_folio() in iomap_dio_zero() (Brian Foster) [RHEL-164505]
+- iomap: rename iomap_readpage_ctx struct to iomap_read_folio_ctx (Brian Foster) [RHEL-164505]
+- iomap: rename iomap_readpage_iter() to iomap_read_folio_iter() (Brian Foster) [RHEL-164505]
+- iomap: iterate over folio mapping in iomap_readpage_iter() (Brian Foster) [RHEL-164505]
+- iomap: store read/readahead bio generically (Brian Foster) [RHEL-164505]
+- iomap: move read/readahead bio submission logic into helper function (Brian Foster) [RHEL-164505]
+- iomap: move bio read logic into helper function (Brian Foster) [RHEL-164505]
+- iomap: adjust read range correctly for non-block-aligned positions (Brian Foster) [RHEL-164505]
+- iomap: simplify iomap_iter_advance() (Brian Foster) [RHEL-164505]
+- iomap: error out on file IO when there is no inline_data buffer (Brian Foster) [RHEL-164505]
+- iomap: trace iomap_zero_iter zeroing activities (Brian Foster) [RHEL-164505]
+- ovl: remove redundant IOCB_DIO_CALLER_COMP clearing (Brian Foster) [RHEL-164505]
+- Revert "net/mlx5: E-Switch, preserve max tx speed on vport state modification" (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Lag, split aggregate speed into oper and max helpers (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Remove warn on missing representor in query_port_speed (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: E-Switch, preserve max tx speed on vport state modification (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Move vport DOWN state check out of mlx5_query_vport_max_tx_speed() (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: E-Switch, use state lock for vport state changes (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: free mlx5_st_idx_data on final dealloc (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Skip disabled vports when setting max TX speed (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix use-after-free in mlx5e_tx_reporter_timeout_recover (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: psp: Hook PSP dev reg/unreg to profile enable/disable (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: psp: Expose only a fully initialized priv->psp (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: psp: Fix invalid access on PSP dev registration fail (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: LAG, replace pf array with xarray (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix switchdev mode rollback in case of failure (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Avoid "No data available" when FW version queries fail (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: lag: Check for LAG device before creating debugfs (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix race condition during IPSec ESN update (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Prevent concurrent access to IPSec ASO context (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: qos: Restrict RTNL area to avoid a lock cycle (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: RX, Fix XDP multi-buf frag counting for legacy RQ (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: RX, Fix XDP multi-buf frag counting for striding RQ (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix DMA FIFO desync on error CQE SQ recovery (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix peer miss rules host disabled checks (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix crash when moving to switchdev mode (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix deadlock between devlink lock and esw->wq (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix "scheduling while atomic" in IPsec MAC address query (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix missing devlink lock in SRIOV enable error path (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: E-switch, Clear legacy flag when moving to switchdev (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: LAG, disable MPESW in lag_disable_change() (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: DR, Fix circular locking dependency in dump (Benjamin Poirier) [RHEL-142604]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses (Benjamin Poirier) [RHEL-142604]
+- Convert more 'alloc_obj' cases to default GFP_KERNEL arguments (Benjamin Poirier) [RHEL-142604]
+- Convert 'alloc_flex' family to use the new default GFP_KERNEL argument (Benjamin Poirier) [RHEL-142604]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument (Benjamin Poirier) [RHEL-142604]
+- kmalloc_obj: Clean up after treewide replacements [mlx5] (Benjamin Poirier) [RHEL-142604]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [mlx5] (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix deadlocks between devlink and netdev instance locks (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: MACsec, add ASO poll loop in macsec_aso_set_arm_event (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix misidentification of write combining CQE during poll loop (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Fix misidentification of ASO CQE during poll loop (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix multiport device check over light SFs (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: XSK, Fix unintended ICOSQ change (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Implement DMABUF export ops (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Support rate limit only for Raw Packet QP (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Fix memory leak in GET_DATA_DIRECT_SYSFS_PATH handler (Benjamin Poirier) [RHEL-142604]
+- IB/mlx5: Fix port speed query for representors (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Fix UMR hang in LAG error state unload (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Avoid direct access to DMA device pointer (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Fix ucaps init error flow (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Implement query_port_speed callback (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Raise async event on device speed change (Benjamin Poirier) [RHEL-142604]
+- kernel.h: drop hex.h and update all hex.h users (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: remove declarations of mlx5e_shampo_{fill_umr,dealloc_hd} (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: SHAMPO, Switch to header memcpy (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Fix 1600G link mode enum naming (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Support devlink port state for host PF (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Extend TC max ratelimit using max_bw_value_msb (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: SHAMPO, Improve allocation recovery (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: RX, Drop oversized packets in non-linear mode (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Conditionally create async ICOSQ (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Move async ICOSQ to dynamic allocation (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Use regular ICOSQ for triggering NAPI (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Move async ICOSQ lock into ICOSQ struct (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Initialize bulk for single flow counters (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: fs, split bulk init (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: fs, factor out flow counter bulk init (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Refine TX timeout handling to skip non-timed-out SQ (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Add IFC bits for extended ETS rate limit bandwidth value (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Add support for querying bond speed (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Handle port and vport speed change events in MPESW (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Propagate LAG effective max_tx_speed to vports (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Add max_tx_speed and its CAP bit to IFC (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Remove GSO_PARTIAL for non _CSUM GRE (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: TSO for UDP over GRE over vlan packets (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: TSO for GRE over vlan (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: don't assume psp tx skbs are ipv6 csum handling (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Dealloc forgotten PSP RX modify header (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Don't include PSP in the hard MTU calculations (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Avoid unregistering PSP twice (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Add support for 1600_8x lane speed (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: implement swp_l4_csum_mode via devlink params (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Add 1600Gbps link modes (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Add direct ST mode support for RDMA (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Add PSP stats support for Rx/Tx flows (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Switch to more abstract scoped ksimd guard API on arm64 (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Trim the length of the num_doorbell error (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: psp, avoid 'accel' NULL pointer dereference (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Do not fail PSP init on missing caps (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Implement PSP key_rotate operation (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Add Rx data path offload (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Configure PSP Rx flow steering rules (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Add PSP steering in local NIC RX (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Implement PSP Tx data path (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Implement PSP operations .assoc_add and .assoc_del (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Support PSP offload functionality (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Use the 'num_doorbells' devlink param (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Use unsigned for mlx5e_get_max_num_channels (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Add DMAH support for reg_user_mr/reg_user_dmabuf_mr (Benjamin Poirier) [RHEL-142604]
+- RDMA/mlx5: Add DMAH object support (Benjamin Poirier) [RHEL-142604]
+- net/mlx5: Add support for device steering tag (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Add support for UNREADABLE netmem page pools (Benjamin Poirier) [RHEL-142604]
+- net/mlx5e: Convert over to netmem (Benjamin Poirier) [RHEL-142604]
+
+* Wed Nov 04 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-282.el10]
+- redhat/genlog: remove bugzilla tickets from the changelog (Oleksii Baranov)
+- tcp: restrict SO_ATTACH_FILTER to priv users (Sona Vanarasu) [RHEL-257748] {CVE-2026-53236}
+- powerpc/kasan: fix r2 corruption in mem*() on GENERIC_ENTRY with old compilers (Mamatha Inamdar) [RHEL-190802]
+- powerpc: fix NMI exit ordering: restore soft masks after irqentry_nmi_exit() (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Remove dead non-preemption code (Mamatha Inamdar) [RHEL-190802]
+- powerpc/syscall: Fix syscall skip handling for seccomp and ptrace (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Restore KUAP registers on syscall restart exit (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Don't drop _TIF_RESTOREALL on syscall restart (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Fix exit_flags field placement in pt_regs for ptrace (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Move stack randomization after syscall_enter_from_user_mode() (Mamatha Inamdar) [RHEL-190802]
+- powerpc/entry: Fix irq_soft_mask corruption on replayed interrupt exit (Mamatha Inamdar) [RHEL-190802]
+- powerpc/entry: Fix double accounting of user time on interrupt entry (Mamatha Inamdar) [RHEL-190802]
+- powerpc/entry: Disable interrupts before irqentry_exit (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Do not restore KUAP in arch_exit_to_user_mode_prepare() (Mamatha Inamdar) [RHEL-190802]
+- powerpc/970: fix nap return address corruption on async interrupt exit (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Remove unused functions (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Enable GENERIC_ENTRY feature (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Prepare for IRQ entry exit (Mamatha Inamdar) [RHEL-190802]
+- powerpc: add exit_flags field in pt_regs (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Introduce syscall exit arch functions (Mamatha Inamdar) [RHEL-190802]
+- powerpc: introduce arch_enter_from_user_mode (Mamatha Inamdar) [RHEL-190802]
+- powerpc: Prepare to build with generic entry/exit framework (Mamatha Inamdar) [RHEL-190802]
+- powerpc: rename arch_irq_disabled_regs (Mamatha Inamdar) [RHEL-190802]
+- ring-buffer: Check resize_disabled before publishing the new subbuf order (Jerome Marchand) [RHEL-273605] {CVE-2026-97617}
+- ring-buffer: Acquire the lock with irqsave in rb_wake_up_waiters() (Jerome Marchand) [RHEL-273605]
+- tracing: Take trace_array reference when opening a tracer options file (Jerome Marchand) [RHEL-273605] {CVE-2026-97933}
+- selftests/ftrace: Fix unique symbol check in kprobe_non_uniq_symbol.tc (Jerome Marchand) [RHEL-273605]
+- tracing: Fix memory corruption from a "STACKTRACE" histogram key (Jerome Marchand) [RHEL-273605] {CVE-2026-97934}
+- tracing: Fix memory corruption from the histogram stacktrace modifier (Jerome Marchand) [RHEL-273605] {CVE-2026-97936}
+- tracing: Undo the registration when enabling the histogram trigger fails (Jerome Marchand) [RHEL-273605] {CVE-2026-97918}
+- tracing: Take the reference before publishing the named histogram trigger (Jerome Marchand) [RHEL-273605] {CVE-2026-97919}
+- tracing: Set the trace clock before registering the histogram trigger (Jerome Marchand) [RHEL-273605] {CVE-2026-97935}
+- tracing: Keep the entry count when the histogram stats allocation fails (Jerome Marchand) [RHEL-273605] {CVE-2026-97920}
+- tracing: Let histogram values keep the percent and graph modifiers (Jerome Marchand) [RHEL-273605]
+- tracing: Free histogram the field rejected for a bad modifier (Jerome Marchand) [RHEL-273605] {CVE-2026-97921}
+- tracing: Free histogram the var ref when its initialization fails (Jerome Marchand) [RHEL-273605] {CVE-2026-97923}
+- tracing: Free histogram var refs regardless of how often they are referenced (Jerome Marchand) [RHEL-273605] {CVE-2026-97922}
+- tracing/user_events: Don't destroy fields when event removal fails (Jerome Marchand) [RHEL-273605] {CVE-2026-97924}
+- ring-buffer: Add checking nr_subbufs to persistent ring buffer validation (Jerome Marchand) [RHEL-273605] {CVE-2026-98057}
+- tracing: Take trace_array reference when opening options file (Jerome Marchand) [RHEL-273605] {CVE-2026-90013}
+- ftrace: Synchronize the initialization of ftrace_ops (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Allow splice reads on static buffers (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Fix BTF kflag check for anonymous struct member access (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Fix anon_stack check for unnamed bitfields in btf_find_struct_member (Jerome Marchand) [RHEL-273605]
+- ftrace: Take trace_array reference before accessing its ftrace_ops (Jerome Marchand) [RHEL-273605] {CVE-2026-90002}
+- tracing/user_events: Clear copied tracing state before fork duplication (Jerome Marchand) [RHEL-273605] {CVE-2026-89750}
+- tracing/probes: Fix use-after-free on field name/type of events with multiple probes (Jerome Marchand) [RHEL-273605] {CVE-2026-98076}
+- samples/ftrace: Fix kthread_stop() on ERR_PTR in ftrace-direct-multi-modify (Jerome Marchand) [RHEL-273605] {CVE-2026-90066}
+- samples/ftrace: Fix kthread_stop() on ERR_PTR in ftrace-direct-modify (Jerome Marchand) [RHEL-273605]
+- eventfs: Initialize ei->children and ei->list in init_ei() (Jerome Marchand) [RHEL-273605] {CVE-2026-89618}
+- tracing: Fix use-after-free in trace_pipe read on sub-buffer order change (Jerome Marchand) [RHEL-273605] {CVE-2026-89747}
+- tracing: Fix crash passing ERR_PTR to kthread_stop() (Jerome Marchand) [RHEL-273605] {CVE-2026-89749}
+- tracing: Fix use-after-free with same-name named triggers (Jerome Marchand) [RHEL-273605] {CVE-2026-89746}
+- ring-buffer: Remove trace_buffer::cpus (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Fix subbuf resize race with ring_buffer_alloc_read_page() (Jerome Marchand) [RHEL-273605] {CVE-2026-89503}
+- ring-buffer: Show persistent buffer dropped events in trace_pipe file (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Fix subbuf resize race with ring buffer readers (Jerome Marchand) [RHEL-273605] {CVE-2026-89771}
+- ring-buffer: Make cpu_buffer::free_page a buffer_data_read_page (Jerome Marchand) [RHEL-273605] {CVE-2026-89500}
+- ring-buffer: Hold cpu_buffer::lock when resizing a subbuf (Jerome Marchand) [RHEL-273605] {CVE-2026-89501}
+- ring-buffer: Free cpu_buffer::free_page with subbuf_order (Jerome Marchand) [RHEL-273605] {CVE-2026-89502}
+- tracing: Fix race between update_event_fields and, event_define_fields (Jerome Marchand) [RHEL-273605] {CVE-2026-74636}
+- tracing: Have trace_event_update_all() only handle module that is loading (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Fix crash passing ERR_PTR to kthread_stop() (Jerome Marchand) [RHEL-273605] {CVE-2026-80730}
+- tracing: Fix logged instance name on creation failure (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Initialise reader page order in rb_allocate_cpu_buffer() (Jerome Marchand) [RHEL-273605] {CVE-2026-74602}
+- ring-buffer: Prevent subbuf order change when resizing is disabled (Jerome Marchand) [RHEL-273605] {CVE-2026-74634}
+- ring-buffer: Prevent resizing of persistent ring buffer (Jerome Marchand) [RHEL-273605]
+- ftrace: Fix off-by-one fentry site disable in ftrace_free_mem() (Jerome Marchand) [RHEL-273605]
+- eventfs: Fix use-after-free in eventfs_remove_rec() (Jerome Marchand) [RHEL-273605] {CVE-2026-74606}
+- selftests/ftrace: refactor eprobes test to fix argument checks (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Use current_context for safe per-CPU buffer swap (Jerome Marchand) [RHEL-273605] {CVE-2026-74601}
+- ftrace: Protect direct_functions in ftrace_find_rec_direct (Jerome Marchand) [RHEL-273605]
+- tracing/filters: Fix false positive match in regex_match_full() (Jerome Marchand) [RHEL-273605]
+- tracing: Check return value of __register_event() in trace_module_add_events() (Jerome Marchand) [RHEL-273605] {CVE-2026-74471}
+- tracing/mmiotrace: Add NULL check for mmio_trace_array in logging functions (Jerome Marchand) [RHEL-273605] {CVE-2026-80689}
+- tracing/mmiotrace: Reset dropped_count in mmio_reset_data() (Jerome Marchand) [RHEL-273605]
+- ftrace: Add global mutex to serialize trace_parser access (Jerome Marchand) [RHEL-273605] {CVE-2026-68146}
+- tracing/probes: Reject $arg0 in meta argument expansion (Jerome Marchand) [RHEL-273605]
+- tracing: Fix mmiotrace possible NULL dereferencing of hiter->dev (Jerome Marchand) [RHEL-273605] {CVE-2026-68176}
+- tracing/eprobe: Fix exact system name matching in eprobe_dyn_event_match() (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Fix potential underflow in LEN_OR_ZERO macro (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Prevent out-of-bounds write in __trace_probe_log_err() (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Avoid temporary buffer truncation in trace_probe_match_command_args() (Jerome Marchand) [RHEL-273605]
+- tracing: Fix resource leak on mmiotrace trace_pipe close (Jerome Marchand) [RHEL-273605] {CVE-2026-68175}
+- tracing/user_events: Fix use-after-free in user_event_mm_dup() (Jerome Marchand) [RHEL-273605] {CVE-2026-72071}
+- tracing: Prevent out-of-bounds read in glob matching (Jerome Marchand) [RHEL-273605] {CVE-2026-64299}
+- tracing/probes: Fix double addition of offset for @+FOFFSET (Jerome Marchand) [RHEL-273605]
+- tracing: eprobe: read the complete FILTER_PTR_STRING pointer (Jerome Marchand) [RHEL-273605]
+- tracing: probes: fix typo in a log message (Jerome Marchand) [RHEL-273605]
+- tracing/osnoise: Call synchronize_rcu() when unregistering (Jerome Marchand) [RHEL-273605] {CVE-2026-72012}
+- ring-buffer: Fix event length with forced 8-byte alignment (Jerome Marchand) [RHEL-273605] {CVE-2026-80876}
+- x86/ftrace: Relocate %%rip-relative percpu refs in dynamic trampolines (Jerome Marchand) [RHEL-273605] {CVE-2026-64235}
+- x86/alternatives: Rename 'apply_relocation()' to 'text_poke_apply_relocation()' (Jerome Marchand) [RHEL-273605]
+- perf/ftrace: Fix WARNING in __unregister_ftrace_function (Jerome Marchand) [RHEL-273605] {CVE-2026-97443}
+- tracing: Disable KCOV instrumentation for trace_irqsoff.o (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Point the error offset correctly for eprobe argument error (Jerome Marchand) [RHEL-273605]
+- tracing: Do not call map->ops->elt_free() if elt_alloc() fails (Jerome Marchand) [RHEL-273605] {CVE-2026-64173}
+- ring-buffer: Fix reporting of missed events in iterator (Jerome Marchand) [RHEL-273605]
+- tracing: Avoid NULL return from hist_field_name() on truncation (Jerome Marchand) [RHEL-273605] {CVE-2026-64028}
+- selftests/ftrace: Add test case for fully-qualified variable references (Jerome Marchand) [RHEL-273605]
+- tracing: Fix fully-qualified variable reference printing in histograms (Jerome Marchand) [RHEL-273605]
+- tracing: Bound synthetic-field strings with seq_buf (Jerome Marchand) [RHEL-273605] {CVE-2026-74391}
+- ring-buffer: Flush and stop persistent ring buffer on panic (Jerome Marchand) [RHEL-273605]
+- tracing/probes: Limit size of event probe to 3K (Jerome Marchand) [RHEL-273605]
+- tracing: branch: Fix inverted check on stat tracer registration (Jerome Marchand) [RHEL-273605]
+- eventfs: Hold eventfs_mutex and SRCU when remount walks events (Jerome Marchand) [RHEL-273605] {CVE-2026-46106}
+- eventfs: Use list_add_tail_rcu() for SRCU-protected children list (Jerome Marchand) [RHEL-273605]
+- tracepoint: balance regfunc() on func_add() failure in tracepoint_add_func() (Jerome Marchand) [RHEL-273605] {CVE-2026-46196}
+- selftests/ftrace: Drop invalid top-level local in test_ownership (Jerome Marchand) [RHEL-273605]
+- tracefs: Fix default permissions not being applied on initial mount (Jerome Marchand) [RHEL-273605]
+- tracing/probe: reject non-closed empty immediate strings (Jerome Marchand) [RHEL-273605]
+- tracing: Rebuild full_name on each hist_field_name() call (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Fix to update per-subbuf entries of persistent ring buffer (Jerome Marchand) [RHEL-273605]
+- tracing: Fix trace_buf_size= cmdline parameter with sizes >= 2G (Jerome Marchand) [RHEL-273605]
+- tracing: Fix enabling multiple events on the kernel command line and bootconfig (Jerome Marchand) [RHEL-273605]
+- blktrace: fix __this_cpu_read/write in preemptible context (Jerome Marchand) [RHEL-273605] {CVE-2026-23374}
+- tracing: Fix WARN_ON in tracing_buffers_mmap_close (Jerome Marchand) [RHEL-273605] {CVE-2026-23380}
+- tracing: Fix syscall events activation by ensuring refcount hits zero (Jerome Marchand) [RHEL-273605]
+- fgraph: Fix thresh_return clear per-task notrace (Jerome Marchand) [RHEL-273605]
+- tracing: Move d_max_latency out of CONFIG_FSNOTIFY protection (Jerome Marchand) [RHEL-273605]
+- tracing: Clean up use of trace_create_maxlat_file() (Jerome Marchand) [RHEL-273605]
+- tracing: Add recursion protection in kernel stack trace recording (Jerome Marchand) [RHEL-273605] {CVE-2026-23138}
+- tracing: Merge struct event_trigger_ops into struct event_command (Jerome Marchand) [RHEL-273605]
+- tracing: Remove get_trigger_ops() and add count_func() from trigger ops (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Add helper functions for allocations (Jerome Marchand) [RHEL-273605]
+- ring buffer: Propagate __rb_map_vma return value to caller (Jerome Marchand) [RHEL-273605]
+- Documentation: tracing: Add documentation about eprobes (Jerome Marchand) [RHEL-273605]
+- tracing: Remove "__attribute__()" from the type field of event format (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Remove jump to out label in ring_buffer_swap_cpu() (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Simplify ring_buffer_read_page() with guard() (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Simplify functions with __free(kfree) to free allocations (Jerome Marchand) [RHEL-273605]
+- ring-buffer: Make ring_buffer_{un}map() simpler with guard(mutex) (Jerome Marchand) [RHEL-273605]
+- tracing/mmiotrace: Remove reference to unused per CPU data pointer (Jerome Marchand) [RHEL-273605]
+- tracing: Remove TRACE_EVENT_FL_FILTERED logic (Jerome Marchand) [RHEL-273605]
+- ice: skip unnecessary VF reset when setting trust (Jakub Ramaseuski) [RHEL-177452]
+- iavf: send MAC change request synchronously (Jakub Ramaseuski) [RHEL-177452]
+- i40e: skip unnecessary VF reset when setting trust (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix metadata_dst refcount handling on representor teardown (Jakub Ramaseuski) [RHEL-177452]
+- ice: Restore Ordered MMIO Writes for Tx Doorbells (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix use-after-free in dynamic port cleanup (Jakub Ramaseuski) [RHEL-177452]
+- eth: ice: don't dereference pointers from TP_printk() (Jakub Ramaseuski) [RHEL-177452]
+- ice: add missing xa_destroy for sched_node_ids (Jakub Ramaseuski) [RHEL-177452]
+- virtchnl: move virtchnl and virtchnl2 headers to 'include/linux/net/intel' (Jakub Ramaseuski) [RHEL-177452]
+- ice: acquire NVM lock around each flash read (Jakub Ramaseuski) [RHEL-177452]
+- ice: clear the default forwarding VSI rule when releasing a VSI (Jakub Ramaseuski) [RHEL-177452]
+- ice: fall back to SBQ when LL PHY timer interface times out (Jakub Ramaseuski) [RHEL-177452]
+- ice: suppress DPLL errors during reset recovery (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix memory leak in ice_lbtest_prepare_rings() (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix VF interrupts cleanup (Jakub Ramaseuski) [RHEL-177452]
+- ice: wait for reset completion in ice_resume() (Jakub Ramaseuski) [RHEL-177452]
+- ice: prevent tstamp ring allocation for non-PF VSI types (Jakub Ramaseuski) [RHEL-177452] {CVE-2026-68292}
+- ice: fix PTP Call Trace during PTP release (Jakub Ramaseuski) [RHEL-177452] {CVE-2026-68133}
+- ice: use READ_ONCE() to access cached PHC time (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix LAG recipe to profile association (Jakub Ramaseuski) [RHEL-177452]
+- ice: pass the return value of skb_checksum_help() (Jakub Ramaseuski) [RHEL-177452]
+- ice: allow creating VFs when !CONFIG_ICE_SWITCHDEV (Jakub Ramaseuski) [RHEL-177452]
+- ice: use kzalloc() to allocate staging buffer for reading from GNSS (Jakub Ramaseuski) [RHEL-177452]
+- ice: dpll: fix memory leak in ice_dpll_init_info error paths (Jakub Ramaseuski) [RHEL-177452]
+- ice: dpll: set pointers to NULL after kfree in ice_dpll_deinit_info (Jakub Ramaseuski) [RHEL-177452]
+- ice: call netif_keep_dst() once when entering switchdev mode (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix ice_init_link() error return preventing probe (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix AQ error code comparison in ice_set_pauseparam() (Jakub Ramaseuski) [RHEL-177452]
+- ice: fix FDIR CTRL VSI resource leak in ice_reset_all_vfs() (Jakub Ramaseuski) [RHEL-177452] {CVE-2026-72425}
+- smb: client: clear setuid/setgid bit on write with cifsacl/modefromsid/posix extensions (CKI Backport Bot) [RHEL-271262] {CVE-2026-89638}
+- crypto: x86/aes-gcm - fix always true check for last AAD segment (Thomas Huth) [RHEL-136800]
+- crypto: api - Fix DUP_FIRST crash on unregister (Thomas Huth) [RHEL-136800]
+- crypto: zynqmp-sha - fix NULL pointer dereference in init_tfm (Thomas Huth) [RHEL-136800]
+- crypto: sa2ul - Fix HMAC key preparation (Thomas Huth) [RHEL-136800]
+- crypto: sa2ul - Fix AEAD fallback algorithm names (Thomas Huth) [RHEL-136800]
+- crypto: s390/hmac - Generate intermediate CV for API partial block handling (Thomas Huth) [RHEL-136800]
+- s390/crypto: Fix missing cra_flags in paes_s390 (Thomas Huth) [RHEL-136800]
+- s390/crypto: Fix handling of EBUSY in PHMAC when req is pushed to crypto engine (Thomas Huth) [RHEL-136800]
+- redhat: Assert that we cannot use HMAC-SHA with illegal key length in FIPS mode (Thomas Huth) [RHEL-136800]
+- libceph: Re-establish the FIPS keylength check in the Ceph code (Thomas Huth) [RHEL-136800]
+- crypto: arm64/aes-neonbs - clear the crypto_aes_ctx when done (Thomas Huth) [RHEL-136800]
+- crypto: sa2ul - clear the crypto_aes_ctx when done (Thomas Huth) [RHEL-136800]
+- crypto: padlock-aes - clear the crypto_aes_ctx when done (Thomas Huth) [RHEL-136800]
+- crypto: Provide a wrapper function for zeroizing crypto_aes_ctx (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha1: Provide functions for zeroizing hmac_sha1 structures (Thomas Huth) [RHEL-136800]
+- redhat: Make sure that MD5 cannot be used in fips_enabled mode (Thomas Huth) [RHEL-136800]
+- redhat: Make sure that ARC4 cannot be used in fips_enabled mode (Thomas Huth) [RHEL-136800]
+- redhat: Forbid to load the libdes module in FIPS mode (Thomas Huth) [RHEL-136800]
+- redhat: Forbid to load the libcurve25519 modules in FIPS mode (Thomas Huth) [RHEL-136800]
+- redhat: Revert to the old poly1305_generic.ko module name (Thomas Huth) [RHEL-136800]
+- redhat: Revert to the old chacha_generic.ko module name (Thomas Huth) [RHEL-136800]
+- kunit: irq: Continue increasing hrtimer interval for longer (Thomas Huth) [RHEL-136800]
+- kunit: irq: Unregister on-stack timer and work from debugobjects (Thomas Huth) [RHEL-136800]
+- crypto: Clean up help text for CRYPTO_SHA256 (Thomas Huth) [RHEL-136800]
+- kunit: irq: Ensure timer doesn't fire too frequently (Thomas Huth) [RHEL-136800]
+- kunit: Enforce task execution in {soft,hard}irq contexts (Thomas Huth) [RHEL-136800]
+- kunit, lib/crypto: Move run_irq_test() to common header (Thomas Huth) [RHEL-136800]
+- crypto: asymmetric_keys - fix uninitialized pointers with free attribute (Thomas Huth) [RHEL-136800]
+- crypto: essiv - Check ssize for decryption and in-place encryption (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Fix reqsize handling (Thomas Huth) [RHEL-136800]
+- crypto: rng - Ensure set_ent is always present (Thomas Huth) [RHEL-136800]
+- crypto: zstd - Fix compression bug caused by truncation (Thomas Huth) [RHEL-136800]
+- X.509: Fix out-of-bounds access when parsing extensions (Thomas Huth) [RHEL-136800]
+- KEYS: X.509: Fix Basic Constraints CA flag parsing (Thomas Huth) [RHEL-136800]
+- crypto: anubis - simplify return statement in anubis_mod_init (Thomas Huth) [RHEL-136800]
+- redhat: Use same definition of context alloc and free ops in cavium/zip, too (Thomas Huth) [RHEL-136800]
+- crypto: comp - Use same definition of context alloc and free ops (Thomas Huth) [RHEL-136800]
+- crypto: cryptd - WQ_PERCPU added to alloc_workqueue users (Thomas Huth) [RHEL-136800]
+- crypto: hash - Make HASH_MAX_DESCSIZE a bit more obvious (Thomas Huth) [RHEL-136800]
+- crypto: md5 - Implement export_core() and import_core() (Thomas Huth) [RHEL-136800]
+- crypto: x86 - Fix build warnings about export.h (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_BLAKE2S_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for BLAKE2s (Thomas Huth) [RHEL-136800]
+- lib/crypto: blake2s: Move generic code into blake2s.c (Thomas Huth) [RHEL-136800]
+- lib/crypto: blake2s: Always enable arch-optimized BLAKE2s code (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/blake2s: Reduce size of BLAKE2S_SIGMA2 (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_MD5_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for MD5 and HMAC-MD5 (Thomas Huth) [RHEL-136800]
+- lib/crypto: powerpc/md5: Migrate optimized code into library (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha512: Use underlying functions instead of crypto_simd_usable() (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha: Update Kconfig help for SHA1 and SHA256 (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Annotate worker to be on stack (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm64/sha512-ce: Drop compatibility macros for older binutils (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_SHA1_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for SHA-1 and HMAC-SHA1 (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_POLY1305_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for Poly1305 (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_SHA512_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for SHA-384 and SHA-512 (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_BENCHMARK (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_LIB_SHA256_KUNIT_TEST (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add KUnit tests for SHA-224 and SHA-256 (Thomas Huth) [RHEL-136800]
+- lib/crypto: tests: Add hash-test-template.h and gen-hash-testvecs.py (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha1 - Rename conflicting symbol (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm/sha1: Migrate optimized code into library (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/sha256: Remove unnecessary checks for nblocks==0 (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Sync sha256_update() with sha512_update() (Thomas Huth) [RHEL-136800]
+- lib/crypto: blake2s: Remove obsolete self-test (Thomas Huth) [RHEL-136800]
+- lib/crypto: chacha: Rename libchacha.c to chacha.c (Thomas Huth) [RHEL-136800]
+- lib/crypto: chacha: Rename chacha.c to chacha-block-generic.c (Thomas Huth) [RHEL-136800]
+- lib/crypto: chacha: Remove unused function chacha_is_arch_optimized() (Thomas Huth) [RHEL-136800]
+- crypto: chacha - register only "-lib" drivers (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm/poly1305: Remove unneeded empty weak function (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/poly1305: Fix performance regression on short messages (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/poly1305: Fix register corruption in no-SIMD contexts (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm64/poly1305: Fix register corruption in no-SIMD contexts (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm/poly1305: Fix register corruption in no-SIMD contexts (Thomas Huth) [RHEL-136800]
+- lib/crypto: poly1305: Remove unused function poly1305_is_arch_optimized() (Thomas Huth) [RHEL-136800]
+- crypto: md5 - Wrap library and add HMAC support (Thomas Huth) [RHEL-136800]
+- lib/crypto: md5: Add MD5 and HMAC-MD5 library functions (Thomas Huth) [RHEL-136800]
+- crypto: af_alg - Set merge to zero early in af_alg_sendmsg (Thomas Huth) [RHEL-136800]
+- crypto: sha512 - Implement export_core() and import_core() (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - Implement export_core() and import_core() (Thomas Huth) [RHEL-136800]
+- crypto: sha1 - Implement export_core() and import_core() (Thomas Huth) [RHEL-136800]
+- crypto: hash - Increase HASH_MAX_DESCSIZE for hmac(sha3-224-s390) (Thomas Huth) [RHEL-136800]
+- crypto: engine - remove {prepare,unprepare}_crypt_hardware callbacks (Thomas Huth) [RHEL-136800]
+- crypto: engine - remove request batching support (Thomas Huth) [RHEL-136800]
+- crypto: s390 - Add selftest support for phmac (Thomas Huth) [RHEL-136800]
+- crypto: s390/phmac - Do not modify the req->nbytes value (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_PHMAC_S390 (Thomas Huth) [RHEL-136800]
+- crypto: s390 - New s390 specific protected key hash phmac (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha3 - Use cpu byte-order when exporting (Thomas Huth) [RHEL-136800]
+- crypto: s390/hmac - Fix counter in export state (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Fix CFI failure due to type punning (Thomas Huth) [RHEL-136800]
+- crypto: cryptd - Use nested-BH locking for cryptd_cpu_queue (Thomas Huth) [RHEL-136800]
+- crypto: zstd - replace zero-length array with flexible array member (Thomas Huth) [RHEL-136800]
+- crypto: zstd - fix duplicate check warning (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - Enable phmac selftest (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Add crypto_ahash_tested() helper function (Thomas Huth) [RHEL-136800]
+- crypto: ahash - make hash walk functions from ahash.c public (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - Restore sha384 and hmac_sha384 drbgs in FIPS mode (Thomas Huth) [RHEL-136800]
+- crypto: zstd - fix double-free in per-CPU stream cleanup (Thomas Huth) [RHEL-136800]
+- crypto: zstd - convert to acomp (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Stop legacy tfms from using the set_virt fallback path (Thomas Huth) [RHEL-136800]
+- crypto: caam - Fix opencoded cpumask_next_wrap() in caam_drv_ctx_init() (Thomas Huth) [RHEL-136800]
+- crypto: pcrypt - Optimize pcrypt_aead_init_tfm() (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Add support for drivers with no fallback (Thomas Huth) [RHEL-136800]
+- crypto: sha1 - Use same state format as legacy drivers (Thomas Huth) [RHEL-136800]
+- crypto: sha1 - Wrap library and add HMAC support (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha1: Add HMAC support (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha1: Add SHA-1 library functions (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha1: Rename sha1_init() to sha1_init_raw() (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha2: Add hmac_sha*_init_usingrawkey() (Thomas Huth) [RHEL-136800]
+- lib/crypto: hash_info: Move hash_info.c into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Document the SHA-224 and SHA-256 API (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Remove sha256_is_arch_optimized() (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - Use same state format as legacy drivers (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - Wrap library and add HMAC support (Thomas Huth) [RHEL-136800]
+- libceph: Use HMAC-SHA256 library instead of crypto_shash (Thomas Huth) [RHEL-136800]
+- libceph: Rename hmac_sha256() to ceph_hmac_sha256() (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Add HMAC-SHA224 and HMAC-SHA256 support (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Propagate sha256_block_state type to implementations (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Make library API use strongly-typed contexts (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Add sha224() and sha224_update() (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Remove sha256_blocks_simd() (Thomas Huth) [RHEL-136800]
+- lib/crypto: mips/chacha: Fix clang build and remove unneeded byteswap (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86: Move arch/x86/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: sparc: Move arch/sparc/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: s390: Move arch/s390/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: riscv: Move arch/riscv/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: powerpc: Move arch/powerpc/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: mips: Move arch/mips/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm64: Move arch/arm64/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm: Move arch/arm/lib/crypto/ into lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha256 - rename module to sha256-s390 (Thomas Huth) [RHEL-136800]
+- lib/crypto: Explicitly include <linux/export.h> (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - add array bounds to function prototypes (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - use struct assignment to copy state (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - add strongly-typed state zeroization (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - strongly type the ChaCha state (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/poly1305 - Add poly1305_emit_arch wrapper (Thomas Huth) [RHEL-136800]
+- crypto: lib/poly1305 - Build main library on LIB_POLY1305 and split generic code out (Thomas Huth) [RHEL-136800]
+- redhat: Adjust crypto/poly1305.c for changes in previous commit (Thomas Huth) [RHEL-136800]
+- crypto: lib/poly1305 - Use block-only interface (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/sha512: Remove unnecessary checks for nblocks==0 (Thomas Huth) [RHEL-136800]
+- lib/crypto: x86/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- lib/crypto: s390/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- lib/crypto: riscv/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- lib/crypto: mips/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- mips: cavium-octeon: Move octeon-crypto.h into asm directory (Thomas Huth) [RHEL-136800]
+- crypto: mips/octeon-sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: mips/octeon-md5 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: mips/octeon-sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm64/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- lib/crypto: arm/sha512: Migrate optimized SHA-512 code to library (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sha512 - Stop depending on sha512_generic_block_fn (Thomas Huth) [RHEL-136800]
+- crypto: sha512 - Rename conflicting symbols (Thomas Huth) [RHEL-136800]
+- lib/crypto/poly1305: Fix arm64's poly1305_blocks_arch() (Thomas Huth) [RHEL-136800]
+- lib/crypto: curve25519-hacl64: Fix older clang KASAN workaround for GCC (Thomas Huth) [RHEL-136800]
+- lib/crypto/curve25519-hacl64: Disable KASAN with clang-17 and older (Thomas Huth) [RHEL-136800]
+- lib/crypto: Annotate crypto strings with nonstring (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/poly1305 - add depends on BROKEN for now (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/poly1305 - Add missing poly1305_emit_arch (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha512 - Initialise upper counter to zero for sha384 (Thomas Huth) [RHEL-136800]
+- crypto: s390/hmac - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha256 - Add simd block function (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sha256 - Add simd block function (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256 - Add simd block function (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha256 - Add simd block function (Thomas Huth) [RHEL-136800]
+- crypto: arch/sha256 - Export block functions as GPL only (Thomas Huth) [RHEL-136800]
+- crypto: x86/blake2s - Include linux/init.h (Thomas Huth) [RHEL-136800]
+- crypto: s390/hmac - Extend hash length counters to 128 bits (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Reorder some code (Thomas Huth) [RHEL-136800]
+- crypto: sha512 - Remove sha512_base.h (Thomas Huth) [RHEL-136800]
+- crypto: sha512 - Use same state format as legacy drivers (Thomas Huth) [RHEL-136800]
+- crypto: sha512 - Replace sha512_generic with wrapper around SHA-512 library (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha512: Add HMAC-SHA384 and HMAC-SHA512 support (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha512: Add support for SHA-384 and SHA-512 (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - remove crc32c context format test (Thomas Huth) [RHEL-136800]
+- lib/crypto: sha256: Mark sha256_choose_blocks as __always_inline (Thomas Huth) [RHEL-136800]
+- crypto: wp512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- dm-crypt: Extend state buffer size in crypt_iv_lmk_one (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Fix infinite recursion in ahash_def_finup (Thomas Huth) [RHEL-136800]
+- redhat: Set CONFIG_CRYPTO_SELFTESTS_FULL (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - reinstate kconfig control over full self-tests (Thomas Huth) [RHEL-136800]
+- crypto: hkdf - move to late_initcall (Thomas Huth) [RHEL-136800]
+- crypto: shash - Fix buffer overrun in import function (Thomas Huth) [RHEL-136800]
+- crypto: xts - Only add ecb if it is not already there (Thomas Huth) [RHEL-136800]
+- crypto: lrw - Only add ecb if it is not already there (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - Use ahash for generic tfm (Thomas Huth) [RHEL-136800]
+- crypto: hmac - Add ahash support (Thomas Huth) [RHEL-136800]
+- crypto: algapi - Add driver template support to crypto_inst_setname (Thomas Huth) [RHEL-136800]
+- crypto: shash - Set reqsize in shash_alg (Thomas Huth) [RHEL-136800]
+- crypto: hmac - Add export_core and import_core (Thomas Huth) [RHEL-136800]
+- crypto: hmac - Zero shash desc in setkey (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Zero positive err value in ahash_update_finish (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Fix crypto_ahash_import with partial block data (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Handle partial blocks in API (Thomas Huth) [RHEL-136800]
+- crypto: hash - Add export_core and import_core hooks (Thomas Huth) [RHEL-136800]
+- crypto: hash - Move core export and import into internel/hash.h (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - enable CRYPTO_MANAGER when CRYPTO_SELFTESTS (Thomas Huth) [RHEL-136800]
+- crypto: Kconfig - make CRYPTO_MANAGER a hidden symbol (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - rename noextratests to noslowtests (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - make it easier to enable the full set of tests (Thomas Huth) [RHEL-136800]
+- redhat: Rename CONFIG_CRYPTO_MANAGER_DISABLE_TESTS to CONFIG_CRYPTO_SELFTESTS (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - replace CRYPTO_MANAGER_DISABLE_TESTS with CRYPTO_SELFTESTS (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - remove panic_on_fail (Thomas Huth) [RHEL-136800]
+- arm64: defconfig: Ensure CRYPTO_CHACHA20_NEON is selected (Thomas Huth) [RHEL-136800]
+- redhat: Rename CONFIG_CRYPTO_TEST to CONFIG_CRYPTO_BENCHMARK (Thomas Huth) [RHEL-136800]
+- crypto: tcrypt - rename CRYPTO_TEST to CRYPTO_BENCHMARK (Thomas Huth) [RHEL-136800]
+- crypto: null - use memcpy_sglist() (Thomas Huth) [RHEL-136800]
+- crypto: null - merge CRYPTO_NULL2 into CRYPTO_NULL (Thomas Huth) [RHEL-136800]
+- crypto: null - remove the default null skcipher (Thomas Huth) [RHEL-136800]
+- crypto: krb5enc - do not select CRYPTO_NULL (Thomas Huth) [RHEL-136800]
+- crypto: geniv - use memcpy_sglist() instead of null skcipher (Thomas Huth) [RHEL-136800]
+- crypto: gcm - use memcpy_sglist() instead of null skcipher (Thomas Huth) [RHEL-136800]
+- crypto: authenc - use memcpy_sglist() instead of null skcipher (Thomas Huth) [RHEL-136800]
+- crypto: algif_aead - use memcpy_sglist() instead of null skcipher (Thomas Huth) [RHEL-136800]
+- bcachefs: use library APIs for ChaCha20 and Poly1305 (Thomas Huth) [RHEL-136800]
+- bcachefs: use sha256() instead of crypto_shash API (Thomas Huth) [RHEL-136800]
+- bcachefs: Explicitly select CRYPTO from BCACHEFS_FS (Thomas Huth) [RHEL-136800]
+- bcachefs: Remove unnecessary softdeps on crc32c and crc64 (Thomas Huth) [RHEL-136800]
+- bcachefs: #if 0 out (enable|disable)_encryption() (Thomas Huth) [RHEL-136800]
+- bcachefs: Don't try to en/decrypt when encryption not available (Thomas Huth) [RHEL-136800]
+- crypto: padlock-sha - Use core import and export for fallback (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Add HASH_REQUEST_ZERO (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Add core export and import (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Enforce MAX_SYNC_HASH_REQSIZE for sync ahash (Thomas Huth) [RHEL-136800]
+- crypto: shash - Mark shash algorithms as REQ_VIRT (Thomas Huth) [RHEL-136800]
+- crypto: shash - Cap state size to HASH_MAX_STATESIZE (Thomas Huth) [RHEL-136800]
+- crypto: zynqmp-sha - Fix partial block implementation (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - Use the partial block API (Thomas Huth) [RHEL-136800]
+- crypto: lib/sha256 - Use generic block helper (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - Use the partial block API for generic (Thomas Huth) [RHEL-136800]
+- crypto: lib/sha256 - Add helpers for block-based shash (Thomas Huth) [RHEL-136800]
+- crypto: api - Rename CRYPTO_ALG_REQ_CHAIN to CRYPTO_ALG_REQ_VIRT (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Clone folios properly (Thomas Huth) [RHEL-136800]
+- crypto: rng - fix documentation for crypto_rng_alg() (Thomas Huth) [RHEL-136800]
+- Revert "crypto: run initcalls for generic implementations earlier" (Thomas Huth) [RHEL-136800]
+- crypto: streebog - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: rmd160 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: lib/sha256 - improve function prototypes (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - remove sha256_base.h (Thomas Huth) [RHEL-136800]
+- crypto: sha256 - support arch-optimized lib and expose through shash (Thomas Huth) [RHEL-136800]
+- x86/fpu: Fix irq_fpu_usable() to return false during CPU onlining (Thomas Huth) [RHEL-136800]
+- x86/efi: Restore IRQ state in EFI page fault handler (Thomas Huth) [RHEL-136800]
+- x86/efi: efi_unmap_boot_services: fix calculation of ranges_to_free size (Thomas Huth) [RHEL-136800]
+- x86/efi: defer freeing of boot services memory (Thomas Huth) [RHEL-136800]
+- x86/efi: Fix graceful fault handling after FPU softirq changes (Thomas Huth) [RHEL-136800]
+- x86/fpu: Improve crypto performance by making kernel-mode FPU reliably usable in softirqs (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: sparc/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: sparc - move opcodes.h into asm directory (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: mips/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: mips/octeon-sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256 - fix build when CONFIG_PREEMPT_VOLUNTARY=y (Thomas Huth) [RHEL-136800]
+- redhat: Remove CONFIG_CRYPTO_SHA256_ARM64 switch (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256 - remove obsolete chunking logic (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha256 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: x86/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: mips/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: arm64/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: arm/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha512 - Fix sha512 state size (Thomas Huth) [RHEL-136800]
+- crypto: x86/polyval - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/polyval - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: chacha20poly1305 - validate poly1305 template argument (Thomas Huth) [RHEL-136800]
+- crypto: chacha20poly1305 - Use lib/crypto poly1305 (Thomas Huth) [RHEL-136800]
+- crypto: lib/poly1305 - Add block-only interface (Thomas Huth) [RHEL-136800]
+- crypto: lib/sha256 - Move partial block handling out (Thomas Huth) [RHEL-136800]
+- Revert "crypto: scatterwalk - Move skcipher walk and use it for memcpy_sglist" (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - Fix memcpy_sglist() to always succeed (Thomas Huth) [RHEL-136800]
+- crypto: remove nth_page() usage within SG entry (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - Move skcipher walk and use it for memcpy_sglist (Thomas Huth) [RHEL-136800]
+- crypto: api - Add crypto_stack_request_init and initialise flags fully (Thomas Huth) [RHEL-136800]
+- crypto: polyval-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: hash - Fix clone error handling (Thomas Huth) [RHEL-136800]
+- crypto: api - Add crypto_request_clone and fb (Thomas Huth) [RHEL-136800]
+- crypto: lib/poly1305 - remove INTERNAL symbol and selection of CRYPTO (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - remove INTERNAL symbol and selection of CRYPTO (Thomas Huth) [RHEL-136800]
+- crypto: x86 - move library functions to arch/x86/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: s390 - move library functions to arch/s390/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: riscv - move library functions to arch/riscv/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: powerpc - move library functions to arch/powerpc/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: mips - move library functions to arch/mips/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: arm64 - move library functions to arch/arm64/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: arm - move library functions to arch/arm/lib/crypto/ (Thomas Huth) [RHEL-136800]
+- crypto: x86 - drop redundant dependencies on X86 (Thomas Huth) [RHEL-136800]
+- crypto: s390 - drop redundant dependencies on S390 (Thomas Huth) [RHEL-136800]
+- crypto: powerpc - drop redundant dependencies on PPC (Thomas Huth) [RHEL-136800]
+- crypto: arm64 - drop redundant dependencies on ARM64 (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha1 - Set finalize for short finup (Thomas Huth) [RHEL-136800]
+- crypto: arm/blake2b - Set FINAL_NONZERO (Thomas Huth) [RHEL-136800]
+- crypto: riscv - Use SYM_FUNC_START for functions only called directly (Thomas Huth) [RHEL-136800]
+- crypto: padlock-sha - Disable for Zhaoxin processor (Thomas Huth) [RHEL-136800]
+- crypto: padlock-sha - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: nx - fix nx_crypto_ctx_exit argument (Thomas Huth) [RHEL-136800]
+- crypto: nx - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sm4 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/aes - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/sm3 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sm3 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sm3-neon - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sm3-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sparc/sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha512-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha512-asm - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha512-neon - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha3 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sparc/sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/sha256-spe - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha256-asm - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha256-neon - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha256-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sparc/sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: s390/sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/sha1-spe - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha1-asm - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha1-neon - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/sha1-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sparc/md5 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/md5 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: s390/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/ghash - Fix incorrect output from ghash-neon (Thomas Huth) [RHEL-136800]
+- crypto: arm64/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - restore ability to remove modules (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha512 - Fix header inclusions (Thomas Huth) [RHEL-136800]
+- crypto: powerpc - Include uaccess.h and others (Thomas Huth) [RHEL-136800]
+- crypto: x86/chacha - Restore SSSE3 fallback path (Thomas Huth) [RHEL-136800]
+- crypto: s390/chacha - remove the skcipher algorithms (Thomas Huth) [RHEL-136800]
+- redhat: Remove CONFIG_CRYPTO_CHACHA20_P10 switch (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/chacha - remove the skcipher algorithms (Thomas Huth) [RHEL-136800]
+- crypto: mips/chacha - remove the skcipher algorithms (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes-xts - optimize _compute_first_set_of_tweaks for AVX-512 (Thomas Huth) [RHEL-136800]
+- crypto: x86 - Remove CONFIG_AS_AVX512 handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/aes-neonbs - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: arm/aes-ce - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/twofish - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/sm4 - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/serpent - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/cast - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/camellia - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/aria - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/aegis - stop using the SIMD helper (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes - drop the avx10_256 AES-XTS and AES-CTR code (Thomas Huth) [RHEL-136800]
+- crypto: arm/ghash-ce - Remove SIMD fallback code path (Thomas Huth) [RHEL-136800]
+- crypto: lib/Kconfig - hide library options (Thomas Huth) [RHEL-136800]
+- crypto: lib/chachapoly - Drop dependency on CRYPTO_ALGAPI (Thomas Huth) [RHEL-136800]
+- crypto: x86/ghash - Use proper helpers to clone request (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes-xts - change license to Apache-2.0 OR BSD-2-Clause (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes-ctr - rewrite AESNI+AVX optimized CTR and add VAES support (Thomas Huth) [RHEL-136800]
+- x86,kcfi: Fix EXPORT_SYMBOL vs kCFI (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes-xts - make the fast path 64-bit specific (Thomas Huth) [RHEL-136800]
+- crypto: engine - Remove CRYPTO_ALG_ENGINE bit (Thomas Huth) [RHEL-136800]
+- crypto: xcbc - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: cmac - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: cbcmac - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: lib/sm3 - Remove partial block helpers (Thomas Huth) [RHEL-136800]
+- crypto: sm3-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sha512_base - Remove partial block helpers (Thomas Huth) [RHEL-136800]
+- crypto: sha512-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha512 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: zynqmp-sha - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: zynqmp-sha - Make descsize an algorithm attribute (Thomas Huth) [RHEL-136800]
+- crypto: zynqmp-sha - Add locking (Thomas Huth) [RHEL-136800]
+- crypto: sha3-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha3-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sha256_base - Remove partial block helpers (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha256-ce - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: sha256-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: riscv/sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha256 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86 - Remove CONFIG_AS_SHA256_NI (Thomas Huth) [RHEL-136800]
+- crypto: x86 - Remove CONFIG_AS_SHA1_NI (Thomas Huth) [RHEL-136800]
+- crypto: sha1_base - Remove partial block helpers (Thomas Huth) [RHEL-136800]
+- crypto: sha1-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm64/sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: x86/sha1 - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: md5-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: riscv/ghash - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: ghash-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: arm/blake2b - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: blake2b-generic - Use API partial block handling (Thomas Huth) [RHEL-136800]
+- crypto: shash - Handle partial blocks in API (Thomas Huth) [RHEL-136800]
+- crypto: engine - Realign struct crypto_engine to save 8 bytes (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add missing return statements in compress/decompress (Thomas Huth) [RHEL-136800]
+- crypto: public_key - Make sig/tfm local to if clause in software_key_query (Thomas Huth) [RHEL-136800]
+- crypto: deflate - Make the acomp walk atomic (Thomas Huth) [RHEL-136800]
+- crypto: poly1305 - remove rset and sset fields of poly1305_desc_ctx (Thomas Huth) [RHEL-136800]
+- crypto: lib/poly1305 - restore ability to remove modules (Thomas Huth) [RHEL-136800]
+- crypto: x86/poly1305 - don't select CRYPTO_LIB_POLY1305_GENERIC (Thomas Huth) [RHEL-136800]
+- crypto: x86/poly1305 - remove redundant shash algorithm (Thomas Huth) [RHEL-136800]
+- crypto: mips/poly1305 - remove redundant shash algorithm (Thomas Huth) [RHEL-136800]
+- crypto: mips/poly1305 - drop redundant dependency on CONFIG_MIPS (Thomas Huth) [RHEL-136800]
+- crypto: arm64/poly1305 - remove redundant shash algorithm (Thomas Huth) [RHEL-136800]
+- crypto: arm/poly1305 - remove redundant shash algorithm (Thomas Huth) [RHEL-136800]
+- crypto: poly1305 - centralize the shash wrappers for arch code (Thomas Huth) [RHEL-136800]
+- crypto: powerpc/poly1305 - implement library instead of shash (Thomas Huth) [RHEL-136800]
+- crypto: chacha - remove <crypto/internal/chacha.h> (Thomas Huth) [RHEL-136800]
+- crypto: x86/chacha - remove the skcipher algorithms (Thomas Huth) [RHEL-136800]
+- crypto: x86/chacha - Remove SIMD fallback path (Thomas Huth) [RHEL-136800]
+- crypto: arm64/chacha - remove the skcipher algorithms (Thomas Huth) [RHEL-136800]
+- crypto: arm/chacha - remove the redundant skcipher algorithms (Thomas Huth) [RHEL-136800]
+- crypto: chacha - centralize the skcipher wrappers for arch code (Thomas Huth) [RHEL-136800]
+- crypto: riscv/chacha - implement library instead of skcipher (Thomas Huth) [RHEL-136800]
+- crypto: deadcode structs from 'comp' removal (Thomas Huth) [RHEL-136800]
+- crypto: cbcmac - Set block size properly (Thomas Huth) [RHEL-136800]
+- crypto: sm3-base - Use sm3_init (Thomas Huth) [RHEL-136800]
+- crypto: lib/sm3 - Export generic block function (Thomas Huth) [RHEL-136800]
+- redhat: Rename the CONFIG_CRYPTO_SM3 switch into CONFIG_CRYPTO_LIB_SM3 (Thomas Huth) [RHEL-136800]
+- crypto: lib/sm3 - Move sm3 library into lib/crypto (Thomas Huth) [RHEL-136800]
+- crypto: hash - Update HASH_MAX_DESCSIZE comment (Thomas Huth) [RHEL-136800]
+- crypto: hash - Add HASH_REQUEST_ON_STACK (Thomas Huth) [RHEL-136800]
+- crypto: shash - Remove dynamic descsize (Thomas Huth) [RHEL-136800]
+- crypto: padlock-sha - Make descsize an algorithm attribute (Thomas Huth) [RHEL-136800]
+- crypto: hmac - Make descsize an algorithm attribute (Thomas Huth) [RHEL-136800]
+- crypto: scompress - increment scomp_scratch_users when already allocated (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Fix off-by-one bug when calculating last page (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Fix wild memory accesses in scomp_free_streams [partial] (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Fix null-pointer deref when freeing streams (Thomas Huth) [RHEL-136800]
+- crypto: api - Add support for duplicating algorithms before registration (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Realign struct skcipher_walk to save 8 bytes (Thomas Huth) [RHEL-136800]
+- crypto: simd - Include asm/simd.h in internal/simd.h (Thomas Huth) [RHEL-136800]
+- x86: Make simd.h more resilient (Thomas Huth) [RHEL-136800]
+- arm: Make simd.h more resilient (Thomas Huth) [RHEL-136800]
+- asm-generic: Add sched.h inclusion in simd.h (Thomas Huth) [RHEL-136800]
+- asm-generic: Make simd.h more resilient (Thomas Huth) [RHEL-136800]
+- crypto: api - Allow delayed algorithm destruction (Thomas Huth) [RHEL-136800]
+- crypto: essiv - Remove unnecessary strscpy() size argument (Thomas Huth) [RHEL-136800]
+- crypto: ecdsa - Fix NIST P521 key size reported by KEYCTL_PKEY_QUERY (Thomas Huth) [RHEL-136800]
+- crypto: ecdsa - Fix enc/dec size reported by KEYCTL_PKEY_QUERY (Thomas Huth) [RHEL-136800]
+- crypto: api - Mark cra_init/cra_exit as deprecated (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Use cra_reqsize (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Remove reqsize field (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Use cra_reqsize (Thomas Huth) [RHEL-136800]
+- crypto: iaa - Use cra_reqsize for acomp (Thomas Huth) [RHEL-136800]
+- crypto: qat - Use cra_reqsize for acomp (Thomas Huth) [RHEL-136800]
+- crypto: aead - Fix reqsize handling (Thomas Huth) [RHEL-136800]
+- crypto: api - Add reqsize to crypto_alg (Thomas Huth) [RHEL-136800]
+- crypto: s5p-sss - Add missing header inclusions (Thomas Huth) [RHEL-136800]
+- crypto: nx - Add missing header inclusions (Thomas Huth) [RHEL-136800]
+- crypto: ctr - Remove unnecessary header inclusions (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Simplify folio handling (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Remove ACOMP_REQUEST_ALLOC (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add ACOMP_REQUEST_CLONE (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add ACOMP_FBREQ_ON_STACK (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Use request flag helpers and add acomp_request_flags (Thomas Huth) [RHEL-136800]
+- crypto: api - Add helpers to manage request flags (Thomas Huth) [RHEL-136800]
+- crypto: x509 - Replace kmalloc() + NUL-termination with kzalloc() (Thomas Huth) [RHEL-136800]
+- crypto: ctr - remove unused crypto_ctr_encrypt_walk() (Thomas Huth) [RHEL-136800]
+- crypto: hash - Do not use shash in hard IRQs (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Remove request chaining (Thomas Huth) [RHEL-136800]
+- crypto: acomp - fix wrong pointer stored by acomp_save_req() (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Remove request chaining (Thomas Huth) [RHEL-136800]
+- crypto: deflate - Remove request chaining (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Drop the dst scratch buffer (Thomas Huth) [RHEL-136800]
+- crypto: crypto4xx - Fix gcc12 uninitialized warning in crypto4xx_crypt (Thomas Huth) [RHEL-136800]
+- crypto: deflate - fix spurious -ENOSPC (Thomas Huth) [RHEL-136800]
+- crypto: deflate - Convert to acomp (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add acomp_walk (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Move scomp stream allocation code into acomp (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Allocate per-cpu buffer on first use of each CPU (Thomas Huth) [RHEL-136800]
+- crypto: api - Ensure cra_type->destroy is done in process context (Thomas Huth) [RHEL-136800]
+- crypto: api - Move alg destroy work from instance to template (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Disable request chaining (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Fix synchronous acomp chaining fallback (Thomas Huth) [RHEL-136800]
+- crypto: hash - Fix synchronous ahash chaining fallback (Thomas Huth) [RHEL-136800]
+- crypto: essiv - Replace memcpy() + NUL-termination with strscpy() (Thomas Huth) [RHEL-136800]
+- crypto: api - Call crypto_alg_put in crypto_unregister_alg (Thomas Huth) [RHEL-136800]
+- crypto: scompress - Fix incorrect stream freeing (Thomas Huth) [RHEL-136800]
+- crypto: lib/chacha - remove unused arch-specific init support (Thomas Huth) [RHEL-136800]
+- crypto: remove obsolete 'comp' compression API (Thomas Huth) [RHEL-136800]
+- crypto: compress_null - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: cavium/zip - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: zstd - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: lzo - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: lzo-rle - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: lz4hc - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: lz4 - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: deflate - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: nx - fix context leak in nx842_crypto_free_ctx (Thomas Huth) [RHEL-136800]
+- crypto: nx - fix bounce buffer leaks in nx842_crypto_{alloc,free}_ctx (Thomas Huth) [RHEL-136800]
+- crypto: 842 - drop obsolete 'comp' implementation (Thomas Huth) [RHEL-136800]
+- crypto: nx - Migrate to scomp API (Thomas Huth) [RHEL-136800]
+- crypto: scompress - Fix scratch allocation failure handling (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add support for folios (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add async nondma fallback (Thomas Huth) [RHEL-136800]
+- crypto: iaa - Use acomp stack fallback (Thomas Huth) [RHEL-136800]
+- PM: hibernate: Drop NULL pointer checks before acomp_request_free() (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add ACOMP_REQUEST_ALLOC and acomp_request_alloc_extra (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Add chaining and virtual address support (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Remove dst_free (Thomas Huth) [RHEL-136800]
+- xfrm: ipcomp: adjust transport header after decompressing (Thomas Huth) [RHEL-136800]
+- xfrm: ipcomp: fix truesize computation on receive (Thomas Huth) [RHEL-136800]
+- xfrm: ipcomp: Free destination pages on acomp errors (Thomas Huth) [RHEL-136800]
+- xfrm: ipcomp: Use crypto_acomp interface (Thomas Huth) [RHEL-136800]
+- xfrm: ipcomp: Call pskb_may_pull in ipcomp_input (Thomas Huth) [RHEL-136800]
+- PM: hibernate: Fix crash when freeing invalid crypto compressor (Thomas Huth) [RHEL-136800]
+- PM: hibernate: Use crypto_acomp interface (Thomas Huth) [RHEL-136800]
+- crypto: iaa - Remove dst_null support (Thomas Huth) [RHEL-136800]
+- crypto: nx - Fix uninitialised hv_nxc on error (Thomas Huth) [RHEL-136800]
+- crypto: padlock - Use zero page instead of stack buffer (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Remove support for some non-trivial SG lists (Thomas Huth) [RHEL-136800]
+- crypto: hash - Use nth_page instead of doing it by hand (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - Use nth_page instead of doing it by hand (Thomas Huth) [RHEL-136800]
+- crypto: hash - Fix test underflow in shash_ahash_digest (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - simplify map and unmap calling convention (Thomas Huth) [RHEL-136800]
+- crypto: testmgr - Remove NULL dst acomp tests (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Add request chaining and virtual addresses (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Disable BH when taking per-cpu spin lock (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Move stream management into scomp layer (Thomas Huth) [RHEL-136800]
+- crypto: api - Add cra_type->destroy hook (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Make skcipher_walk src.virt.addr const (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Eliminate duplicate virt.addr field (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - Add memcpy_sglist (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - Change scatterwalk_next calling convention (Thomas Huth) [RHEL-136800]
+- crypto: api - Move struct crypto_type into internal.h (Thomas Huth) [RHEL-136800]
+- crypto: ecdsa - Harden against integer overflows in DIV_ROUND_UP() (Thomas Huth) [RHEL-136800]
+- crypto: sig - Prepare for algorithms with variable signature size (Thomas Huth) [RHEL-136800]
+- crypto: scomp - Remove tfm argument from alloc/free_ctx (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - fix mismatch between mapping and unmapping order (Thomas Huth) [RHEL-136800]
+- crypto: Kconfig - Select LIB generic option (Thomas Huth) [RHEL-136800]
+- crypto: acomp - Remove acomp request flags (Thomas Huth) [RHEL-136800]
+- crypto: lzo - Fix compression buffer overrun (Thomas Huth) [RHEL-136800]
+- crypto: lib/Kconfig - Hide arch options from user (Thomas Huth) [RHEL-136800]
+- crypto: lib/Kconfig - Fix lib built-in failure when arch is modular (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Use restrict rather than hand-rolling accesses (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - don't split at page boundaries when !HIGHMEM (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - remove obsolete functions (Thomas Huth) [RHEL-136800]
+- net/tls: use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: x86/aes-gcm - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: x86/aegis - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: stm32 - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: s5p-sss - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: s390/aes-gcm - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: nx - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: arm64 - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: arm/ghash - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: aegis - use the new scatterwalk functions (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - use scatterwalk_start_at_pos() (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - add scatterwalk_get_sglist() (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - add new functions for copying data (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - add new functions for iterating through data (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - add new functions for skipping data (Thomas Huth) [RHEL-136800]
+- crypto: scatterwalk - move to next sg entry just in time (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Set default reqsize from ahash_alg (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Add virtual address support (Thomas Huth) [RHEL-136800]
+- crypto: hash - Add request chaining API (Thomas Huth) [RHEL-136800]
+- crypto: ahash - Only save callback and data in ahash_save_req (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Zap type in crypto_alloc_sync_skcipher (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - Set tfm in SYNC_SKCIPHER_REQUEST_ON_STACK (Thomas Huth) [RHEL-136800]
+- crypto: null - Use spin lock instead of mutex (Thomas Huth) [RHEL-136800]
+- crypto: aead - use str_yes_no() helper in crypto_aead_show() (Thomas Huth) [RHEL-136800]
+- crypto: ahash - use str_yes_no() helper in crypto_ahash_show() (Thomas Huth) [RHEL-136800]
+- crypto: skcipher - use str_yes_no() helper in crypto_skcipher_show() (Thomas Huth) [RHEL-136800]
+
+* Tue Nov 03 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-281.el10]
+- selftests: netfilter: use KHDR_INCLUDES in CFLAGS (CKI Backport Bot) [RHEL-291354]
+- ipv4: free inet_opt and ireq_opt after an RCU grace period (CKI Backport Bot) [RHEL-295614] {CVE-2026-98432}
+- scsi: ch: Do not keep references to data transfer element devices (Ahmed Abdelhaleem Ahmed) [RHEL-294433]
+- scsi: st: Record the tape position after a successful MTLOAD (Laurence Oberman) [RHEL-294433]
+- scsi: st: Restore the drive buffering mode after reset (Laurence Oberman) [RHEL-294433]
+- scsi: st: Restore changed drive settings after reset also for MTLOAD and MTRETEN (Laurence Oberman) [RHEL-294433]
+- scsi: st: Relock the door after a reset (Laurence Oberman) [RHEL-294433]
+- scsi: st: Save the visited block for the partition the drive is in (Laurence Oberman) [RHEL-294433]
+- scsi: st: Fix use-after-free race between st_remove() and st_open() (Laurence Oberman) [RHEL-294433]
+- net: skbuff: propagate shared-frag marker in skb_zerocopy() (Xin Long) [RHEL-291171]
+- lkdtm: Make UNSET_SMEP built-in-only and unexport native_write_cr4() (Dennis Chen) [RHEL-293267]
+- xfs: fix exchange-range-to-eof file size exchange (CKI Backport Bot) [RHEL-292990] {CVE-2026-98974}
+- xfs: stop exchanging reflink flags when exchanging mappings (CKI Backport Bot) [RHEL-292990] {CVE-2026-98974}
+- nvmet: fix NULL pointer dereference in nvmet_execute_identify_nslist() (Maurizio Lombardi) [RHEL-286365] {CVE-2026-80813}
+- riscv: fix load_unaligned_zeropad() fixup for RV32 (Jennifer Berringer) [RHEL-224481]
+- riscv: fix NR_CPUS range leaking 64-bit default onto 32-bit builds (Jennifer Berringer) [RHEL-224481]
+- riscv: errata: select RISCV_ALTERNATIVE_EARLY for THEAD GHOSTWRITE (Jennifer Berringer) [RHEL-224481] {CVE-2026-99017}
+- riscv: futex: untag the user pointer before the atomic access (Jennifer Berringer) [RHEL-224481] {CVE-2026-99016}
+- riscv: lib: Fix ZBB strnlen wrap-around regression on huge counts (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Clear HSTATUS.HU on CPU initialization (Jennifer Berringer) [RHEL-224481]
+- RISC-V: errata: Add SiFive MAL-9092 workaround (Jennifer Berringer) [RHEL-224481]
+- riscv: vector: Fix output operands in context save (Jennifer Berringer) [RHEL-224481]
+- riscv: vector: Fix data pointer constraints in context save/restore (Jennifer Berringer) [RHEL-224481]
+- riscv: hwprobe: use _BITULL() rather than BIT() in MIPS vendor uapi header (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix NACL hfence entry update order (Jennifer Berringer) [RHEL-224481] {CVE-2026-98639}
+- KVM: RISC-V: Clear former VCPU cache on virtualization disable (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix PMU event info array size overflow (Jennifer Berringer) [RHEL-224481] {CVE-2026-89513}
+- KVM: riscv: Fix infinite loop in NACL hfence entry allocation (Jennifer Berringer) [RHEL-224481]
+- riscv: Standardize extension capitalization (Jennifer Berringer) [RHEL-224481]
+- riscv: cpufeature: Clarify ISA spec version for canonical order (Jennifer Berringer) [RHEL-224481]
+- riscv: vdso: Simplify cflags remove logic (Jennifer Berringer) [RHEL-224481]
+- riscv: Add support for srmcfg CSR from Ssqosid extension (Jennifer Berringer) [RHEL-224481]
+- riscv: Detect the Ssqosid extension (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Add Ssccfg/Smcdeleg ISA extension definition and parsing (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Add Ssccfg extension CSR definition (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Add Smcntrpmf extension parsing (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Define indirect CSR access helpers (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Add Smcsrind and Sscsrind ISA extension definition and parsing (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Add Smcsrind and Sscsrind ISA extension CSR definitions (Jennifer Berringer) [RHEL-224481]
+- RISC-V: perf: fix resource cleanup on driver probe failure (Jennifer Berringer) [RHEL-224481]
+- Revert "riscv: hwprobe: Fix stale vDSO data for late-initialized keys at boot" (Jennifer Berringer) [RHEL-224481]
+- riscv: unaligned: stop using kthread for check_vector_unaligned_access() (Jennifer Berringer) [RHEL-224481]
+- riscv: Mark default_power_off() as __noreturn (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Apply Svinval in update_mmu_cache() (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Use ASID in update_mmu_cache() (Jennifer Berringer) [RHEL-224481]
+- riscv: kprobes: add test case for c.jal instruction simulation (Jennifer Berringer) [RHEL-224481]
+- riscv: probes: simulate c.jal instruction (Jennifer Berringer) [RHEL-224481]
+- riscv: Restart via EFI runtime services when available (Jennifer Berringer) [RHEL-224481]
+- riscv: efi: Power off via EFI runtime services when available (Jennifer Berringer) [RHEL-224481]
+- riscv/runtime-const: Disable linker relaxation for RUNTIME_MAGIC (Jennifer Berringer) [RHEL-224481]
+- riscv/runtime-const: Introduce runtime_const_mask_32() (Jennifer Berringer) [RHEL-224481]
+- riscv/runtime-const: Replace open-coded placeholder with RUNTIME_MAGIC (Jennifer Berringer) [RHEL-224481]
+- riscv: kexec_file: Fix crashk_low_res not exclude bug (Jennifer Berringer) [RHEL-224481]
+- riscv: remove unreachable invalid range check in create_linear_mapping_page_table() (Jennifer Berringer) [RHEL-224481]
+- riscv: lib: Fix ZBB strnlen reading past count boundary (Jennifer Berringer) [RHEL-224481] {CVE-2026-74751}
+- riscv: hwprobe: Register unaligned probes before usermode (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Fix out-of-bounds page-table walk during memory hot-remove (Jennifer Berringer) [RHEL-224481] {CVE-2026-74524}
+- riscv: drop __init from vec_check_unaligned_access_speed_all_cpus (Jennifer Berringer) [RHEL-224481] {CVE-2026-80688}
+- riscv: mm: fix SWIOTLB initialization for systems with DRAM above 4GB (Jennifer Berringer) [RHEL-224481]
+- riscv/sifive: remove warning in errata (Jennifer Berringer) [RHEL-224481]
+- riscv: time: Add missing __iomem in get_cycles() and get_cycles_hi() (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in vector register access (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Serialize virtual interrupt pending state updates (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Inject instruction access fault on unmapped guest fetch (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Zicbo[m|z|p] block sizes should be always present in ONE_REG (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: Skip TLB flush when G-stage PTE becomes valid with Svvptc (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: PMU: Bound counter mask scan to BITS_PER_LONG (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Avoid redundant page-table allocations in ioremap topup (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: SBI FWFT: Apply LOCK flag only on successful set (Jennifer Berringer) [RHEL-224481]
+- riscv: hwprobe: Avoid uninitialized read in hwprobe_get_cpus() (Jennifer Berringer) [RHEL-224481]
+- riscv: vdso: Do not use LTO for the vDSO (Jennifer Berringer) [RHEL-224481]
+- riscv: io: avoid null-pointer arithmetic in PIO helpers (Jennifer Berringer) [RHEL-224481]
+- riscv: Prevent NULL pointer dereference in machine_kexec_prepare() (Jennifer Berringer) [RHEL-224481] {CVE-2026-72013}
+- riscv: probes: save original sp in rethook trampoline (Jennifer Berringer) [RHEL-224481] {CVE-2026-72028}
+- riscv: smp: use secs_to_jiffies in __cpu_up (Jennifer Berringer) [RHEL-224481]
+- riscv: Raise default NR_CPUS for 64BIT to 256 (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: Use endian-specific __lelong for NACL shared memory (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix skip of valid pages in kvm_riscv_gstage_unmap_range (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix skip of valid pages in kvm_riscv_gstage_wp_range (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Check hugetlb block mappings against memslot bounds (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Split SBI FWFT into separate feature-specific sublists (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Refactor ISA and SBI extension sublist macros (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: SBI FWFT: Fix stale feature exposure after runtime extension changes (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: SBI FWFT: Add optional init() callback for hardware probing (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: SBI FWFT: Mark vCPU CSRs dirty after setting feature value (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Enhance the logging check for mmu mapping (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix timer state restore (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix NULL pointer dereference in AIA IMSIC functions (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Document a TOCTOU race in SBI system suspend handler (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fast-path dirty logging write faults (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Update G-stage PTE permissions atomically (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Add a G-stage PTE cmpxchg helper (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Use an rwlock for mmu_lock (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Rely on common MMU notifier locking (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Batch stage-2 TLB flushes (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: AIA: Make HGEI number management fully per-CPU (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix ebreak self test failure (Jennifer Berringer) [RHEL-224481]
+- riscv: traps_misaligned: Avoid redundant unaligned access speed probe (Jennifer Berringer) [RHEL-224481]
+- riscv: misaligned: Fix fast_unaligned_access_speed_key init (Jennifer Berringer) [RHEL-224481]
+- riscv: also select ARCH_KEEP_MEMBLOCK if kexec is selected (Jennifer Berringer) [RHEL-224481]
+- riscv: kexec: use min to simplify riscv_kexec_elf_load (Jennifer Berringer) [RHEL-224481]
+- riscv: panic if IRQ handler stacks cannot be allocated (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Unconditionally sfence.vma for spurious fault (Jennifer Berringer) [RHEL-224481] {CVE-2026-64592}
+- riscv: mm: Use the bitmap API for new_valid_map_cpus (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Rename new_vmalloc into new_valid_map_cpus (Jennifer Berringer) [RHEL-224481]
+- riscv: kfence: Call mark_new_valid_map() for kfence_unprotect() (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Extract helper mark_new_valid_map() (Jennifer Berringer) [RHEL-224481]
+- riscv: stacktrace: Remove bogus -0x4 offset in non-FP walk_stackframe (Jennifer Berringer) [RHEL-224481]
+- riscv: cacheinfo: Fix node reference leak in populate_cache_leaves (Jennifer Berringer) [RHEL-224481] {CVE-2026-72179}
+- riscv: kexec_file: Constrain segment placement to direct map (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Define DIRECT_MAP_PHYSMEM_END (Jennifer Berringer) [RHEL-224481]
+- riscv: cpu_ops_sbi: No need to be bothered to check ret.error (Jennifer Berringer) [RHEL-224481]
+- riscv: cpu_ops: Change return value type of cpu_is_stopped() to bool (Jennifer Berringer) [RHEL-224481]
+- riscv: kexec_elf: Remove unused pr_fmt definition (Jennifer Berringer) [RHEL-224481]
+- riscv: ftrace: select HAVE_BUILDTIME_MCOUNT_SORT (Jennifer Berringer) [RHEL-224481]
+- riscv: dead code cleanup in kconfig for RISCV_PROBE_VECTOR_UNALIGNED_ACCESS (Jennifer Berringer) [RHEL-224481]
+- riscv: Implement _THIS_IP_ using inline asm (Jennifer Berringer) [RHEL-224481]
+- riscv: module: Use generic cmp_int() instead of custom cmp_3way() (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix ftrace_graph_ret_addr() to use the correct task pointer (Jennifer Berringer) [RHEL-224481]
+- riscv: propagate insert_resource result from add_resource (Jennifer Berringer) [RHEL-224481]
+- riscv: use sysfs_emit in cpu_show_ghostwrite (Jennifer Berringer) [RHEL-224481]
+- riscv: pi: replace strlcat with strscpy in get_early_cmdline (Jennifer Berringer) [RHEL-224481]
+- riscv: ptdump: Replace unbounded sprintf() in dump_prot() (Jennifer Berringer) [RHEL-224481]
+- cache: sifive_ccache: Add StarFive JH7110 SoC support (Jennifer Berringer) [RHEL-224481]
+- module, riscv: force sh_addr=0 for arch-specific sections (Jennifer Berringer) [RHEL-224481]
+- riscv: Drop tautological condition from TOOLCHAIN_NEEDS_OLD_ISA_SPEC (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix fast_unaligned_access_speed_key not getting initialized (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix sign extension for MMIO loads (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix NULL pointer dereference in SBI v0.1 SEND_IPI handler (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: return SBI_ERR_FAILURE for pmu_event_info() when OOM (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: return SBI_ERR_FAILURE for pmu_snapshot_set_shmem() when OOM (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix invalid HVA warning in steal-time recording (Jennifer Berringer) [RHEL-224481]
+- riscv: misaligned: Make enabling delegation depend on NONPORTABLE (Jennifer Berringer) [RHEL-224481]
+- riscv: cpufeature: Use pre-defined ISA ext macros to index isa2hwcap (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Fixup no5lvl failure when vaddr is invalid (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix register corruption from uninitialized cregs on error (Jennifer Berringer) [RHEL-224481] {CVE-2026-64082}
+- riscv: errata: Fix bitwise vs logical AND in MIPS errata patching (Jennifer Berringer) [RHEL-224481]
+- riscv: cpufeature: Drop this_hwcap clear in T-Head vector workaround (Jennifer Berringer) [RHEL-224481]
+- riscv: Define __riscv_copy_{,vec_}{words,bytes}_unaligned() using SYM_TYPED_FUNC_START (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix shift-out-of-bounds in make_xfence_request() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Reuse KVM_CAP_VM_GPA_BITS to select HGATP.MODE (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Cache gstage pgd_levels in struct kvm_gstage (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Support runtime configuration for per-VM's HGATP mode (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Don't check hstateen0 when updating sstateen0 CSR (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Factor-out VCPU config into separate sources (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add hideleg to struct kvm_vcpu_config (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Move timer state defines closer to struct in UAPI header (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Factor-out ISA checks into separate sources (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Introduce common kvm_riscv_isa_check_host() (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Skip CSR restore if VCPU is reloaded on the same core (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Split huge pages during fault handling for dirty logging (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix lost write protection on huge pages during dirty logging (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix integer overflow in kvm_pmu_validate_counter_mask() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix double-free of sdata in kvm_pmu_clear_snapshot_area() (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: add null pointer check for vector datap (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: selftests: Fix firmware counter read in sbi_pmu_test (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix array out-of-bounds in pmu_ctr_read() and pmu_fw_ctr_read_hi() (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: fix vector context allocation leak (Jennifer Berringer) [RHEL-224481] {CVE-2026-46171}
+- RISC-V: KVM: fix PMU snapshot_set_shmem on 32-bit hosts (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: selftests: Add RISC-V SBI STA shmem alignment tests (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Validate SBI STA shmem alignment in kvm_sbi_ext_sta_set_reg() (Jennifer Berringer) [RHEL-224481]
+- riscv: Reuse compare_unaligned_access() in check_vector_unaligned_access() (Jennifer Berringer) [RHEL-224481]
+- riscv: Split out compare_unaligned_access() (Jennifer Berringer) [RHEL-224481]
+- riscv: Reuse measure_cycles() in check_vector_unaligned_access() (Jennifer Berringer) [RHEL-224481]
+- riscv: Split out measure_cycles() for reuse (Jennifer Berringer) [RHEL-224481]
+- riscv: Clean up & optimize unaligned scalar access probe (Jennifer Berringer) [RHEL-224481]
+- riscv: enable HAVE_IOREMAP_PROT (Jennifer Berringer) [RHEL-224481]
+- riscv: acpi: update FADT revision check to 6.6 (Jennifer Berringer) [RHEL-224481]
+- riscv: increase COMMAND_LINE_SIZE value to 2048 (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix typo in purgatory end label (Jennifer Berringer) [RHEL-224481]
+- riscv: remove redundant #ifdef check in cpu-hotplug (Jennifer Berringer) [RHEL-224481]
+- riscv: remove redundant check for CONFIG_SMP (Jennifer Berringer) [RHEL-224481]
+- riscv: export kaslr offset and satp in VMCOREINFO ELF notes (Jennifer Berringer) [RHEL-224481]
+- riscv: move kaslr_offset() to page.h as a static inline function (Jennifer Berringer) [RHEL-224481]
+- riscv: smp: Clarify comment "cache" -> "instruction cache" (Jennifer Berringer) [RHEL-224481]
+- riscv: smp: Remove outdated comment about disabling preemption (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: WARN_ON() for bad addresses in vmemmap_populate() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Check host Ssaia extension when creating AIA irqchip (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix error code returned for Ssaia ONE_REG (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix error code returned for Smstateen ONE_REG (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in PMU counter access (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in floating-point register access (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in AIA CSR access (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in ONE_REG register access (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Skip THP support check during dirty logging (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix potential UAF in kvm_riscv_aia_imsic_has_attr() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix use-after-free in kvm_riscv_aia_aplic_has_attr() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: fix off-by-one array access in SBI PMU (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix null pointer dereference in kvm_riscv_vcpu_aia_rmw_topei() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix use-after-free in kvm_riscv_gstage_get_leaf() (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Fix Spectre-v1 in APLIC interrupt handling (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Transparent huge page support (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Skip IMSIC update if vCPU IMSIC state is not initialized (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix null pointer dereference in kvm_riscv_aia_imsic_rw_attr() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix null pointer dereference in kvm_riscv_aia_imsic_has_attr() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Remove unnecessary 'ret' assignment (Jennifer Berringer) [RHEL-224481]
+- riscv: hwprobe: add support for RISCV_HWPROBE_KEY_IMA_EXT_1 (Jennifer Berringer) [RHEL-224481]
+- riscv/mm: Implement map_shadow_stack() syscall (Jennifer Berringer) [RHEL-224481]
+- riscv/mm: update write protect to work on shadow stacks (Jennifer Berringer) [RHEL-224481]
+- riscv/mm: teach pte_mkwrite to manufacture shadow stack PTEs (Jennifer Berringer) [RHEL-224481]
+- riscv/mm: manufacture shadow stack ptes (Jennifer Berringer) [RHEL-224481]
+- riscv/mm: ensure PROT_WRITE leads to VM_READ | VM_WRITE (Jennifer Berringer) [RHEL-224481]
+- riscv: Add usercfi state for task and save/restore of CSR_SSP on trap entry/exit (Jennifer Berringer) [RHEL-224481]
+- riscv: add Zicfiss / Zicfilp extension CSR and bit definitions (Jennifer Berringer) [RHEL-224481]
+- riscv: zicfiss / zicfilp enumeration (Jennifer Berringer) [RHEL-224481]
+- riscv: signal: fix some warnings reported by sparse (Jennifer Berringer) [RHEL-224481]
+- riscv: Add intermediate cast to 'unsigned long' in __get_user_asm (Jennifer Berringer) [RHEL-224481]
+- riscv: Use 64-bit variable for output in __get_user_asm (Jennifer Berringer) [RHEL-224481]
+- riscv: fix KUnit test_kprobes crash when building with Clang (Jennifer Berringer) [RHEL-224481]
+- riscv: Add SBI debug trigger extension and function ids (Jennifer Berringer) [RHEL-224481]
+- riscv: signal: abstract header saving for setup_sigcontext (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Flush VS-stage TLB after VCPU migration for Andes cores (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix guest page fault within HLV* instructions (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: Support enabling dirty log gradually in small chunks (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Introduce KVM_EXIT_FAIL_ENTRY_NO_VSFILE (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Add SBI MPXY extension to get-reg-list (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add SBI MPXY extension support for Guest (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add separate source for forwarded SBI extensions (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Convert kvm_riscv_vcpu_sbi_forward() into extension handler (Jennifer Berringer) [RHEL-224481]
+- Documentation: kvm: Fix ordering (Jennifer Berringer) [RHEL-224481]
+- riscv: Kconfig.socs: Add ARCH_TENSTORRENT for Tenstorrent SoCs (Jennifer Berringer) [RHEL-224481]
+- riscv: dts: Add Tenstorrent Blackhole SoC PCIe cards (Jennifer Berringer) [RHEL-224481]
+- dt-bindings: riscv: Add Tenstorrent Blackhole compatible (Jennifer Berringer) [RHEL-224481]
+- riscv/uaccess: Use unsafe wrappers for ASM GOTO (Jennifer Berringer) [RHEL-224481]
+- selftests: riscv: Add test for the Vector ptrace interface (Jennifer Berringer) [RHEL-224481]
+- RISC-V: Enable HOTPLUG_PARALLEL for secondary CPUs (Jennifer Berringer) [RHEL-224481]
+- tools: riscv: Fixed misalignment of CSR related definitions (Jennifer Berringer) [RHEL-224481]
+- riscv: sbi: Prefer SRST shutdown over legacy (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Remove automatic I/O mapping for VM_PFNMAP (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Read HGEIP CSR on the correct cpu (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix check for local interrupts on riscv32 (Jennifer Berringer) [RHEL-224481]
+- riscv: tests: Make RISCV_KPROBES_KUNIT tristate (Jennifer Berringer) [RHEL-224481]
+- riscv: tests: Rename kprobes_test_riscv to kprobes_riscv (Jennifer Berringer) [RHEL-224481]
+- riscv: kprobes: convert one final __ASSEMBLY__ to __ASSEMBLER__ (Jennifer Berringer) [RHEL-224481]
+- MAINTAINERS: Add entry for RISC-V RPMI and MPXY drivers (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Upgrade the supported SBI version to 3.0 (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Implement get event info function (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: No need of explicit writable slot check (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add support for Raw event v2 (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Add SBI FWFT to get-reg-list test (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Implement ONE_REG interface for SBI FWFT state (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Move copy_sbi_ext_reg_indices() to SBI implementation (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Introduce optional ONE_REG callbacks for SBI extensions (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Introduce feature specific reset for SBI FWFT (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Set initial value of hedeleg in kvm_arch_vcpu_create() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Prevent HGATP_MODE_BARE passed (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Remove unnecessary HGATP csr_read (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Write hgatp register with valid mode bits (Jennifer Berringer) [RHEL-224481] {CVE-2025-40065}
+- RISC-V: KVM: Add support for SBI_FWFT_POINTER_MASKING_PMLEN (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: add support for SBI_FWFT_MISALIGNED_DELEG (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: add support for FWFT SBI extension (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Use mmu-type from FDT to limit SATP mode (Jennifer Berringer) [RHEL-224481]
+- riscv: mm: Return intended SATP mode for noXlvl options (Jennifer Berringer) [RHEL-224481]
+- riscv: Separate toolchain support dependency from RISCV_ISA_ZACAS (Jennifer Berringer) [RHEL-224481]
+- selftests: riscv: Add README for RISC-V KSelfTest (Jennifer Berringer) [RHEL-224481]
+- riscv: sbi: Switch to new sys-off handler API (Jennifer Berringer) [RHEL-224481]
+- RISC-V: ACPI: enable parsing the BGRT table (Jennifer Berringer) [RHEL-224481]
+- riscv: pi: use 'targets' instead of extra-y in Makefile (Jennifer Berringer) [RHEL-224481]
+- riscv: Add kprobes KUnit test (Jennifer Berringer) [RHEL-224481]
+- riscv: introduce ioremap_wc() (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix sparse warning about different address spaces (Jennifer Berringer) [RHEL-224481]
+- riscv: Fix sparse warning in __get_user_error() (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: fix __put_user_nocheck for unaligned accesses (Jennifer Berringer) [RHEL-224481]
+- ACPI: RISC-V: Fix FFH_CPPC_CSR error handling (Jennifer Berringer) [RHEL-224481]
+- riscv: Only allow LTO with CMODEL_MEDANY (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: fix stack overrun when loading vlenb (Jennifer Berringer) [RHEL-224481] {CVE-2025-39815}
+- RISC-V: KVM: Correct kvm_riscv_check_vcpu_requests() comment (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix pte settings within kvm_riscv_gstage_ioremap() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Avoid re-acquiring memslot in kvm_riscv_gstage_map() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Use find_vma_intersection() to search for intersecting VMAs (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Enable ring-based dirty memory tracking (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Delegate illegal instruction fault to VS mode (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Pass VMID as parameter to kvm_riscv_hfence_xyz() APIs (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Factor-out g-stage page table management (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add vmid field to struct kvm_riscv_hfence (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Introduce struct kvm_gstage_mapping (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Factor-out MMU related declarations into separate headers (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Use ncsr_xyz() in kvm_riscv_vcpu_trap_redirect() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Implement kvm_arch_flush_remote_tlbs_range() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Don't flush TLB when PTE is unchanged (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Replace KVM_REQ_HFENCE_GVMA_VMID_ALL with KVM_REQ_TLB_FLUSH (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Rename and move kvm_riscv_local_tlb_sanitize() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Drop the return value of kvm_riscv_vcpu_aia_init() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Check kvm_riscv_vcpu_alloc_vector_context() return value (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: add SBI extension reset callback (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: add SBI extension init()/deinit() functions (Jennifer Berringer) [RHEL-224481]
+- riscv/bug: Add ARCH_WARN_ASM macro for BUG/WARN asm code sharing with Rust (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Move HGEI[E|P] CSR access to IMSIC virtualization (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Disable vstimecmp before exiting to user-space (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: Fix -Wuninitialized and -Wshadow in __put_user_nocheck (Jennifer Berringer) [RHEL-224481]
+- ACPI: RISC-V: Remove unnecessary CPPC debug message (Jennifer Berringer) [RHEL-224481]
+- MAINTAINERS: Update Drew Fustini's email address (Jennifer Berringer) [RHEL-224481]
+- RISC-V: uaccess: Wrap the get_user_8 uaccess macro (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Don't treat SBI HFENCE calls as NOPs (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix the size parameter check in SBI SFENCE calls (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: lock the correct mp_state during reset (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: add KVM_CAP_RISCV_MP_STATE_RESET (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Remove scounteren initialization (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: remove unnecessary SBI reset state (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: refactor sbi reset request (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Remove experimental tag for RISC-V (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: refactor vector state reset (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Add vector extension tests (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Decode stval to identify exact exception type (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Align the trap information wiht pt_regs (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: do not do misaligned accesses in get/put_user() (Jennifer Berringer) [RHEL-224481]
+- riscv: process: use unsigned int instead of unsigned long for put_user() (Jennifer Berringer) [RHEL-224481]
+- riscv: make unsafe user copy routines use existing assembly routines (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: Only restore the CSR_STATUS SUM bit (Jennifer Berringer) [RHEL-224481]
+- riscv: enable mseal sysmap for RV64 (Jennifer Berringer) [RHEL-224481]
+- riscv: vDSO: Remove --hash-style=both (Jennifer Berringer) [RHEL-224481]
+- riscv: add a data fence for CMODX in the kernel mode (Jennifer Berringer) [RHEL-224481]
+- riscv: vector: Support calling schedule() for preemptible Vector (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: use 'asm_goto_output' for get_user() (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: use 'asm goto' for put_user() (Jennifer Berringer) [RHEL-224481]
+- riscv: uaccess: use input constraints for ptr of __put_user() (Jennifer Berringer) [RHEL-224481]
+- riscv: implement user_access_begin() and families (Jennifer Berringer) [RHEL-224481]
+- riscv: save the SR_SUM status over switches (Jennifer Berringer) [RHEL-224481] {CVE-2025-38261}
+- riscv: Enable PM_GENERIC_DOMAINS for T-Head SoCs (Jennifer Berringer) [RHEL-224481]
+- KVM: RISC-V: reset smstateen CSRs (Jennifer Berringer) [RHEL-224481]
+- MAINTAINERS: spacemit: update various info (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Drop kvm_arch_sync_events() now that all implementations are nops (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Optimize comments in kvm_riscv_vcpu_isa_disable_allowed (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Allow number of interrupts to be configurable (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Change command line option (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Do not start the counter in the overflow handler (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Disable the kernel perf counter during configure (Jennifer Berringer) [RHEL-224481]
+- riscv: Remove CONFIG_PAGE_OFFSET (Jennifer Berringer) [RHEL-224481]
+- riscv: Support CONFIG_RELOCATABLE on riscv32 (Jennifer Berringer) [RHEL-224481]
+- riscv: Support CONFIG_RELOCATABLE on NOMMU (Jennifer Berringer) [RHEL-224481]
+- riscv: Allow NOMMU kernels to access all of RAM (Jennifer Berringer) [RHEL-224481]
+- riscv: Remove duplicate CONFIG_PAGE_OFFSET definition (Jennifer Berringer) [RHEL-224481]
+- riscv: Make sure toolchain supports zba before using zba instructions (Jennifer Berringer) [RHEL-224481]
+- selftests: riscv: fix v_exec_initval_nolibc.c (Jennifer Berringer) [RHEL-224481]
+- riscv: remove redundant CMDLINE_FORCE check (Jennifer Berringer) [RHEL-224481]
+- riscv: Remove duplicate CLINT_TIMER selections (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Fix SBI sleep_type use (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Fix SBI TIME error generation (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Fix SBI IPI error generation (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Fix hart suspend_type use (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Fix hart suspend status check (Jennifer Berringer) [RHEL-224481]
+- riscv: KVM: Remove unnecessary vcpu kick (Jennifer Berringer) [RHEL-224481]
+- MAINTAINERS: setup support for SpacemiT SoC tree (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add new exit statstics for redirected traps (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Update firmware counters for various events (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Redirect instruction access fault trap to guest (Jennifer Berringer) [RHEL-224481]
+- KVM: riscv: selftests: Add SBI SUSP to get-reg-list test (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Add SBI system suspend support (Jennifer Berringer) [RHEL-224481]
+- selftests: riscv: Support xtheadvector in vector tests (Jennifer Berringer) [RHEL-224481]
+- selftests: riscv: Fix vector tests (Jennifer Berringer) [RHEL-224481]
+- Remove stale generated 'genheaders' file (Jennifer Berringer) [RHEL-224481]
+- riscv: add a warning when physical memory address overflows (Jennifer Berringer) [RHEL-224481]
+- riscv/mm/fault: add show_pte() before die() (Jennifer Berringer) [RHEL-224481]
+- cpuidle: riscv-sbi: fix device node release in early exit of for_each_possible_cpu (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix csr_write -> csr_set for HVIEN PMU overflow bit (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Fix APLIC in_clrip and clripnum write emulation (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Use NACL HFENCEs for KVM request based HFENCEs (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Save trap CSRs in kvm_riscv_vcpu_enter_exit() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Use SBI sync SRET call when available (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Use nacl_csr_xyz() for accessing AIA CSRs (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Don't setup SGEI for zero guest external interrupts (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Replace aia_set_hvictl() with aia_hvictl_value() (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Break down the __kvm_riscv_switch_to() into macros (Jennifer Berringer) [RHEL-224481]
+- RISC-V: KVM: Save/restore SCOUNTEREN in C source (Jennifer Berringer) [RHEL-224481]
+- riscv: kvm: Fix out-of-bounds array access (Jennifer Berringer) [RHEL-224481] {CVE-2024-53228}
+- riscv: Check that vdso does not contain any dynamic relocations (Jennifer Berringer) [RHEL-224481]
+- cpuidle: riscv-sbi: Add cpuidle_disabled() check (Jennifer Berringer) [RHEL-224481]
+- cpuidle: riscv-sbi: Move sbi_cpuidle_init to arch_initcall (Jennifer Berringer) [RHEL-224481]
+- redhat/configs: riscv: Add new configs for arch/riscv (Jennifer Berringer) [RHEL-224481]
+- gitlab-ci: add c10s_baseline with ccache save (Tales da Aparecida)
+- spi: fsl-lpspi: terminate the RX channel on TX prepare failure path (Iker Pedrosa) [RHEL-259001] {CVE-2026-64303}
+- spi: fsl-lpspi: replace dmaengine_terminate_all() with dmaengine_terminate_sync() (Iker Pedrosa) [RHEL-259001]
+- Revert "scsi: lpfc: Use combined sense codes" (Paul Ely) [RHEL-168675]
+- Revert "scsi: lpfc: Use the crc32c() function" (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update lpfc version to 15.0.0.1 (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update correct ndlp refcnt when rejecting an unsolicited PLOGI (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Refactor calls on fc_disctmo to lpfc_set_disctmo in RSCN handler (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Rework I/O flush ordering when unloading driver (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Check fc4_xpt_flags before decrementing ndlp kref on FDISC error (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Fix kernel oops when unmapping SCSI DMA buffers for an aborted cmd (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Early return out of lpfc_els_abort() when HBA_SETUP flag is not set (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Fix use-after-free in lpfc_cmpl_ct_cmd_vmid() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Use combined sense codes (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Remove unnnecessary NULL check (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Replace strlcat() with sysfs_emit_at() in the sysfs show functions (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Replace strlcat() with seq_buf in the debugfs dump helpers (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Replace strlcat() with seq_buf in lpfc_rx_monitor_report() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Replace strlcat() with scnprintf() in lpfc_vport_symbolic_node_name() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Replace strlcat() with seq_buf in lpfc_info() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Fix memory leak in lpfc_sli4_driver_resource_setup() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update lpfc version to 15.0.0.0 (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Add PCI ID support for LPe42100 series adapters (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Introduce 128G link speed selection and support (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Check ASIC_ID register to aid diagnostics during failed fw updates (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update construction of SGL when XPSGL is enabled (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Remove deprecated PBDE feature (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Add REG_VFI mailbox cmd error handling (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Log MCQE contents for mbox commands with no context (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Select mailbox rq_create cmd version based on SLI4 if_type (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Break out of IRQ affinity assignment when mask reaches nr_cpu_ids (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update outdated comment for renamed lpfc_freenode() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Use the crc32c() function (Paul Ely) [RHEL-168675]
+- scsi: lpfc: ELIMINATE kernel-doc warnings in lpfc.h (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update lpfc version to 14.4.0.14 (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update copyright year string for 2026 (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Restrict first burst to non-FCoE and SLI4 adapters only (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update class of service bit field to 3 bits for WQE submissions (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Add clean up of aborted NVMe commands during PCI fcn reset (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Fix incorrect txcmplq_cnt during cleanup in lpfc_sli_abort_ring() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Cleanup error exit paths in lpfc_fdmi_cmd() and associated messages (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Remove unnecessary ndlp kref get in lpfc_check_nlp_post_devloss (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Reduce pointer chasing when accessing vmid_flag (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Use min_t() instead of min() in lpfc_sli4_driver_resource_setup (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Add log messages to fabric login error labels (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Log discarded and insufficient RQE buffer events (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update log message when ndlp kref get is unsuccessful (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Properly set WC for DPP mapping (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Update lpfc version to 14.4.0.13 (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Add support for reporting encryption events (Paul Ely) [RHEL-168675]
+- scsi: lpfc: Rework lpfc_sli4_fcf_rr_next_index_get() (Paul Ely) [RHEL-168675]
+- scsi: lpfc: WQ_PERCPU added to alloc_workqueue() users (Paul Ely) [RHEL-168675]
+- drivers: base: Remove statistics group if encryption group not created (Paul Ely) [RHEL-168675]
+- scsi: scsi_transport_fc: Introduce encryption group in fc_rport attribute (Paul Ely) [RHEL-168675]
+- turbostat 2026.09.28 (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Fix add_counter issue if > 24 counters. (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Fix PMT error path fd handling (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Fix CWF PMT off-by-one (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Fix fd_perf leak on reset (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Sanity check GFX%%rc6 and SAM%%mc6 percentages (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: add NULL check after calloc() (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Warn, but don't Err on out-dated perf systems (Dennis Chen) [RHEL-224312]
+- tools/power turbostat: Read complete CPU lists (Dennis Chen) [RHEL-224312]
+- fwctl: Fix class init ordering to avoid NULL pointer dereference on device removal (Michal Schmidt) [RHEL-256771] {CVE-2026-53042}
+- entry: Fix seccomp bypass after ptrace with TSYNC (Audra Mitchell) [RHEL-271401] {CVE-2026-89603}
+- redhat/configs: enable CONFIG_X86_CPU_RESCTRL_INTEL_AET (Steve Best) [RHEL-122189]
+- redhat: enable CONFIG_IMA_INIT_LATE_SYNC (Bruno Meneguele) [RHEL-249191]
+- tpm: tpm_crb_ffa: revert defered_probed when tpm_crb_ffa is built-in (Bruno Meneguele) [RHEL-249191]
+- security: ima: rename boot_aggregate when ima is initialised at late_sync (Bruno Meneguele) [RHEL-249191]
+- security: ima: introduce IMA_INIT_LATE_SYNC option (Bruno Meneguele) [RHEL-249191]
+- security: lsm: allow LSMs to register for late_initcall_sync init (Bruno Meneguele) [RHEL-249191]
+- ima,evm: move initcalls to the LSM framework (Bruno Meneguele) [RHEL-249191]
+- lsm: introduce an initcall mechanism into the LSM framework (Bruno Meneguele) [RHEL-249191]
+- openvswitch: Fix CT limit teardown use-after-free (Timothy Redaelli) [RHEL-263521] {CVE-2026-89488}
+- xdrgen: handle _XdrString in union encoder/decoder (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix handling of NFSEXP_PNFS in the netlink codepath (Olga Kornievskaia) [RHEL-213115]
+- rpcrdma: arm rn_done before publishing the notification (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89798}
+- NFSv4.1: zero referring call lists before decoding (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90104}
+- NFSv4.1: fix layout segment leak on the pnfs_layout_process() forget path (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89710}
+- NFSv4/pnfs: key the data server cache on the NFS version (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90102}
+- xdrgen: Share void RPC procedure handlers across programs (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Guard admin state-revocation walks with NFSD_NET_UP (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90039}
+- nfsd: gate nfs2 setacl by argp->mask (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89672}
+- lockd: Remove C macros that are no longer used (Olga Kornievskaia) [RHEL-213115]
+- NFS: replace __get_free_page() with kmalloc() in nfs_show_devname() (Olga Kornievskaia) [RHEL-213115]
+- nfs: Make NFS_FSCACHE select NETFS_SUPPORT instead of depending on it (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: fix use-after-free in __rpc_clnt_handle_event and __rpc_clnt_remove_pipedir (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89543}
+- NFSv4.2: fix LAYOUTSTATS send buffer exhaustion (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90103}
+- pNFS: Fix EBUSY check in pnfs_layout_need_return (Olga Kornievskaia) [RHEL-213115]
+- nfs: fix ENXIO on O_CREAT open of existing symlink over NFSv3 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: wait for in-flight client TLS handshake callback (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89536}
+- NFSv4: Fix incorrect argument passed to nfs4_delete_lease() in nfs4_add_lease() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90148}
+- lockd: fix NULL dereference on lockowner allocation failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89484}
+- NFS: fix delegation_hash_table leak when nfs4_server_common_setup() fails (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89714}
+- NFSv4/flexfiles: support loosely coupled data servers (Olga Kornievskaia) [RHEL-213115]
+- NFSv4/flexfiles: fix NULL dereference for NFSv4.0 data servers (Olga Kornievskaia) [RHEL-213115]
+- NFSv4: pin the superblock for active state owners (Olga Kornievskaia) [RHEL-213115]
+- NFS/localio: issue commit inline when not in a memory-reclaim context (Olga Kornievskaia) [RHEL-213115]
+- NFS/localio: remove dead FLUSH_SYNC handling from nfs_local_commit (Olga Kornievskaia) [RHEL-213115]
+- NFS/localio: issue IO inline when not in a memory-reclaim context (Olga Kornievskaia) [RHEL-213115]
+- NFS: Fix delayed delegation return list handling (Olga Kornievskaia) [RHEL-213115]
+- NFS: Verify symlink inode before caching target (Olga Kornievskaia) [RHEL-213115]
+- nfs4.2: open UNCACHEABLE_FILE_DATA files with O_DIRECT (Olga Kornievskaia) [RHEL-213115]
+- nfs4.2: request UNCACHEABLE_FILE_DATA only for regular files (Olga Kornievskaia) [RHEL-213115]
+- nfs4.2: add UNCACHEABLE_FILE_DATA attribute support (Olga Kornievskaia) [RHEL-213115]
+- NFSv4/flexfiles: report cancelled I/O as a layout error (Olga Kornievskaia) [RHEL-213115]
+- pNFS: honor clora_changed when recalling a layout (Olga Kornievskaia) [RHEL-213115]
+- pNFS: report clora_changed in the cb_layoutrecall_file tracepoint (Olga Kornievskaia) [RHEL-213115]
+- pnfs/blocklayout: Fix device leaks on parse failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90150}
+- NFSv4: remove callback IDR entry on client allocation failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90151}
+- nfs: refactor pNFS functions using clear_and_wake_up_bit (Olga Kornievskaia) [RHEL-213115]
+- nfs: replace atomic bitops sequence with clear_and_wake_up_bit helper (Olga Kornievskaia) [RHEL-213115]
+- NFS: Return a delegation the client fails to record (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90234}
+- sunrpc: xprtsock: annotate shared socket callbacks with READ_ONCE/WRITE_ONCE (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90235}
+- SUNRPC: check rpc_sockaddr2uaddr() return value in rpcb_register_inet4/6 (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89784}
+- nfsd: export NFSv4 callback op stats via netlink (Olga Kornievskaia) [RHEL-213115]
+- nfsd: count NFSv4 callback operations per netns (Olga Kornievskaia) [RHEL-213115]
+- nfsd: implement server-stats-get netlink handler (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: remove unused svc_version vs_count field (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: use per-net counts in svc_seq_show() (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add per-netns per-procedure call counts to svc_stat (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Document reply_cache_stats ABI (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Eliminate percpu counter contention in IO byte accounting (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Eliminate percpu counter contention in reply cache statistics (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Eliminate percpu counter contention in DRC memory accounting (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Fix off-by-one in DRC bucket pruning limit (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Relocate NFSv4 "supported attributes" to new header (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Relocate nfsd4_set_netaddr() (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Relocate nfsd_user_namespace() (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Move struct readdir_cd (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Move the export.h include from nfsd.h to auth.c (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Remove '#include "nfsd.h"' from fs/nfsd/cache.h (Olga Kornievskaia) [RHEL-213115]
+- NFSD: include "netns.h" (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Explicitly include "stats.h" (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Make "stats.h" self-contained (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Reject out-of-range program, version, and procedure numbers (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Enforce RFC 5531 name and number scoping for RPC programs (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Reject specifications that define a name twice (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Record the source position of each declared identifier (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Align the error caret under tab-indented source (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Fix opaque and string encoders for unbounded members (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Add XDR width macros for short integer types (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Do not declare union XDR functions in the definitions header (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Emit a blank line ahead of enum declarations (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Encode only the status in NFS-ACL v2 GETACL error replies (Olga Kornievskaia) [RHEL-213115]
+- nfsd: drop dead COPY-vs-COPYNOTIFY type handling from s2s stateid IDR (Olga Kornievskaia) [RHEL-213115]
+- nfsd: make the copy offload stateid a first-class nfs4_stid (Olga Kornievskaia) [RHEL-213115]
+- nfsd: split nfsd4_copy into transient and durable async copy objects (Olga Kornievskaia) [RHEL-213115]
+- nfsd: return NFS4ERR_NOTSUPP for unsupported netloc4 types (Olga Kornievskaia) [RHEL-213115]
+- nfsd: revoke copy-notify stateids before dropping their reference (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89663}
+- nfsd: check client ownership when cancelling a copy-notify stateid (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89694}
+- nfsd: initialize copy-notify stateid before publishing it (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89669}
+- nfsd: fix stale s2s_cp_stateids IDR entry for async COPY (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89676}
+- nfsd: fix UAF in async copy cancel and shutdown (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89675}
+- nfsd: fix cpntf publish race in nfs4_init_cp_state (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89684}
+- NFSD: Release the export reference when reaping open stateids (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90236}
+- NFSD: Prevent client use-after-free during close_lru reaping (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90037}
+- NFSD: Prevent client use-after-free during blocked-lock reaping (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90036}
+- NFSD: Consolidate the revocation-path client unpin (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Prevent client use-after-free during NFSv4.0 revoked-state cleanup (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89658}
+- NFSD: Prevent client use-after-free during export state revocation (Olga Kornievskaia) [RHEL-213115] {CVE-2026-90038}
+- NFSD: Prevent client use-after-free during admin state revocation (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89660}
+- NFSD: Prevent client use-after-free during delegation revoke (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89659}
+- NFSD: Prevent lock owner use-after-free during client teardown (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89662}
+- sunrpc: derive the pool count instead of caching it in sv_nrpools (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: tear down pool counters before dropping the pool map reference (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: guarantee a thread per pool when auto-distributing (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: hardcode pool_mode to pernode, remove other modes (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: route to a populated pool in svc_pool_for_cpu() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89549}
+- SUNRPC: Restore NUMA_NO_NODE for svc thread allocations in global mode (Olga Kornievskaia) [RHEL-213115]
+- lockd: preserve multiple NLM_SHARE grants from the same owner (Olga Kornievskaia) [RHEL-213115]
+- lockd: Regenerate NLMv4 XDR code (Olga Kornievskaia) [RHEL-213115]
+- lockd: fix NLMv4 GRANTED_MSG handling (Olga Kornievskaia) [RHEL-213115]
+- svcrdma: Reject inline replies that overflow the pull-up buffer (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89530}
+- lockd: fix swapped arguments in nlmsvc_match_ip() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93231}
+- nfsd: use NSEC_PER_SEC in nfsd4_decode_nfstime4() (Olga Kornievskaia) [RHEL-213115]
+- nfsd: reject out-of-range nseconds in NFSv3 SETATTR and create ops (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89666}
+- nfsd: reject out-of-range useconds in NFSv2 SETATTR/CREATE (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89665}
+- nfsd: validate sockaddr length per family in listener_set (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89700}
+- NFSD: Annotate caller preconditions for the state-table walkers (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Prevent post-shutdown use-after-free in unlock_filesystem (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89661}
+- nfsd: drop the stateid, not the stateowner, on seqid_op replay retry (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89688}
+- nfsd: restore rq_status_counter to even on all nfsd_dispatch() exit paths (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89705}
+- nfsd: initialize DRC hash table before registering shrinker (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93211}
+- nfsd: move nfsd_debugfs_init() after nfsd4_init_slabs() in init_nfsd() (Olga Kornievskaia) [RHEL-213115]
+- lockd, nfsd: RCU-protect nlmsvc_ops dispatch (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89709}
+- nfsd: reject reclaim LOCK after RECLAIM_COMPLETE (Olga Kornievskaia) [RHEL-213115]
+- nfsd: use test_and_clear_bit for somebody_reclaimed to prevent lost update (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix clock domain mismatch in clients_still_reclaiming() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89685}
+- nfsd: add fh_want_write() for early-verified SETATTR in nfsd_proc_setattr() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89697}
+- nfsd: fix FL_SLEEP being set unconditionally for all LOCK types (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix version mismatch loops in nfsd_acl_init_request() (Olga Kornievskaia) [RHEL-213115]
+- nfsd: validate nseconds in TIME_DELEG decode paths (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89701}
+- nfsd: add filehandle match check to nfsd4_delegreturn() (Olga Kornievskaia) [RHEL-213115]
+- nfsd: check nfsd4_acl_to_attr() return value in nfsd4_create() (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: defer rq_argp and rq_resp free until after RCU grace period (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix netlink dumpit error handling for rpc_status_get (Olga Kornievskaia) [RHEL-213115]
+- nfsd: add missing read barrier to rpc_status_get dumpit seqcount retry (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93229}
+- nfsd: clear opcnt on compound arg release to prevent OOB read (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89691}
+- nfsd: fix null dereference in nfsd4_setattr for deleg timestamp attrs (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89679}
+- NFSD: remove flawed WARN_ON_ONCE from nfsd_mode_check (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89711}
+- NFSD: Bound on-demand DRC slot growth by the thread ceiling (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Document and rename the NFSv4.1 session slot shrinker callbacks (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Clean up documenting comment for reduce_session_slots() (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Count slot 0 in nfsd_total_target_slots (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Add svc_serv_maxthreads() to report the thread ceiling (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use "%%*phN" to dprintk() a cookie (Olga Kornievskaia) [RHEL-213115]
+- NFSD: fix up error returned by write_threads() (Olga Kornievskaia) [RHEL-213115]
+- net/sunrpc/svcauth_unix: Use strscpy() to copy strings into arrays (Olga Kornievskaia) [RHEL-213115]
+- nfsd: close shrinker/GC/fsnotify vs per-net shutdown race in filecache (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89667}
+- nfsd: unify cleanups in nfsd_cross_mnt() exits (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix fcache_disposal UAF by inlining dispose state into nfsd_net (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89682}
+- nfsd: fix refcount leak in nfsd_file_lru_add on insertion failure (Olga Kornievskaia) [RHEL-213115]
+- nfsd: widen nfsd_genl_rqstp address fields to sockaddr_storage (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89698}
+- nfsd: guard nfsd_serv deref in nfsd_file_net_dispose (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93212}
+- NFS/localio: fix ref leak on nfs_uuid_add_file failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89715}
+- nfsd: hold rcu across localio cmpxchg retry (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89670}
+- nfsd: defer vfree of compound ops to fix rpc_status UAF (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89690}
+- nfsd: release OPEN-decoded posix ACLs via op_release (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89664}
+- nfsd: fix layout fence worker double-reference race (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89681}
+- nfsd: fix dentry ref leak on V4ROOT export filehandle lookup (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89683}
+- nfsd: fix nfsd_file leak on inter-server COPY setup failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89680}
+- nfsd: release path refs on follow_down() error (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89707}
+- nfsd: size fh_verify server sockaddr slot by xpt_locallen (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89702}
+- SUNRPC: Check svc pool percpu counter allocation (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89547}
+- sunrpc: init gssp_lock before publishing proc entry (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89540}
+- nfsd: validate symlink target length in NFSv4 CREATE (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89699}
+- nfsd: cap decoded POSIX ACL count to bound sort cost (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89695}
+- nfsd: fix partial-write detection in nfsd_direct_write (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89678}
+- NFSD: check truncate permission under inode lock (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89713}
+- nfsd: gate nfs3 setacl by argp->mask (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89671}
+- nfsd: dedup nfs4_client_to_reclaim inserts (Olga Kornievskaia) [RHEL-213115]
+- nfsd: convert nfsd_net boolean flags to unsigned long flags word (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93221}
+- nfsd: RCU-protect cl_cb_session to fix use-after-free on session teardown (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89708}
+- nfsd: fix BUG_ON in nfsd4_alloc_layout_stateid on racing delegation revoke (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89686}
+- SUNRPC: close backchannel before destroying callback service (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89546}
+- SUNRPC: Zero rpc_gss_wire_cred at svcauth_gss_decode_credbody() entry (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93207}
+- SUNRPC: Guard svcauth_gss_release() dispatch on rq_auth_stat (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: reject duplicate CREDS_VALUE options (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89539}
+- SUNRPC: fix gssx_dec_option_array error path bugs (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89544}
+- SUNRPC: Reject krb5 v2 wrap tokens with oversized ec field (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89538}
+- nfsd: fix XDR length calculation in nfsd4_ff_encode_layoutget (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89674}
+- nfsd: fix XDR padding calculation in ff_encode_getdeviceinfo (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89673}
+- svcrdma: Clear sc_cm_id when ADDR_CHANGE replacement fails (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89534}
+- svcrdma: Reject connection when transport allocation fails (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89531}
+- svcrdma: Use svc_xprt_put to free listener on create failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89527}
+- svcrdma: Reorder rpcrdma_rn_unregister before rdma_destroy_id (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89535}
+- svcrdma: Fix unmatched rn_unregister on failed accept (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93224}
+- nfsd: block non-SAVEFH ops after FOREIGN PUTFH to prevent NULL deref (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89696}
+- SUNRPC: always drain cache_cleaner before destroying a cache_detail (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89548}
+- svcrdma: Reject Read lists that exceed the page budget (Olga Kornievskaia) [RHEL-213115]
+- nfsd: clear CALLBACK_RUNNING on failed delegation recall queue (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89692}
+- nfsd: defer setting NFSD4_CALLBACK_RUNNING in deleg_reaper (Olga Kornievskaia) [RHEL-213115]
+- nfsd: don't free session slots that are still in use (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89689}
+- svcrdma: Validate Read chunk positions at decode time (Olga Kornievskaia) [RHEL-213115]
+- svcrdma: Reject Write/Reply chunks with segcount 0 (Olga Kornievskaia) [RHEL-213115] {CVE-2026-93228}
+- svcrdma: Fix pcl_for_each_segment for empty chunks (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89532}
+- svcrdma: Reject oversized Read segments at decode time (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89529}
+- svcrdma: Fix offset arithmetic in read_chunk_range (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89533}
+- svcrdma: Validate Read chunk positions before reconstruction (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89526}
+- nfsd: set SC_STATUS_FREED in nfsd4_drop_revoked_stid for delegations (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89703}
+- nfsd: fix possible fh_compose of wrong dentry in nfsd4_create_file() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89677}
+- NFSD: restart ssc_expire_umount walk after dropping nfsd_ssc_lock (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89712}
+- lockd: pin next file across nlm_inspect_file lock-drop (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89485}
+- SUNRPC: harden gss_krb5_unwrap_v2 against short tokens (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89542}
+- SUNRPC: xdr_buf_trim: clamp buf->len to avoid underflow (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89551}
+- SUNRPC: harden gss_unwrap_resp_priv length checks (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89541}
+- SUNRPC: svcauth_gss: enforce krb5 token minimum length (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89550}
+- SUNRPC: Reject short RFC 4121 MIC tokens in gss_krb5_verify_mic_v2 (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89537}
+- nfsd: sample writeback error cursor before async COPY loop (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89704}
+- nfsd: Reset write verifier when async COPY writeback fails (Olga Kornievskaia) [RHEL-213115] {CVE-2026-89706}
+- NFS: Decrement refcounts if allocating nfs_free_stateid_data fails (Olga Kornievskaia) [RHEL-213115]
+- NFS: Pin the 'struct nfs_server' during a FREE_STATEID call (Olga Kornievskaia) [RHEL-213115] {CVE-2026-74730}
+- NFSD: Prevent post-shutdown use-after-free in NFSD_CMD_UNLOCK_FILESYSTEM (Olga Kornievskaia) [RHEL-213115]
+- nfs: drop redundant S_IFDIR from mkdir (Olga Kornievskaia) [RHEL-213115]
+- NFS: Use common error handling code in nfs_alloc_server() (Olga Kornievskaia) [RHEL-213115]
+- nfs: don't skip revalidate on directory delegation when attrs flagged stale (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Convert send buffer free list to llist (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix posix_acl leak and ignored error in nfsd4_create_file (Olga Kornievskaia) [RHEL-213115] {CVE-2026-53396}
+- svcrdma: Defer send context release to xpo_release_ctxt (Olga Kornievskaia) [RHEL-213115]
+- svcrdma: Release write chunk resources without re-queuing (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove dead rpcsec_gss_krb5 definitions (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove redundant crypto Kconfig dependencies (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove per-enctype Kconfig options (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove dead code from rpcsec_gss_krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove legacy skcipher/ahash handles from krb5_ctx (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove encrypt/decrypt function pointers from enctype table (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove wrap/unwrap function pointers from enctype table (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Remove get_mic/verify_mic function pointers from enctype table (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Switch MIC token verification to crypto/krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Switch MIC token generation to crypto/krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Switch Camellia decrypt to crypto/krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Switch wrap token decryption to crypto/krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Switch wrap token encryption to crypto/krb5 (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Prepare crypto/krb5 encryption and checksum handles (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Add errno-to-GSS status conversion helper (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Add crypto/krb5 enctype lookup to krb5_ctx (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Add Kconfig dependency on CRYPTO_KRB5 (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Increase the default max_block_size to 4MB (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Close cached file handles when revoking export state (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Add NFSD_CMD_UNLOCK_EXPORT netlink command (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Track svc_export in nfs4_stid (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Replace idr_for_each_entry_ul in find_one_sb_stid() (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Add NFSD_CMD_UNLOCK_FILESYSTEM netlink command (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Add NFSD_CMD_UNLOCK_IP netlink command (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Extract revoke_one_stid() utility function (Olga Kornievskaia) [RHEL-213115]
+- NFS: correct CONFIG_NFS_V4 macro name in #endif comment (Olga Kornievskaia) [RHEL-213115]
+- NFSv4.1/pNFS: fix LAYOUTCOMMIT retry loop on OLD_STATEID (Olga Kornievskaia) [RHEL-213115]
+- nfs: expose FMODE_NOWAIT for read-only files (Olga Kornievskaia) [RHEL-213115]
+- nfs: add nowait version of nfs_start_io_direct (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: fix uninitialized xprt_create_args structure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72150}
+- xprtrdma: Remove tautological I2 assertion in rpcrdma_reply_put (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Fix I3 invariant comment in rpcrdma_complete_rqst (Olga Kornievskaia) [RHEL-213115]
+- NFS: fix eof updates after NFSv4.2 fallocate/zero-range (Olga Kornievskaia) [RHEL-213115]
+- NFS: show redacted cert_serial and privkey_serial in mount options (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Put cache get-reqs dump attrs under reply (Olga Kornievskaia) [RHEL-213115]
+- nfsd: add NFSD_CMD_CACHE_FLUSH netlink command (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add SUNRPC_CMD_CACHE_FLUSH netlink command (Olga Kornievskaia) [RHEL-213115]
+- nfsd: add netlink upcall for the nfsd.fh cache (Olga Kornievskaia) [RHEL-213115]
+- nfsd: add netlink upcall for the svc_export cache (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add netlink upcall for the auth.unix.gid cache (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add netlink upcall for the auth.unix.ip cache (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add a generic netlink family for cache upcalls (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add helpers to count and snapshot pending cache requests (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: add a cache_notify callback (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: rename cache_pipe_upcall() to cache_do_upcall() (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: rename sunrpc_cache_pipe_upcall_timeout() (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: rename sunrpc_cache_pipe_upcall() to sunrpc_cache_upcall() (Olga Kornievskaia) [RHEL-213115]
+- nfsd: move struct nfsd_genl_rqstp to nfsctl.c (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: skip svc_xprt_enqueue when transport is busy (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: skip svc_xprt_enqueue in svc_xprt_received when idle (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: skip svc_xprt_enqueue when no work is pending (Olga Kornievskaia) [RHEL-213115]
+- NFSD: replace __get_free_page() with kmalloc() in nfsd_buffered_readdir() (Olga Kornievskaia) [RHEL-213115]
+- NFS: remove unused page and page2 in nfs4_replace_transport() (Olga Kornievskaia) [RHEL-213115]
+- exportfs,nfsd: rework checking for layout-based block device access support (Olga Kornievskaia) [RHEL-213115]
+- exportfs: don't pass struct iattr to ->commit_blocks (Olga Kornievskaia) [RHEL-213115]
+- exportfs: split out the ops for layout-based block device access (Olga Kornievskaia) [RHEL-213115]
+- exportfs: Complete kernel-doc for struct export_operations (Olga Kornievskaia) [RHEL-213115]
+- nfsd/blocklayout: always ignore loca_time_modify (Olga Kornievskaia) [RHEL-213115]
+- lockd: fix NLMv3 GRANTED_MSG handling (Olga Kornievskaia) [RHEL-213115]
+- lockd: Unify cast_status (Olga Kornievskaia) [RHEL-213115]
+- lockd: Remove dead code from fs/lockd/xdr.c (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 FREE_ALL procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 NM_LOCK procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 UNSHARE procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 SHARE procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Convert NLMv3 server-side undefined procedures to xdrgen (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 SM_NOTIFY procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 GRANTED_RES procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 UNLOCK_RES procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 CANCEL_RES procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 LOCK_RES procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 TEST_RES procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 GRANTED_MSG procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 UNLOCK_MSG procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 CANCEL_MSG procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 LOCK_MSG procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 TEST_MSG procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Refactor nlmsvc_callback() (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 GRANTED procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 UNLOCK procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 CANCEL procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 LOCK procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 TEST procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Use xdrgen XDR functions for the NLMv3 NULL procedure (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_share to lockd_share (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_reboot to lockd_reboot (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_res to lockd_res (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_args to lockd_args (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_lock to lockd_lock (Olga Kornievskaia) [RHEL-213115]
+- lockd: Rename struct nlm_cookie to lockd_cookie (Olga Kornievskaia) [RHEL-213115]
+- Documentation: Add the RPC language description of NLM version 3 (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Emit the program number definition (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Address some checkpatch whitespace complaints (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: improve error reporting for invalid void declarations (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Don't generate unnecessary semicolon (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Fix union declarations (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Fix the variable-length opaque field decoder template (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Make the xdrgen script location-independent (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Generalize/harden pathname construction (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Fix code generated for counted arrays (Olga Kornievskaia) [RHEL-213115]
+- NFS: Charge unstable writes by request size, not folio size (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72132}
+- SUNRPC: pin upper rpc_clnt across the TLS connect_worker (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72317}
+- SUNRPC: release lower rpc_clnt if killed waiting for XPRT_LOCKED (Olga Kornievskaia) [RHEL-213115]
+- NFS: Prevent resource leak in nfs_alloc_server() (Olga Kornievskaia) [RHEL-213115]
+- handshake: Require admin permission for DONE command (Olga Kornievskaia) [RHEL-213115] {CVE-2026-74270}
+- xprtrdma: Return sendctx slot after Send preparation failure (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Repost Receive buffers for malformed replies (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72464}
+- xprtrdma: Sanitize the reply credit grant after parsing (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72465}
+- xprtrdma: Fix bcall rep leak and unbounded peek (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72466}
+- xprtrdma: Resize reply buffers before reposting receives (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Check frwr_wp_create() during connect (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72467}
+- xprtrdma: Initialize re_id before removal registration (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72468}
+- xprtrdma: Fix ep kref imbalance on ADDR_CHANGE (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72469}
+- svcrdma: wake sq waiters when the transport closes (Olga Kornievskaia) [RHEL-213115] {CVE-2026-64281}
+- nfsd: reset write verifier on deferred writeback errors (Olga Kornievskaia) [RHEL-213115] {CVE-2026-53393}
+- nfsd: avoid leaking pre-allocated openowner on unconfirmed retry race (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: wait for in-flight TLS handshake callback when cancel loses race (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72221}
+- sunrpc: pin svc_xprt across the asynchronous TLS handshake callback (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72222}
+- nfsd: check get_user() return when reading princhashlen (Olga Kornievskaia) [RHEL-213115]
+- nfsd: fix inverted cp_ttl check in async copy reaper (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Fix SECINFO_NO_NAME decode error cleanup (Olga Kornievskaia) [RHEL-213115] {CVE-2026-53398}
+- sunrpc: harden rq_procinfo lifecycle to prevent double-free (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72220}
+- SUNRPC: Return an error from xdr_buf_to_bvec() on overflow (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Add helpers to convert xdr_buf byte ranges to scatterlists (Olga Kornievskaia) [RHEL-213115]
+- SUNRPC: Bound-check xdr_buf_to_bvec() stores before writing (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72217}
+- lockd: Avoid hashing uninitialized bytes in nlm4svc_lookup_file() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-74315}
+- lockd: Plug nlm_file refcount leak on cached nlm_do_fopen() failure (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72218}
+- lockd: Plug nlm_file leak when nlm_do_fopen() fails (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72219}
+- Revert "NFSD: Defer sub-object cleanup in export put callbacks" (Olga Kornievskaia) [RHEL-213115]
+- Revert "svcrdma: Use contiguous pages for RDMA Read sink buffers" (Olga Kornievskaia) [RHEL-213115]
+- lockd: Do not monitor when looking up the LOCK_MSG callback host (Olga Kornievskaia) [RHEL-213115]
+- lockd: Drop locks_init_lock() from nlm4_lock_to_lockd_lock() (Olga Kornievskaia) [RHEL-213115]
+- lockd: Translate nlm__int__deadlock in __nlm4svc_proc_lock_msg() (Olga Kornievskaia) [RHEL-213115]
+- lockd: Correct kernel-doc status descriptions for NLMv4 GRANTED (Olga Kornievskaia) [RHEL-213115]
+- lockd: Stop warning on nlm__int__drop_reply in !V4 cast_status (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Handle layout stid in nfsd4_drop_revoked_stid() (Olga Kornievskaia) [RHEL-213115] {CVE-2026-74316}
+- vfs: add FS_USERNS_DELEGATABLE flag and set it for NFS (Olga Kornievskaia) [RHEL-213115]
+- nfs: use nfsi->rwsem to protect traversal of the file lock list (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72472}
+- NFSv4/flexfiles: honor FF_FLAGS_NO_IO_THRU_MDS in pg_get_mirror_count_write (Olga Kornievskaia) [RHEL-213115]
+- NFSv4/flexfiles: honor FF_FLAGS_NO_IO_THRU_MDS on fatal DS connect errors (Olga Kornievskaia) [RHEL-213115]
+- nfs: keep PG_UPTODATE clear after read errors in page groups (Olga Kornievskaia) [RHEL-213115]
+- NFSv4/pnfs: defer return_range callbacks until after inode unlock (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Document and assert reply-handler invariants (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Clear receive-side ownership pointers on release (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Add request-pool slack for delayed recycling (Olga Kornievskaia) [RHEL-213115]
+- xprtrdma: Decouple req recycling from RPC completion (Olga Kornievskaia) [RHEL-213115] {CVE-2026-72473}
+- xprtrdma: Use sendctx DMA state for Send signaling (Olga Kornievskaia) [RHEL-213115]
+- pNFS/filelayout: fix cheking if a layout is striped (Olga Kornievskaia) [RHEL-213115]
+- sunrpc: Fix error handling in rpc_sysfs_xprt_switch_add_xprt_store() (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Fix delegation reference leak in nfsd4_revoke_states (Olga Kornievskaia) [RHEL-213115]
+- lockd: fix TEST handling when not all permissions are available. (Olga Kornievskaia) [RHEL-213115]
+- NFSD: Defer sub-object cleanup in export put callbacks (Olga Kornievskaia) [RHEL-213115]
+- xdrgen: Fix struct prefix for typedef types in program wrappers (Olga Kornievskaia) [RHEL-213115]
+- nfsd: convert global state_lock to per-net deleg_lock (Olga Kornievskaia) [RHEL-213115]
+- RHEL-only: Fix EXPORT_SYMBOL_FOR_MODULES define (Audra Mitchell) [RHEL-183128]
+- module: Account for the build time module name mangling (Audra Mitchell) [RHEL-183128]
+- module: Extend the module namespace parsing (Audra Mitchell) [RHEL-183128]
+- Remove CONFIG_DRM_ACCEL_QAIC_DEBUG. (John Wiele) [RHEL-169630]
+
+* Tue Oct 27 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-280.el10]
+- netfilter: conntrack: make filtering by zone discoverable (CKI Backport Bot) [RHEL-282471]
+- selftests: netfilter: conntrack_dump_flush: remove unused variables and fix typo (CKI Backport Bot) [RHEL-282471]
+- netlink: specs: fix the conntrack filter type (CKI Backport Bot) [RHEL-282471]
+- netfilter: report NLM_F_DUMP_FILTERED when all is filtered out (CKI Backport Bot) [RHEL-282471]
+- selftests/powerpc/pmu/ebb: fix lost_exception_test hang with sched yield change (Mamatha Inamdar) [RHEL-277347]
+- nvme-fc: do not warn on controller removal race (Maurizio Lombardi) [RHEL-280611]
+- redhat/configs: automotive: basic enablement for Toradex Verdin iMX8M Plus (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add missing #sound-dai-cells to xcvr (Jared Kangas) [RHEL-287751]
+- dt-bindings: reset: audiomix: Add reset ids for EARC and DSP (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add Root Port node and PERST property (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: Split UART_2 pinctrl group (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx: Drop CPU masks from GICv3 PPI interrupts (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: enable hdmi_pai device (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: Remove obsolete TODO comments (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: make 'dsp' node depend on 'aips5' (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: convert 'aips5' to 'aipstz5' (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add hdmi parallel audio interface node (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Specify the number of channels for CSI-2 receivers (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add cpuidle cooling device to the alert trip point (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add idle cooling devices to cpu core (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Correct thermal sensor index (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add default GIC address cells (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add interconnect for lcdif-hdmi (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add pclk clock and second power domain for the ISP (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Configure VPU clocks for overdrive (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: fix VPU_BUS clock setting (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: drop gpcv2 vpu power-domains and clocks (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Enable gpu passive throttling (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: use 800MHz NoC OPP for nominal drive mode (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8: create unified pcie0 and pcie0_ep label for all chips (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: Add EEPROM compatible fallback (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx: Drop redundant CPU "clock-latency" (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add DSP clocks (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Configure dsp node for rproc usage (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add mu2 root clock (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Use resets property (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: change AUDIO_AXI_CLK_ROOT freq. to 800MHz (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add AUDIO_AXI_CLK_ROOT to AUDIOMIX block (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: configure GPU and NPU clocks to overdrive rate (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin-dahlia: add Microphone Jack to sound card (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: Fix SD regulator startup delay (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp-verdin: add single-master property to all i2c nodes (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: add cpuidle state "cpu-pd-wait" (Jared Kangas) [RHEL-287751]
+- arm64: dts: freescale: imx8mp-verdin: add labels to som nodes (Jared Kangas) [RHEL-287751]
+- arm64: dts: imx8mp: Add dbi2 and atu reg for i.MX8MP PCIe EP (Jared Kangas) [RHEL-287751]
+- signal: Prevent exec() race (Phil Auld) [RHEL-282050] {CVE-2026-98256}
+- posix-timers: Target group sigqueue to current task only if not exiting (Phil Auld) [RHEL-282050]
+- scsi: fnic: Fix missed link-up when critical IRQ targets offline CPU (Arun Easi) [RHEL-275753]
+- scsi: target: iscsi: Reserve a terminator byte for the login payload (CKI Backport Bot) [RHEL-285656] {CVE-2026-90011}
+- KVM: s390: pci: Reject adapter interrupt forwarding if already enabled (CKI Backport Bot) [RHEL-284746] {CVE-2026-74515}
+- s390/qeth: allow bridgeport queries despite OS_MISMATCH (Jan Polensky) [RHEL-192099]
+- s390/ctcm: Prevent XID null dereference (Jan Polensky) [RHEL-192099]
+- net/iucv: fix the recvmsg window update (Jan Polensky) [RHEL-192099]
+- drivers/s390/net: Enable CONTEXT_ANALYSIS (Jan Polensky) [RHEL-192099]
+- s390/ctcm: Convert fsm.h to proper kernel-doc format (Jan Polensky) [RHEL-192099]
+- s390/qeth: validate user buffer length in SNMP and ARP query ioctls (Jan Polensky) [RHEL-192099]
+- s390/qeth: Check CAP_NET_ADMIN for private ioctls (Jan Polensky) [RHEL-192099]
+- net/af_iucv: fix NULL deref in afiucv_hs_callback_syn() (Jan Polensky) [RHEL-192099]
+- net/iucv: fix use-after-free of a severed iucv_path (Jan Polensky) [RHEL-192099]
+- net/iucv: take a reference on the socket found in afiucv_hs_rcv() (Jan Polensky) [RHEL-192099]
+- s390/qeth: Replace get_zeroed_page() with kzalloc() (Jan Polensky) [RHEL-192099]
+- net/iucv: fix locking in .getsockopt (Jan Polensky) [RHEL-192099]
+- KEYS: encrypted: fix integer overflow of datablob_len (CKI Backport Bot) [RHEL-279485] {CVE-2026-98222}
+- virtio-fs: avoid double-free on failed queue setup (CKI Backport Bot) [RHEL-278135] {CVE-2026-93827}
+- KVM: nVM: Ensure INVVPID is emulated on the correct physical CPU (Rahul Kumar) [RHEL-270912] {CVE-2026-89932}
+- KVM: nVMX: Decouple INVVPID operand checks from flushing of vpid02 (Rahul Kumar) [RHEL-270912] {CVE-2026-89932}
+- KVM: nVMX: Always flush vpid02 on first use (Rahul Kumar) [RHEL-270912] {CVE-2026-89932}
+- KVM: Move kvm_io_bus_get_dev() locking responsibilities to callers (Sebastian Ott) [RHEL-259043] {CVE-2026-72282}
+- KVM: arm64: vgic-its: Free the caches when GITS_BASER changes (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: ptdump: Flush the last region (Sebastian Ott) [RHEL-259043]
+- arm64: ptdump: Make note_page_flush() range aware (Sebastian Ott) [RHEL-259043]
+- Revert "KVM: arm64: vgic-its: Don't save collections the table cannot hold" (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Correctly cap TLBI Range to the architural limit (Sebastian Ott) [RHEL-259043] {CVE-2026-89911}
+- KVM: arm64: Set a Linux errno on SMCCC error in kvm_call_hyp_nvhe() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Consider the DS bit when translating TCR_EL2 (Sebastian Ott) [RHEL-259043]
+- arm64: Unconditionally enable LSE support (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Expose FEAT_LSUI to guests (Sebastian Ott) [RHEL-259043]
+- arm64: cpufeature: Add FEAT_LSUI (Sebastian Ott) [RHEL-259043]
+- irqchip/gic-v5: Immediately exec priority drop following activate (Sebastian Ott) [RHEL-259043]
+- Documentation: KVM: Clarify that PMU_V3_IRQ IntID requirements for GICv5 (Sebastian Ott) [RHEL-259043]
+- Documentation: KVM: Fix typos in VGICv5 documentation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix CONFIG_PKVM_DISABLE_STAGE2_ON_PANIC (Sebastian Ott) [RHEL-259043]
+- KVM: selftests: Add test for PSCI SYSTEM_OFF2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add support for PSCI v1.2 and v1.3 (Sebastian Ott) [RHEL-259043]
+- arm64: errata: pass REVIDR when matching target implementation CPUs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Validate GICv5 timer PPIs before claiming ownership (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Reject out-of-range GICv5 PPI IDs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Prevent speculative SPI array underflow (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Free gic_kvm_info on initialization failure (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Avoid mismatched accesses to 'struct kvm_nvhe_init_params' (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Fix detection of MI on no pending LR (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Drop %%pB on nVHE panic when stage-2 is active (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add PKVM_DISABLE_STAGE2_ON_PANIC (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Reset in_kernel on private IRQ allocation failure (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: GICv2: Don't WARN on out-of-range GICV_DIR INTID (Sebastian Ott) [RHEL-259043] {CVE-2026-89727}
+- KVM: arm64: Preserve GPRs for AArch32 CP64 reads generating an UNDEF (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix hvhe and broken CNTVOFF_EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix timer offsets for non-protected VMs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Make timer_get_offset() work in all contexts (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add VNCR TLB tracking again (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Make VNCR invalidation participate in MMU invalidation retry (Sebastian Ott) [RHEL-259043] {CVE-2026-89916}
+- KVM: arm64: Sign-extend VA for range-based TLBI invalidation (Sebastian Ott) [RHEL-259043] {CVE-2026-89914}
+- KVM: arm64: Handle VNCR TLB invalidation race with vcpu_put() VNCR unmapping (Sebastian Ott) [RHEL-259043] {CVE-2026-89917}
+- KVM: arm64: Correctly handle end of VA space TLBI invalidation (Sebastian Ott) [RHEL-259043] {CVE-2026-89918}
+- KVM: arm64: Consider SCTLR_EL2.M when mapping the L1 VNCR page (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Handle negative S1 walk levels in VNCR TLB size evaluation (Sebastian Ott) [RHEL-259043 RHEL-261955] {CVE-2026-89775}
+- KVM: arm64: Remove VM-wide VNCR mapping counter (Sebastian Ott) [RHEL-259043] {CVE-2026-89915}
+- KVM: arm64: vgic-v3: take an LPI reference in vgic_v3_save_pending_tables (Sebastian Ott) [RHEL-259043] {CVE-2026-89913}
+- KVM: arm64: vgic-its: Point saved ITEs at the next valid entry (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-its: Don't save collections the table cannot hold (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Don't leak the SPI array when init is retried (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-its: Don't dereference a NULL collection on ITT save (Sebastian Ott) [RHEL-259043] {CVE-2026-89912}
+- arm64: Add override for ID_AA64MMFR4_EL1.NV_frac (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftest: Add NVHCR_EL2 to get-reg-list (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Expose FEAT_NV3 to guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add FEAT_NV3 detection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Engage NV3 TLBI trap elision (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Engage NV3 ERET trap elision (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add NVHCR_EL2 context switching (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add routing for NVHCR_EL2 trap (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add NVHCR_EL2 handling to the sysreg array (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add sanitisation for NVHCR_EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Make HCR_EL2 a non-VNCR register (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add kvm_has_nv{2,3}() predicates (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add NV3 control bits to HCRX_EL2 sanitisation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Split NV-specific exit fixups from the non-NV handling (Sebastian Ott) [RHEL-259043]
+- arm64: Add ARM64_HAS_NV3 capability (Sebastian Ott) [RHEL-259043]
+- arm64: sysreg: Add HCRX_EL2 bits related to FEAT_NV3 (Sebastian Ott) [RHEL-259043]
+- arm64: sysreg: Add NVHCR_EL2 description as a mirror of HCR_EL2 (Sebastian Ott) [RHEL-259043]
+- arm64: Add FEAT_NV2p1 detection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Expose FEAT_NV2p1 to NV guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Relax CNTHCTL_EL2 handling when FEAT_NV2p1 is present (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Relax CPTR_EL2 handling when FEAT_NV2p1 is present (Sebastian Ott) [RHEL-259043]
+- arm64: Add ARM64_HAS_NV2P1 capability (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't evaluate HCR_EL2.NV nor HFGITR_EL2.ERET on ERET fast path (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Classify CPTR_EL2 as a SR_LOC_SPECIAL register (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Plumb HCRX_EL2.SRMASKEn in HCRX_EL2 sanitisation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Drop __HCRX_EL2_* masks (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Merge guest's HCRX_EL2 using NV_HCRX_GUEST_EXCLUDE (Sebastian Ott) [RHEL-259043]
+- arm64: Update ID_AA64MMFR4_EL1 description to 2026-03 JSON release (Sebastian Ott) [RHEL-259043]
+- arm64: sysreg: Emit RESx/UNKN values for Mapping/Fields definitions (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Add stage-2 block transition test (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't advertise eager page splitting under pKVM (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't WARN on pKVM stage-2 map failures (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Skip pKVM stage-2 flush when FWB is enabled (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Top up stage-2 memcache for dirty logging faults (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Top up the memcache for pKVM permission faults (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Skip cache maintenance for non-cacheable pKVM mappings (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Implement lazy vCPU state sync for non-protected guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add primitives to flush/sync the VGIC state at EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Minimise EL2's exposure of host VGIC state during world switch (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add host and hypervisor vCPU lookup primitives (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Move PSCI helper functions to a shared header (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Factor out reusable vCPU reset helpers (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Make vcpu_{read,write}_sys_reg available to HYP code (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Extract MPIDR computation into a shared header (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Add a userspace watchpoint test (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Flush external_mdscr_el1 to the pKVM hyp vCPU (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Optimize protected mode with FWB and DIC (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Reject guest_memfd memslots when the VM has MTE (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Mitigate potential LPI registration failure (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Fix race between LPI release and re-registration (Sebastian Ott) [RHEL-259043] {CVE-2026-74568}
+- KVM: arm64: Sync SCTLR_EL1 when injecting an exception into a pVM (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v3: Kill kvm_vgic_global_state.ich_vtr_el2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v3: Simplify initial GICv3 configuration sampling (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Convert most ICH_VTR_EL2 accesses to inlined literal value (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add a helper providing an inlined literal value for ICH_VTR_EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Move GICv3 broken SEIS implementation detection to a CPU errrata (Sebastian Ott) [RHEL-259043]
+- arm64: Enable IMP DEF PMUv3 traps on Apple M* (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v3: Make vtr_to_* helpers use architectural field symbols (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Avoid double-deactivate of IRQs in the nested context (Sebastian Ott) [RHEL-259043] {CVE-2026-80699}
+- KVM: arm64: Drop redundant READ_ONCE() in pkvm_hyp_vm_is_created() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Remove unreachable early checks in pkvm_init_host_vm() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Drop the unused EL2-side is_created write (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Zero out the stack initialized data in the FFA handler (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Ensure FFA ranges are page aligned (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Validate the offset to the mem access descriptor (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix bounds checking in do_ffa_mem_reclaim() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Add MMIO sign-extending load test (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix sign-extension of MMIO loads (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix propagation of TLBI level in kvm_pgtable_stage2_relax_perms() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Only update XN attr when requested during S2 relaxation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Ensure level is always initialized when relaxing perms (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Set IL for nested SError injection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Set IL for emulated SError injection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Set IL for injected FPAC exceptions during ERET emulation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Unconditionally set IL for injected abort exceptions (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Unconditionally set IL for injected undefined exceptions (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Set ESR_ELx.IL for injected undefined exceptions at EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Mark VM as bugged for unexpected VNCR abort (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Inject SEA if guest VNCR isn't normal memory (Sebastian Ott) [RHEL-259043] {CVE-2026-72277}
+- KVM: arm64: nv: Re-translate VNCR before injecting abort (Sebastian Ott) [RHEL-259043] {CVE-2026-72278}
+- KVM: arm64: nv: Inject SEA if kvm_translate_vncr() can't resolve PFN (Sebastian Ott) [RHEL-259043] {CVE-2026-80665}
+- KVM: arm64: nv: Respect read-only PFN when mapping L1 VNCR (Sebastian Ott) [RHEL-259043] {CVE-2026-72279}
+- KVM: arm64: nv: Fix PSTATE construction on illegal exception return (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Sync SPSR_EL1 when injecting an exception into a pVM (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Write ESR_EL2 for injected nested SError exceptions (Sebastian Ott) [RHEL-259043] {CVE-2026-80873}
+- KVM: arm64: nv: Drop bogus WARN for write to ZCR_EL2 (Sebastian Ott) [RHEL-259043] {CVE-2026-72280}
+- KVM: arm64: nv: Fix SPSR_EL2 restore in kvm_hyp_handle_mops() (Sebastian Ott) [RHEL-259043] {CVE-2026-64555}
+- KVM: arm64: vgic: Check the interrupt is still ours before migrating it (Sebastian Ott) [RHEL-259043] {CVE-2026-72289}
+- KVM: arm64: vgic: Handle race between interrupt affinity change and LPI disabling (Sebastian Ott) [RHEL-259043] {CVE-2026-72288}
+- KVM: arm64: vgic-its: Make ABI commit helpers return void (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Hold kvm->mmu_lock while initialising vcpu->arch.vncr_tlb (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Remove <asm/fpsimdmacros.h> (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Move SME save/restore inline (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Move sve_flush_live() inline (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Move SVE save/restore inline (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Use opaque type for SME state (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Use opaque type for SVE state (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Move fpsimd save/restore inline (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Split FPSR/FPCR from SVE save/restore (Sebastian Ott) [RHEL-259043]
+- arm64: sysreg: Add FPCR and FPSR (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Move sve_get_vl() and sme_get_vl() inline (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Use assembler for baseline SME instructions (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Use assembler for SVE instructions (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Remove sve_set_vq() and sme_set_vq() (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Fold sve_init_regs() into do_sve_acc() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Remove struct cpu_sve_state (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Save host FPMR in host cpu context (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't override FFR save/restore argument (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't include <asm/fpsimdmacros.h> (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Fix type mismatch in sme_{save,load}_state() (Sebastian Ott) [RHEL-259043]
+- arm64: fpsimd: Fix type mismatch in sve_{save,load}_state() (Sebastian Ott) [RHEL-259043]
+- arm64/efi: Remove unneeded SVE/SME fallback preserve/store handling (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Remove @arch from __load_stage2() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fallback to a supported value for unsupported guest TGx (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Use literal granule size in TLBI range calculation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Factor out TG0/1 decoding of VTCR and TCR (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Rename vtcr_to_walk_info() to setup_s2_walk() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Add fail-safe for refcounted pages in __pkvm_hyp_donate_host (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix arch timer interrupts for GICv3-on-GICv5 guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Improve error handling for GICv5 PPI selftest (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Cleanup unused vars in GICv5 PPI selftest (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Add missing GIC CDEN to no-vgic-v5 selftest (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Atomically assign bits to PPI DVI bitmap (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Add missing trap handing for NV triage (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Limit support to 64 PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Rationalise per-CPU irq accessor (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Drop defensive checks from vgic_v5_ppi_queue_irq_unlock() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Consolidate vgic_allocate_private_irqs_locked() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Constify struct irq_ops usage (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Drop pointless ARM64_HAS_GICV5_CPUIF check (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Remove use of __assign_bit() with a constant (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Move PPI caps into kvm_vgic_global_state (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Add for_each_visible_v5_ppi() iterator (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v2: Don't init the vgic on in-kernel interrupt injection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v2: Force vgic init on injection outside the run loop (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pmu: Kill the PMU interrupt level cache (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: timer: Kill the per-timer irq level cache (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Simplify userspace notification of interrupt state (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: timer: Repaint kvm_timer_{should,irq_can}_fire() to kvm_timer_{pending,enabled}() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Don't save/restore FP register during a nested ERET or exception (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: nv: Track L2 to L1 exception emulation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Seed pkvm_ownership_selftest vcpu memcache (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Reject non compliant SMCCC function calls in pKVM (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Fold PPI state for all exposed PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: selftests: Avoid testing the IMPDEF behavior (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Destroy stage-2 page-table in kvm_arch_destroy_vm() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't leave mmu->pgt dangling on kvm_init_stage2_mmu() error (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Prevent the host from using an smc with imm16 != 0 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't advertises GICv3 in ID_PFR1_EL1 if AArch32 isn't supported (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Correctly plumb ID_AA64PFR2_EL1 into pkvm idreg handling (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Move GICv5 timer PPI validation into timer_irqs_are_valid() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Remove evaluation of timer state in kvm_cpu_has_pending_timer() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Kill arch_timer_context::direct field (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Correctly set dist->ready once initialised (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Make the effective priority mask a strict limit (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Cast vgic_apr to u32 to avoid undefined behaviours (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Transfer edge pending state to ICH_PPI_PENDRx_EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v5: Hold config_lock while finalizing GICv5 PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Fix writeable mask for ID_AA64PFR2_EL1 (Sebastian Ott) [RHEL-259043]
+- arm64: Fix field references for ICH_PPI_DVIR[01]_EL2 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't skip per-vcpu NV initialisation (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Don't reset cpuif/redist addresses at finalize time (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Don't hold 'vm_table_lock' across guest page reclaim (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Allow get_pkvm_hyp_vm() to take a reference to a dying VM (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Prevent teardown finalisation of referenced 'hyp_vm' (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Use direct function pointers for cpu_{on,resume} (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Turn __kvm_hyp_init_cpu into an inner label (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Simplify BTI handling on CPU boot (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: pkvm: Move error handling to the end of kvm_hyp_cpu_entry (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Communicate userspace-driveable PPIs via a UAPI (Sebastian Ott) [RHEL-259043]
+- Documentation: KVM: Introduce documentation for VGICv5 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Probe for GICv5 device (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Set ICH_VCTLR_EL2.En on boot (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Introduce kvm_arm_vgic_v5_ops and register them (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Hide FEAT_GCIE from NV GICv5 guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic: Hide GICv5 for protected guests (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Mandate architected PPI for PMU emulation on GICv5 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Enlighten arch timer for GICv5 (Sebastian Ott) [RHEL-259043]
+- irqchip/gic-v5: Introduce minimal irq_set_type() for PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Initialise ID and priority bits when resetting vcpu (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Create and initialise vgic_v5 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Support GICv5 interrupts with KVM_IRQ_LINE (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Implement direct injection of PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Introduce set_direct_injection irq_op (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Trap and mask guest ICC_PPI_ENABLERx_EL1 writes (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Check for pending PPIs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Clear TWI if single task running (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Init Private IRQs (PPIs) for GICv5 (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Implement PPI interrupt injection (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic: Introduce queue_irq_unlock to irq_ops (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Finalize GICv5 PPIs and generate mask (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Implement GICv5 load/put and save/restore (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Add vgic-v5 save/restore hyp interface (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Trap and emulate ICC_IDR0_EL1 accesses (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Add emulation for ICC_IAFFIDR_EL1 accesses (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Support GICv5 FGTs & FGUs (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Sanitize ID_AA64PFR2_EL1.GCIE (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Detect implemented PPIs on boot (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Add Arm copyright header (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic: Introduce interrupt type helpers (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: gic-v5: Add ARM_VGIC_V5 device to KVM headers (Sebastian Ott) [RHEL-259043]
+- arm64/sysreg: Add GICR CDNMIA encoding (Sebastian Ott) [RHEL-259043]
+- arm64/sysreg: Add remaining GICv5 ICC_ & ICH_ sysregs for KVM support (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Split out mapping IRQs and setting irq_ops (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: Return early from kvm_finalize_sys_regs() if guest has run (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic: Rework vgic_is_v3() and add vgic_host_has_gicvX() (Sebastian Ott) [RHEL-259043]
+- KVM: arm64: vgic-v3: Drop userspace write sanitization for ID_AA64PFR0.GIC on GICv5 (Sebastian Ott) [RHEL-259043]
+- arm64: drop binutils version checks (Sebastian Ott) [RHEL-259043]
+- selftsets/bpf: Retry map update on helper_fill_hashmap() (CKI Backport Bot) [RHEL-264762]
+- rqspinlock: Fix order in raw_res_spin_(un)lock_irq to allow schedule (CKI Backport Bot) [RHEL-264762]
+- ALSA: update RHEL Kconfigs for 7.2 upstream code (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek - Add headset mode for Dell Pro QC1255 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp-da7219-max98357a: don't bind on Raven/Picasso boards (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp-config: change quirks to cover all ASUS FA401EA variants (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: fix OOB write in snd_usbmidi_novation_output() (Jaroslav Kysela) [RHEL-248943]
+- regmap: sdw-mbq: don't call an unset readable_reg callback (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: NVL: Add entry for HDMI-In capture support to non-I2S codec boards. (Jaroslav Kysela) [RHEL-248943]
+- regmap: sdw-mbq: Fix swap of timeout and retry times (Jaroslav Kysela) [RHEL-248943]
+- ASoC: xilinx: formatter_pcm: pass aud_drv_data to irq handlers (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tac5xx2-sdw: select REGMAP_SOUNDWIRE_MBQ (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1320: run the initialisation preset on the first hardware init (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5645: Perform the initial jack detect at probe (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: sof_rt5682: Add HDMI-In capture with rt5682 support for NVL. (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: soc-acpi: Add entry for HDMI_In capture support in NVL match table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for HyperX OMEN Gaming Laptop 16-ap1xxx (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2781: fix clang build error for goto bypassing cleanup variable (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Fix mixer regression on SteelSeries Arctis Nova 5 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb: Fix UAF at delayed release of MIDI2 EPs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas675x: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2780: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2764: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2552: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: pcm512x: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Fix sticky mixer regressions on M-Audio Fast Track Ultra (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs4265: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l45: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l41: sort the register default table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for MSI Raider A18 HX A7VHG (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for Xiaomi RedmiBook 16 2025 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usx2y: bound the hwdep mmap fault offset (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: fix OOB write on Type II inbound URBs (Jaroslav Kysela) [RHEL-248943]
+- ALSA: us144mkii: re-anchor capture URBs on resubmission (Jaroslav Kysela) [RHEL-248943]
+- ALSA: FCP: fix OOB write in fcp_meter_ctl_get() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5645: Make the Kconfig symbol user selectable (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add QUIRK_FLAG_MIXER_GET_CUR_BROKEN for Logitech PRO X 2 LIGHTSPEED (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/tas2781: fix ACPI reference handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: lpass-wsa-macro: Fix enum kcontrol accesses (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: lpass-tx-macro: Fix enum kcontrol accesses (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Add missing stub for sdca_fdl_free_state() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-pcm: Continue the pipeline trigger in case of IPC timeout (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for HP Victus Laptop 16-e1xxx (Jaroslav Kysela) [RHEL-248943]
+- ASoC/soundwire: Intel: reset the PCMSyCM registers in hda_sdw_bpt_close (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: sof-audio: Fix error path in sof_widget_setup_unlocked() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: topology: Use acpi mach from the machine driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Refresh copier IPC payload before widget setup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt722: reset codec to fix abnormal sound (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: realtek,rt5640: Make interrupts optional (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add mute LED quirk for HP Victus 16-e0xxx (MB 88ED) (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add GET_SAMPLE_RATE quirk for C-Media CM6206 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Clamp frame size in implicit-feedback mode (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Fix DMA buffer out-of-bounds write when fill_max is set (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk for Corsair Virtuoso (later revision) (Jaroslav Kysela) [RHEL-248943]
+- ALSA: pcm: wake linked drain waiters on unlink (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: Add DMI quirk for Lenovo Legion 7 15ASH11 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sophgo: return 1 on volume change in cv1800b_adc_volume_set() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2781: Use correct calibration data for SINEGAIN2 register (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Move kcontrol search out of IRQ (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Switch to fixup_controls callback for IRQ registration (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Add a component fixup_controls callback (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Populate IRQ data earlier (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Remove devm from primary IRQ cleanup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Add sdca_irq_cleanup_late() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Rename sdca_irq_allocate() to include devm (Jaroslav Kysela) [RHEL-248943]
+- ASOC: Unify code style for platform_device_id arrays (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Use named initializers for platform_device_id arrays (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: Unify code style for platform_device_id array (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: Use named initializers for platform_device_id arrays (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Drop platform probing metadata (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: mt6357: Drop unused assignment of platform_device_id driver data (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP Dragonfly Folio G3 2-in-1 (103c:8a05) (Jaroslav Kysela) [RHEL-248943]
+- ALSA:hda/realtek:ALC269 fixup for Legion 7 15ASH11 Mic Mute LED (Jaroslav Kysela) [RHEL-248943]
+- ALSA: timer: Clear SNDRV_TIMER_IFLG_DEAD once the close completes (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for Infinix INBOOK X3 Slim (Jaroslav Kysela) [RHEL-248943]
+- ALSA: 6fire: Fix UAF at error handling during probe (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: fix OOB write in snd_usbmidi_akai_output() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: fix stack info leak in RME Digiface status (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ump: fix double free of out_cvts on rawmidi error (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: fix use-after-free in ump_to_endpoint() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix headset mic on Acer Nitro 5 AN515-46 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add iface reset and delay quirk for JKY Technology Q2A (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add mute LED quirk for HP Laptop 14s-dr1xxx (Jaroslav Kysela) [RHEL-248943]
+- ALSA: lx6464es: fix period byte count for 16-bit streams (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Fix division by zero in initialize_timer() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add dB map quirk for Razer Barracuda X 2.4 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: soc-acpi: Add entry for sof_rt5682 in NVL match table. (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Ensure that Control Range is large enough for header (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Make UMP message size check more robust (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Always free firmware in FDL path (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Correct pointer passed to devm_acpi_table_put (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: sound: spacemit,k1-i2s: allow 6 clocks for K3 i2s1 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: spacemit: rename clock inputs to match binding (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for Acer Aspire AG14-22P (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP Pavilion All-in-One 27-ca1xxx (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add iface reset and delay quirk for Generic USB Headphone (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add MSI Crosshair A16 HX D7WFKG to quirk table (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek - Add quirk for Dell Pro QC1255 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/tas2781: clear cali_data.total_sz when calibration read fails (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add HDA_CODEC_QUIRK for Samsung 750XBE/730XBE (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix speakers on Lunnen Ground 14 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: max98090: fix missing IS_ERR() before PTR_ERR() on mclk lookup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: max98095: fix missing IS_ERR() before PTR_ERR() on mclk lookup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl_easrc: fix m2m_init error path to use goto instead of bare return (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl_asrc: fix m2m_init error path to use goto instead of bare return (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for ASUS EXPERTBOOK PM1403CDA (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: Fix default digital volume (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: Fix event generation for volume control (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: Validate values for volume writes (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: fix broken entries in the volume lookup table (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: fix DVC coefficient write order (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add FIXED_RATE quirk for JBL Quantum650 Wireless (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP Pavilion x360 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: sof_sdw: Add quirks for new Dell laptops (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Use complete_all() to signal init_completion (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Fix potential probe() deadlock (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fs210x: Make cache write through again during resume (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add inverted LED quirk for HP ZBook 8 G2a (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: codecs: hdmi: disable keep-alive before audio format change (Jaroslav Kysela) [RHEL-248943]
+- ASoC: bt-sco: fix duplicate DAPM widget names for wideband DAI (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: cs35l41: validate and free ACPI mute object (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix speakers on Alienware x16 R2 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP EliteBook 830 G8 (8AB8) to enable mute LEDs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add DMI quirk for MSI Vector A16 HX A8WIG (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: imx-card: Skip sysclk reset for active DAIs in shutdown (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sun4i-codec: Set quirks.playback_only for H616 codec (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2781: bound firmware description string parsing (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: close a re-opened queue timer in the destructor (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: add ACP70 DMI override for new ASUS TUF platforms (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add delay quirk for iBasso DC-Elite (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl_sai: Fix spurious BCLK on resume by clearing BYP (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix speakers on MECHREVO WUJIE Series (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: cs35l56: Fail if wmfw file is missing (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Skip DSD quirk for Musical Fidelity M6s DAC (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/cirrus_scodec: Make Kconfig visible if KUNIT (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek - Fixed Headphone noise issue for Dell QCM1255 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2562: fix deprecated 'shut-down' GPIO always cleared after lookup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs42l43: Correct report for forced microphone jack (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: sc8280xp: Add support for Eliza (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: qcom,sm8250: Add Eliza sound card (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: qcom: Add Eliza LPASS macro codecs (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add mic mute LED quirk for HP Laptop 15-fd0xxx (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek - Add quirk for HP Victus 15-fa0xxx (MB 8A50) (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk for Redragon H510-PRO Wireless headset (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: ps: replace bitwise OR with logical OR in IRQ return check (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: ps: fix wrong ACP version string in pci_request_regions() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: amd-acp70-acpi-match: Add tas2783 support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: meson: aiu: fifo-spdif: soft reset the S/PDIF datapath on start/stop (Jaroslav Kysela) [RHEL-248943]
+- ALSA: firewire: Drop redundant mod_devicetable.h includes (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix headset mic on ASUS ROG Ally X (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix headphone output on ASUS ROG Ally X (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp: Fix linker error with SDCA quirks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt712-sdca: reset codec at io_init to fix silent headphone (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sof_sdw: Add a quirk for 0x17aa383c laptop using sidecar amps with cs42l43 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Fix imbalance per-channel volume of sticky mixers (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: caiaq: validate EP1 reply lengths (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: add quirk for Framework F111:0010 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Enable mute LED quirk for HP Laptop 15-dw0xxx (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: src: Add missing scu_supply clock to suspend/resume (Jaroslav Kysela) [RHEL-248943]
+- Documentation: sound: tas675x: Fix temperature range and impedance documentation (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: tas675x: Fix CHx temperature range register bit fields (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: tas675x: use READ_ONCE for params to be used concurrently (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: adg: make rsnd_adg_clk_control() idempotent (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: j721e-evm: Avoid mixing goto with guard() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: i2s: Avoid mixing goto with guard() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: validate probe info element counts (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usx2y: us144mkii: fix work UAF on disconnect (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: yc: Add Alienware m15 R7 AMD to DMIC quirk table (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP Victus 16-e0xxx (88EE) to enable mute LED (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Return error for invalid number of formats (Jaroslav Kysela) [RHEL-248943]
+- ALSA: us144mkii: capture_urb_complete: redundant usb_anchor_urb corrupts anchor list on each resubmission (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Update Acer Nitro ANV15-41 quirk to enable mute LED (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: pcm512x: only print info once on no sclk (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2781: Update default register address to TAS2563 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: firewire: isight: bound the sample count to the packet payload (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: qcom: Free QMI handle (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: Add Lenovo Legion 7i 16IAX7 17AA3874 quirk (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for Acer Nitro ANV15-41 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-core: Don't fail if device_link could not be created (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: rockchip_sai: #include <linux/platform_device.h> explicitly (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Fix uninitialised heap leak in snd_seq_event_dup() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2783: Update loaded firmware names to linux-firmware 20260519 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: realtek: Add back local call to sdw_show_ping_status() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: Add back local call to sdw_show_ping_status() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: max98373: Add back local call to sdw_show_ping_status() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: es9356: Add back local call to sdw_show_ping_status() (Jaroslav Kysela) [RHEL-248943]
+- soundwire: Move wait for initialisation helper to header (Jaroslav Kysela) [RHEL-248943]
+- ALSA: FCP: Add Focusrite ISA C8X support (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Fix noisy mic for Clevo V6xxAW (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add LED fixup for HP EliteBook 6 G2i Laptops (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for Lenovo Yoga 7 16IAP7 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Enable mute LED on HP EliteBook 840 G6 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: emu10k1: Use common error handling code in snd_emu10k1_playback_open() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk for YAMAHA CDS3000 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: audio-graph-card2: Drop warning for manually selected DAI formats (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add headset mic quirk for Acer S40-54 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: caiaq: bound the length in the EP1 input parsers (Jaroslav Kysela) [RHEL-248943]
+- ALSA: caiaq: fix out-of-bounds read in the Traktor Kontrol S4 input parser (Jaroslav Kysela) [RHEL-248943]
+- ALSA: pcm: fix __le32 cast warning in snd_pcm_set_sync_per_card (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5650: enhance spk protection function (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: Drop problematic guard() changes (Jaroslav Kysela) [RHEL-248943]
+- ALSA: sh: Use more common error handling code in snd_aica_probe() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk flags for SC13A (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/conexant: Add pin config quirk for Lenovo IdeaPad Slim 5 16AKP10 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: compress: Fix task creation error unwind (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add iface reset and delay quirk for XIBERIA K03S (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for Lenovo Xiaoxin 14 GT (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add CS35L41 I2C quirk for ASUS UM3405GA (Jaroslav Kysela) [RHEL-248943]
+- ALSA: timer: Fix racy timeri->timer changes with rwlock (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: Fix RT5677 "realtek,gpio-config" type (Jaroslav Kysela) [RHEL-248943]
+- ASoC: audio-graph-card2: recommend to use auto select DAI format (Jaroslav Kysela) [RHEL-248943]
+- ASoC: update auto format selection method (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: rcar: update auto select format (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: pcm3168a: update auto select format (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: ak4619: update auto select format (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: idt821034: don't use array if single pattern (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: peb2466: don't use array if single pattern (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: framer-codec: don't use array if single pattern (Jaroslav Kysela) [RHEL-248943]
+- ASoC: remove SND_SOC_POSSIBLE_xBx_xFx (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Don't re-bounce the error event (Jaroslav Kysela) [RHEL-248943]
+- ASoC: bcm: cygnus: use scoped child node loop (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: fsl_qmc_audio: use scoped child node loop (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: common: use scoped OF node handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8365_mt6357: use *dev in mt8365_mt6357_gpio_probe() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8186-mt6366: use *dev in mt8186_mt6366_soc_card_probe() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8186-mt6366: tidyup mt8186_mt6366_card_set_be_link() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mtk-soundcard-driver: tidyup set_dailink_daifmt() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mtk-soundcard-driver: tidyup set_card_codec_info() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: cleanup mtk_sof_dailink_parse_of() param (Jaroslav Kysela) [RHEL-248943]
+- ASoC: hisilicon: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/hdmi: Add force-connect quirk for HP EliteDesk 800 G5 Mini (Jaroslav Kysela) [RHEL-248943]
+- ALSA: pcxhr: Share PLL frequency register calculation (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8195: mt8365-dai-i2s: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8195: mt8365-afe-clk: Use guard() for mutex & spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8195: mt8365-dai-adda: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8195: mt8195-dai-etdm: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8195: mt8195-afe-clk: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8192: mt8192-afe-gpio: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8188: mt8188-afe-clk: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: common: mtk-btcvsd: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8186: mt8186-afe-gpio: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: common: mtk-afe-fe-dai: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: rockchip_sai: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: i2s-tdm: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: rockchip_i2s: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: rockchip_pdm: Handle runtime PM resume failures in set_fmt (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: spdif: Restore regcache cache-only mode on sync failure (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: rockchip_pdm: Reorder clock enable sequence (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: rockchip-spdif: Correct SPDIF clock descriptions (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: spdif: Reorder clock enable sequence (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: davinci-mcasp: Add audio-graph-card2 and DPCM support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Remove unnecessary conditionals waiting for enumeration (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: wcd939x: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: wcd937x: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: wcd938x: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: pm4125: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5682: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: wsa881x: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- soundwire: Always wait for initialisation of unattached devices (Jaroslav Kysela) [RHEL-248943]
+- ASoC: img: img-spdif-in: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: img: img-spdif-out: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: meson: axg-tdm-formatter: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-core: Create device_link to ensure correct suspend order (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: Add missed component_name strings for TI amps (Jaroslav Kysela) [RHEL-248943]
+- ALSA: Add simple refcount helper functions (Jaroslav Kysela) [RHEL-248943]
+- ALSA: core: Use the new helper for the power refcount (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: Use the new helper for PCM instance refcount (Jaroslav Kysela) [RHEL-248943]
+- ALSA: aloop: Use the new helper for stop-count refcount (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Use the new helper for shutdown refcount (Jaroslav Kysela) [RHEL-248943]
+- ALSA: 6fire: Use common error handling code in usb6fire_control_init() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: pcm: Fix unlocked state reads in read/write file ops (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-component: remove .debugfs_prefix from Component (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8173-afe-pcm: set debugfs_prefix via Component driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: stm: stm32_adfsdm: set debugfs_prefix via Component driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-generic-dmaengine: set debugfs_prefix via Component driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: imx-pcm-rpmsg: set debugfs_prefix via Component driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-component: remove CONFIG_DEBUG_FS for debugfs_prefix (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: everest,es8389: Document audio graph port (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: Intel: Use codec_info_list.is_amp directly (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc_sdw_utils: add is_amp flag to all amps (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: remove platform data style support (Jaroslav Kysela) [RHEL-248943]
+- sh: roll back Ecovec24/7724se Sound support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2783A: remove unused tas25xx_(de)register_misc() functions (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for HP 255 15.6 inch G9 Notebook PC (Jaroslav Kysela) [RHEL-248943]
+- ALSA: Improve style of pnp_device_id array terminators (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for Lenovo Yoga Pro 7 14IRH8 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Add SPU clock control in hw_startup/shutdown (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: add fsi_clk_prepare/unprepare() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Add SPU clock support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: refactor clock initialization (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Use devm_clk_get_optional() for optional clocks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Fix register access from in-flight IRQ after shutdown (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Move fsi_clk_init() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Move fsi_stream_is_working() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: fsi: Fix trigger stop ordering (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: renesas,fsi: add support multiple clocks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: make volume control usable (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: remove async start (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: remove fade in/out on start/stop (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: reduce log spam (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: add TDM support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: aw88261: support changing sample rate and bit width (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: amd: honor machine_check in SoundWire machine select (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: ps: honor machine_check in SoundWire machine select (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Increase pm_runtime autosuspend delay (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sprd: sprd-mcdt: Use guard() for mutex & spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8365-afe-pcm: fix possible NULL-pointer dereferences in mt8365_afe_suspend() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2781: Add TAS2573 support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: ti,tas2781: Add TAS2573 support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-card: remove platform data style (Jaroslav Kysela) [RHEL-248943]
+- sh: 7724se: remove FSI/AK4642/Simple-Audio-Card support (Jaroslav Kysela) [RHEL-248943]
+- sh: ecovec24: remove FSI/DA7210/Simple-Audio-Card support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: imx-rpmsg: Set driver_name for snd_soc_card (Jaroslav Kysela) [RHEL-248943]
+- ASoC: imx-rpmsg: Support headphone jack detection (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: fsl,rpmsg: Add hp-det-gpios property (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: cdns,xtfpga-i2s: Convert to dt-schema (Jaroslav Kysela) [RHEL-248943]
+- ALSA: es18xx: check control allocation before private data setup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Cleanup components_kcontrols[] (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Drop manipulation of the obsolete direction flag (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Remove unused WAVES controls (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Simplify catpt_stream_find() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Simplify the RAM-navigation code (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Utilize lock-guard helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Replace RAM-helpers with resource_xxx() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: rz-ssi: Use generic PCM dmaengine APIs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: renesas: rz-ssi: Add pause support (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb: qcom: Drop unused variables (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: ADX: use of_device_get_match_data (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-core: remove card->dmi_longname (Jaroslav Kysela) [RHEL-248943]
+- ALSA: control: Use scoped cleanup for user control buffers (Jaroslav Kysela) [RHEL-248943]
+- ALSA: core: Add scoped cleanup helper for card references (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: oss: Use scoped cleanup for temporary MIDI use lock (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add quirk for ASUS VivoBook X509DAP (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: qcom: Use PAGE_ALIGN macro for buffer size calculation (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: qcom: Improve error logging in USB offload (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: qcom: Use snprintf for mixer control name formatting (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: qcom: Fix return value in qc_usb_audio_offload_fill_avail_pcms (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: ALC882: Fixup for Clevo P775TM1 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: ps-mach: remove unused machine (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp6x-mach: remove unused machine (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp3x-rn: remove unused machine (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs42xx8: Add SPI bus support for CS42448/CS42888 codec (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: cirrus,cs42xx8: Add SPI bus support (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: oss: Reject reads that cannot fit the next event (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Restore created port information after insertion (Jaroslav Kysela) [RHEL-248943]
+- ASoC: loongson: Separate external shared DMA from the platform interface (Jaroslav Kysela) [RHEL-248943]
+- ASoC: loongson: Combined regmap definitions (Jaroslav Kysela) [RHEL-248943]
+- ASoC: loongson: Use the `idma` identifier for internal DMA variables (Jaroslav Kysela) [RHEL-248943]
+- MAINTAINERS: Add entry for Loongson ASoC driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: es9356: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: rk3328: Use managed GPIO and clock helpers (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: i2s: Use managed hclk and runtime PM cleanup (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Share common SoundWire interrupt enable/disable code (Jaroslav Kysela) [RHEL-248943]
+- ALSA: oxygen: add HT-Omega eClaro (7284:9783) support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: q6apm-dai: add push-pull and watermark event support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: q6apm: add watermark event support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: audioreach: Add support for shared memory push/pull modules (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: q6apm: remove shared memory IID helpers (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: q6apm: return error code to consumers on failures (Jaroslav Kysela) [RHEL-248943]
+- ASoC: qcom: audioreach: use cached shared memory module IID (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sti: uniperif_player: Use guard() for mutex & spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sti: uniperif_reader: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: spacemit: add K3 SoC support with additional clocks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: add SpacemiT K3 SoC compatible (Jaroslav Kysela) [RHEL-248943]
+- ASoC: aw88395: use struct_size() and __counted_by() for aw_container (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: pcm3168a: Drop CONFIG_PM-conditional preproc directive (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: pcm3168a: Drop redundant pm_runtime_idle() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: pcm3168a: Prevent regulator double-disable in S4 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add system suspend/resume support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Support unprefixed DT node names for RZ/G3E (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: src: Add SRC reset support for RZ/G3E (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: adg: Look up RZ/G3E clkin under audio-clk{a,b,c,i} (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: src: Acquire shared SCU clocks for RZ/G3E (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: adg: Add per-SSI ADG and SSIF supply clock management (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add ADG reset support for RZ/G3E (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add SSI reset support for RZ/G3E platform (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: ssiu: Add RZ/G3E BUSIF support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: ssiu: Add shared SSI reset controller support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add RZ/G3E DMA address calculation support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Refactor DMA address tables with named structs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add audmapp clock and reset support for RZ/G3E (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add RZ/G3E SoC probing and register map (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Support hyphen or dot in indexed clock and reset names (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rsnd: Add reset controller support to rsnd_mod (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: sound: Add DT binding for RZ/G3E sound (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: nau8822: add support for supply regulators (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: nau8822: Add supply regulators (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: fix snprintf bounds (Jaroslav Kysela) [RHEL-248943]
+- ALSA: core: Use flexible array for card private data (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Use flexible array for device arguments (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk flag for Edifier MF200 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add QUIRK_FLAG_MIXER_GET_CUR_BROKEN (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk flag for Sennheiser MOMENTUM 3 (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/tas2781: Fix spelling mistake: "Froce" -. "Force" (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: return -EPROBE_DEFER if components are not registered yet (Jaroslav Kysela) [RHEL-248943]
+- soundwire: dmi-quirks: Disable ghost Realtek devices (Jaroslav Kysela) [RHEL-248943]
+- soundwire: only handle alert events when the peripheral is attached (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Print error code if board-registration fails (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Add pretty-trace for large IPC payloads (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: catpt: Complete coredump handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs-amp-lib: Simplify overcomplicated error return (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-card: add snd_soc_card_set_topology_name() (Jaroslav Kysela) [RHEL-248943]
+- ALSA: aoa: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: cmipci: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ymfpci: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ice1712: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: gus: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: es1938: check snd_ctl_new1() return value (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/hdmi: Use 'AC_PINSENSE_ELDV' to detect pinsense for Loongson (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda: cs35l41: imply SERIAL_MULTI_INSTANTIATE (Jaroslav Kysela) [RHEL-248943]
+- ASoC: es9356-sdca: Depend on CONFIG_SND_SOC_SDCA (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: Adjust indentation in CONFIG_SND_SOC_ES9356 definition (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Make CONFIG_SND_SOC_SDCA a user selectable symbol (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: allocate i2s_path with priv (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Add quirk for Novation Mininova (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Allow the use of multiple formats for src output (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Validate the number of in/out formats for src/asrc (Jaroslav Kysela) [RHEL-248943]
+- Revert "ALSA: scarlett2: Fix 2i2 Gen 4 direct monitor gain on firmware 2417" (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Remove arbitrary prioq insertion limit (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: max98090: use component set_jack callback (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mt8173-max98090: use standard callback to set jack (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: imx-rpmsg: Switch to core ignore-suspend-widgets support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-core: Add core support for ignoring suspend on selected DAPM widgets (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-pcm: constrain hw_params when DAIs share the same BCLK (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-pcm: add DEFINE_GUARD for snd_soc_card_mutex (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-dai: add shared BCLK clock for cross-DAI rate constraints (Jaroslav Kysela) [RHEL-248943]
+- ALSA: drivers: Mark some variables as __ro_after_init (Jaroslav Kysela) [RHEL-248943]
+- ALSA: core: Mark some variables as __ro_after_init (Jaroslav Kysela) [RHEL-248943]
+- ALSA: isa: Mark '*_registered' variables as __ro_after_init (Jaroslav Kysela) [RHEL-248943]
+- ASoC: stm: stm32_spdifrx: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: stm: stm32_sai_sub: Use guard() for mutex & spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: stm: stm32_i2s: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: stm: stm32_adfsdm: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Enable deep buffer capture (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: imx-card: Complete the full list of supported DAI formats (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Print for format type in dbg_audio_format (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56-shared-test: Subtract reg_base offset in dummy regmap (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: Intel: lnl: Enable offload for UAOL link (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: Intel: hda-mlink/lnl: Convert offload enable functions to void (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp7x: add system and runtime PM ops (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: enable acp7.x drivers build (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp7x: add helper functions and hw ops (Jaroslav Kysela) [RHEL-248943]
+- ASoC: amd: acp7x: add ACP PCI driver probe/remove sequence (Jaroslav Kysela) [RHEL-248943]
+- include: sound: add register header file for acp7.x series (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Use named initializers for arrays of i2c_device_data (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Drop empty i2c remove callbacks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-control: Use local copy of IPC message for sending (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: Validate and correct the core id against the number of cores of the DSP (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: ipc4-topology: Handle SOF_DBG_DISABLE_MULTICORE flag for pipelines (Jaroslav Kysela) [RHEL-248943]
+- ASoC: uda1380: remove kmemdup_array (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc-dapm: move card->pop_time to soc-dapm.c (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: ams-delta: Stop (ab)using card->pop_time (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: Allow MPC5200 PSC audio compile testing (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt722-sdca: Add a control to support CAE firmware update (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Register kernel port with full information (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Use standard SoundWire regmap implementation (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Use reg_base to offset addresses on SoundWire (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: tegra210-mixer: Reject too-short fade durations (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usx2y: Drain pending US-428 pipe-4 output commands (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Use flexible allocation for Scarlett2 packets (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Use flexible allocation for FCP packets (Jaroslav Kysela) [RHEL-248943]
+- ALSA: oss: Use flexible allocation for PCM plugins (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ice1724: Fix blocking open for independent surround PCMs (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/ca0132: add QUIRK_GENERIC path for Gigabyte GA-Z170X-Gaming G1 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Update author and copyright (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for gain-labels (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for gain-ranges (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for basic gain (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for bypass gpio (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for mute gpio (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: gpio-audio-amp: Add support for extra power supplies (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Introduce support for gpio-audio-amp (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Remove DAPM widgets and routes from the ASoC component driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Use 'simple_amp' variable name instead of 'priv' (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Rename drv_event() function (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Remove CONFIG_OF flag and of_match_ptr() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Add missing headers (Jaroslav Kysela) [RHEL-248943]
+- ASoC: simple-amplifier: Remove DRV_NAME defined value (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: Add support for the GPIOs driven amplifier (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: Fix probe resource cleanup (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ctxfi: Keep line/mic notification controls per mixer (Jaroslav Kysela) [RHEL-248943]
+- ALSA: virtio: Add missing 384 kHz PCM rate mapping (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sigmadsp: Use flexible array for control cache (Jaroslav Kysela) [RHEL-248943]
+- ASoC: pcm6240: Use flexible array for config blocks (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/cs35l41: Fix firmware load work teardown (Jaroslav Kysela) [RHEL-248943]
+- ALSA: asihpi: Use flexible array for control cache (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ctxfi: Use flexible array for SRCIMP imappers (Jaroslav Kysela) [RHEL-248943]
+- ALSA: M-Audio C600 disable Output Gain Knob (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: Use flexible array for MIDI channels (Jaroslav Kysela) [RHEL-248943]
+- ALSA: hda/realtek: Add micmute quirk to Acer Nitro AN515-58 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: sof_sdw: add es9356 support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: soc-acpi: arl: Add es9356 support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: es9356-sdca: Add ES9356 SDCA driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-mcbsp: Remove mixed goto/scoped cleanup handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tac5xx2-sdw: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- soundwire: intel: Move suspend tracking from trigger to pm suspend (Jaroslav Kysela) [RHEL-248943]
+- soundwire: intel_auxdevice: Add es9356 to wake_capable_list (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: add ES9356 in codec_info_list (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: add soc_sdw_es9356 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: Remove dead code in asoc_sdw_ti_add_tac5xx2_routes() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Abort TDM mask loop at maximum channel shift (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tas2783: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5682: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1318: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1320: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1316: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1308: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt1017: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt722: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoc: rt721: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt712: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt715: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt711: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt700: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: max98373: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: max98363: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs42l42: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- soundwire: Add a helper function to wait for device initialisation (Jaroslav Kysela) [RHEL-248943]
+- ASoC: cs35l56: Use new SoundWire enumeration helper (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rt5640: Handle nested IRQs (Jaroslav Kysela) [RHEL-248943]
+- ALSA: firewire: Make use of ieee1394's .driver_data_ptr (Jaroslav Kysela) [RHEL-248943]
+- ASoC: core: Move all users to deferrable card binding (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc_sdw_utils: Change comment into proper kernel doc (Jaroslav Kysela) [RHEL-248943]
+- ASoC: soc_sdw_utils: skip aux device if it is not present (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-mcbsp-st: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-mcbsp: Simplify lock and resource handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: ams-delta: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-mcpdm: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-hdmi: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap-dmic: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: j721e-evm: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl: eukrea-tlv320: update board checks to use the DT (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: rx51: remove stale reference to machine_is_nokia_rx51() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: docs: Fix stale and misspelled references (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: omap3pandora: update board check to use DT compatible (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: tegra210-mixer: Use div_u64() for 64-bit division (Jaroslav Kysela) [RHEL-248943]
+- ALSA: pcm: use snd_pcm_get_state() in remaining ioctl checks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tac5xx2-sdw: ACPI match for intel mtl platform (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sdw_utils: TI amp utility for tac5xx2 family (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tac5xx2-sdw: add soundwire based codec driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Add PDE verification reusable helper (Jaroslav Kysela) [RHEL-248943]
+- soundwire: use krealloc_array to prevent integer overflow (Jaroslav Kysela) [RHEL-248943]
+- soundwire: increase group->max_size after allocation (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: Add per-stream Mixer Fade controls (Jaroslav Kysela) [RHEL-248943]
+- ASoC: pxa: integrate sound/arm/pxa2xx into sound/soc/pxa2xx (Jaroslav Kysela) [RHEL-248943]
+- ASoC: pxa2xx: push gpio usage into arch code (Jaroslav Kysela) [RHEL-248943]
+- ASoC: arm: pxa2xx: remove platform_data processing (Jaroslav Kysela) [RHEL-248943]
+- ASoC: nau8825: Fix typos in comments (Jaroslav Kysela) [RHEL-248943]
+- ASoC: rockchip: Move MODULE_DEVICE_TABLE next to the table itself (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: Move MODULE_DEVICE_TABLE next to the table itself (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Fix bad move of jack_state initialisation (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: simplify mixer control name handling (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: add machine driver with nau8825 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: mediatek,mt8196-nau8825: Add audio sound card (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: add platform driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: mediatek,mt8196-afe: add audio AFE (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: support TDM in platform driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: support ADDA in platform driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: support I2S in platform driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: support audio clock control (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt8196: add common header (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: common: modify mtk afe platform driver for mt8196 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: add machine driver for on-chip HDMI codec (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: add HDMI audio memif, FE and BE DAIs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: add optional HDMI audio path clocks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: mediatek,mt2701-hdmi-audio: add MT2701 HDMI audio (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mediatek: mt2701: add AFE HDMI register definitions (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: mt2701-afe-pcm: add HDMI audio path clocks (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ac97: clean up whitespace and move EXPORT_SYMBOLs (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Support devices with multiple functions of identical type (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Remove sdca_function_data duplication (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SDCA: Add correct masks whilst reporting SDCA jack status (Jaroslav Kysela) [RHEL-248943]
+- ASoC: uniphier: aio-compress: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: uniphier: aio-dma: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ux500: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: ADMAIF: allocate with a single kzalloc (Jaroslav Kysela) [RHEL-248943]
+- ALSA: jack: use scnprintf to improve parse_mask_bits (Jaroslav Kysela) [RHEL-248943]
+- ALSA: seq: oss/rw: allocate evrec with main struct (Jaroslav Kysela) [RHEL-248943]
+- ALSA: Consistently define pci_device_ids using named initializers (Jaroslav Kysela) [RHEL-248943]
+- soundwire: validate DT compatible before parsing it (Jaroslav Kysela) [RHEL-248943]
+- soundwire: intel_auxdevice: Add cs42l43b to wake_capable_list (Jaroslav Kysela) [RHEL-248943]
+- soundwire: stream: sdw_stream_remove_slave(): Check stream is valid (Jaroslav Kysela) [RHEL-248943]
+- Documentation: adopt new coding style of type-aware kmalloc-family (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl-asoc-card: reduce WM8904 PLL ratio to meet frequency limit (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl-asoc-card: exclude S20_3LE format for WM8960/WM8962 + SAI (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl-asoc-card: add channel and rate constraints for CS42888 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl-asoc-card: enable ignore_pmdown_time for ASRC case (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl-asoc-card: enable dpcm_merged_chan flag for ASRC frontend (Jaroslav Kysela) [RHEL-248943]
+- ASoC: docs: fix TAS675x doc build warnings (Jaroslav Kysela) [RHEL-248943]
+- sound: oss: dmasound: kick queued output before extending tail fragment (Jaroslav Kysela) [RHEL-248943]
+- ALSA: wavefront: add suspend and resume support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra: Add S8 PCM format support for MVC (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ti: j721e-evm: allocate dai_links with priv (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: mediatek,mt6351: convert to DT schema (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: cht_bsw_rt5672: Drop unneeded NULL checks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: Intel: cht_bsw_rt5672: Simplify probe() with local 'dev' pointer (Jaroslav Kysela) [RHEL-248943]
+- ASoC: wsa881x: Move custom workaround to gpiolib-of (Jaroslav Kysela) [RHEL-248943]
+- ALSA: scarlett2: Add Gen 4 firmware 2417 autogain status text (Jaroslav Kysela) [RHEL-248943]
+- ALSA: scarlett2: Add Gen 4 firmware 2417 front-panel controls (Jaroslav Kysela) [RHEL-248943]
+- ALSA: scarlett2: Fold min_firmware_version into config_sets (Jaroslav Kysela) [RHEL-248943]
+- ALSA: ctxfi: simplify mixer allocation (Jaroslav Kysela) [RHEL-248943]
+- ALSA: usb-audio: Propagate write errors in generic mixer put callbacks (Jaroslav Kysela) [RHEL-248943]
+- ALSA: opti9xx: restore snd-miro state after resume (Jaroslav Kysela) [RHEL-248943]
+- Documentation: sound: Add TAS675x codec mixer controls documentation (Jaroslav Kysela) [RHEL-248943]
+- MAINTAINERS: add entry for TAS67524 audio amplifier (Jaroslav Kysela) [RHEL-248943]
+- ASoC: codecs: Add TAS67524 quad-channel audio amplifier driver (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: Add ti,tas67524 (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra210_amx: simplify byte map get/put logic (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tegra210_adx: simplify byte map get/put logic (Jaroslav Kysela) [RHEL-248943]
+- ASoC: dt-bindings: fsl-sai: Document RX/TX BCLK swap support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl_sai: Add RX/TX BCLK swap support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: SOF: topology: allow user to add topologies (Jaroslav Kysela) [RHEL-248943]
+- ASoC: sof-function-topology-lib: add virtual loop dai support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: spdif: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: odroid: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: pcm: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: idma: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: samsung: i2s: Use guard() for spin locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: tlv320aic3x: Add multi endpoint support (Jaroslav Kysela) [RHEL-248943]
+- ASoC: atmel: Change manual bitfield manipulation to use FIELD_PREP() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: apple: mca: Use guard() for mutex locks (Jaroslav Kysela) [RHEL-248943]
+- ASoC: ops: Log unknown controls in snd_soc_limit_volume() (Jaroslav Kysela) [RHEL-248943]
+- ASoC: mchp-spdifrx: Replace manual bitfield manipulations with macros and typo correction (Jaroslav Kysela) [RHEL-248943]
+- ASoC: fsl_micfil: Add DC output remover control (Jaroslav Kysela) [RHEL-248943]
+- bpf: Fix stale offload->prog pointer after realloc (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Run arena tests serially (Viktor Malik) [RHEL-139991]
+- bpf: Fix arg_track_xfer() for atomic stack spills and fills (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix gcc -Wreturn-type error in the tail call subprog test (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add a test for an exception callback behind a dead subprog (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for gotox targets across prologue prepends (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add a test for gotox nop targets (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for indirect jumps across subprograms (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add a test for a tail call in a subprogram without an exit (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for the indirect jump edge limit (Viktor Malik) [RHEL-139991]
+- bpf: Retarget indirect jump targets across prologue prepends (Viktor Malik) [RHEL-139991]
+- bpf: mark instructions accessing program stack (Viktor Malik) [RHEL-139991]
+- bpf: Clear the insn array used flag with release semantics (Viktor Malik) [RHEL-139991]
+- bpf: Clear insn array jitted pointers on map reuse (Viktor Malik) [RHEL-139991]
+- bpf: Don't remove indirect jump targets in the nop removal pass (Viktor Malik) [RHEL-139991]
+- bpf: Reject indirect jumps that leave their subprogram (Viktor Malik) [RHEL-139991]
+- bpf: Cache the jump table of a subprogram during CFG discovery (Viktor Malik) [RHEL-139991]
+- bpf: Leave out the hidden exit edge of a subprogram without an exit (Viktor Malik) [RHEL-139991]
+- bpf: Rebase the exception callback subprog when dead subprogs are removed (Viktor Malik) [RHEL-139991]
+- bpf: Bound the number of indirect jump edges in a program (Viktor Malik) [RHEL-139991]
+- bpf: Avoid quadratic successor rescan in bpf_compute_scc (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test terminal gotox instructions (Viktor Malik) [RHEL-139991]
+- bpf: Allow terminal gotox instructions (Viktor Malik) [RHEL-180327]
+- bpf: Disallow interpreter fallback for gotox insn (Viktor Malik) [RHEL-180327]
+- bpf: Introduce jit_required flag and remove bpf_prog_has_kfunc_call() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: No non-NULL inference from an imprecise zero register (Viktor Malik) [RHEL-139991]
+- bpf: Mark the zero register precise for a register-form NULL check (Viktor Malik) [RHEL-180327]
+- selftests/bpf: Check the linked regs cap for the compared register (Viktor Malik) [RHEL-139991]
+- bpf: Don't resurrect a scalar id dropped by collect_linked_regs() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: half-dead scalar zero stack spill test (Viktor Malik) [RHEL-139991]
+- bpf: don't downgrade half-dead scalar zero spills to STACK_ZERO (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add load-acquire test for dst_reg == src_reg from ctx (Viktor Malik) [RHEL-139991]
+- bpf: Check load-acquire src ptr type before the load (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix lsm_bdev dev_t encoding mismatch (Viktor Malik) [RHEL-139991]
+- bpf: Fix use-after-free on mm_struct in bpf_find_vma() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Cover half-slot cleanup of pointer spills (Viktor Malik) [RHEL-139991]
+- bpf: Preserve pointer spill metadata during half-slot cleanup (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add arena direct-value one-past-end reject test (Viktor Malik) [RHEL-139991]
+- libbpf: fix off-by-one in emit_signature_match jump offset (Viktor Malik) [RHEL-139991]
+- bpf: Reject NULL data/sig in bpf_verify_pkcs7_signature (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Cover global subprog exception leaks (Viktor Malik) [RHEL-139991]
+- bpf: Check global subprog exception paths (Viktor Malik) [RHEL-139991]
+- bpf: Use array_map_meta_equal for percpu array inner map replacement (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for large offset bpf-to-bpf call (Viktor Malik) [RHEL-139991]
+- bpf: Fix s16 truncation for large bpf-to-bpf call offsets (Viktor Malik) [RHEL-139991]
+- bpf: Fix out-of-bounds read in bpf_patch_call_args() (Viktor Malik) [RHEL-139991]
+- bpf: Fix off-by-one boundary validation in arena direct-value access (Viktor Malik) [RHEL-139991]
+- bpf: Don't run arg-tracking analysis twice on main subprog (Viktor Malik) [RHEL-139991]
+- bpf: Dissociate struct_ops program with map if map_update fails (Viktor Malik) [RHEL-139991]
+- bpf: Validate node_id in arena_alloc_pages() (Viktor Malik) [RHEL-139991]
+- libbpf: Prevent double close and leak of btf objects (Viktor Malik) [RHEL-139991]
+- selftests/bpf: cover UTF-8 trace_printk output (Viktor Malik) [RHEL-139991]
+- bpf: allow UTF-8 literals in bpf_bprintf_prepare() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: map_kptr: Expect BPF_ST reject msg on cpuv4 toolchains (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Reject scalar store into kptr slot (Viktor Malik) [RHEL-139991]
+- bpf: Fix NULL deref in map_kptr_match_type for scalar regs (Viktor Malik) [RHEL-139991]
+- bpf, arm64: Emit BTI for indirect jump target (Viktor Malik) [RHEL-139991]
+- bpf, x86: Emit ENDBR for indirect jump targets (Viktor Malik) [RHEL-139991]
+- bpf: Add helper to detect indirect jump targets (Viktor Malik) [RHEL-139991]
+- bpf: Pass bpf_verifier_env to JIT (Viktor Malik) [RHEL-139991]
+- bpf: Move constants blinding out of arch-specific JITs (Viktor Malik) [RHEL-139991]
+- selftests/bpf: verify kallsyms entries for token-loaded subprograms (Viktor Malik) [RHEL-139991]
+- bpf: copy BPF token from main program to subprograms (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test small task local data allocation (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix tld_get_data() returning garbage data (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Prevent allocating data larger than a page (Viktor Malik) [RHEL-139991]
+- bpf, arm64: Remove redundant bpf_flush_icache() after pack allocator finalize (Viktor Malik) [RHEL-139991]
+- bpf: Fix use-after-free in arena_vm_close on fork (Viktor Malik) [RHEL-139991]
+- bpf, arm64: Fix off-by-one in check_imm signed range check (Viktor Malik) [RHEL-139991]
+- bpf, arm64: Reject out-of-range B.cond targets (Viktor Malik) [RHEL-139991]
+- selftests/bpf: arg tracking for imprecise/multi-offset BPF_ST/STX (Viktor Malik) [RHEL-139991]
+- bpf: fix arg tracking for imprecise/multi-offset BPF_ST/STX (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for cgroup storage OOB read (Viktor Malik) [RHEL-139991]
+- bpf: Fix OOB in pcpu_init_value (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for non-arena/arena operations (Viktor Malik) [RHEL-139991]
+- bpf: Allow instructions with arena source and non-arena dest registers (Viktor Malik) [RHEL-139991]
+- bpftool: add missing fsession to the usage and docs of bpftool (Viktor Malik) [RHEL-139991]
+- docs/bpf: add missing fsession attach type to docs (Viktor Malik) [RHEL-139991]
+- bpf: add missing fsession to the verifier log (Viktor Malik) [RHEL-139991]
+- bpf: Move BTF checking logic into check_btf.c (Viktor Malik) [RHEL-139991]
+- bpf: Move backtracking logic to backtrack.c (Viktor Malik) [RHEL-139991]
+- bpf: Move state equivalence logic to states.c (Viktor Malik) [RHEL-139991]
+- bpf: Move check_cfg() into cfg.c (Viktor Malik) [RHEL-139991]
+- bpf: Move compute_insn_live_regs() into liveness.c (Viktor Malik) [RHEL-139991]
+- bpf: Move fixup/post-processing logic from verifier.c into fixups.c (Viktor Malik) [RHEL-139991]
+- bpf: potential double-free of env->insn_aux_data (Viktor Malik) [RHEL-139991]
+- bpf: use realloc in bpf_patch_insn_data (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Use memfd_create instead of shm_open in cgroup_iter_memcg (Viktor Malik) [RHEL-139991]
+- bpf: Simplify do_check_insn() (Viktor Malik) [RHEL-139991]
+- bpf: Move checks for reserved fields out of the main pass (Viktor Malik) [RHEL-139991]
+- bpf: Delete unused variable (Viktor Malik) [RHEL-139991]
+- selftests/bpf: inline TEST_TAG constants in test_loader.c (Viktor Malik) [RHEL-139991]
+- selftests/bpf: impose global ordering for test decl_tags (Viktor Malik) [RHEL-139991]
+- selftests/bpf: make str_has_pfx return pointer past the prefix (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Support non-linear flag in test loader (Viktor Malik) [RHEL-139991]
+- selftests/bpf: fix __jited_unpriv tag name (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Remove kmalloc tracing from local storage create bench (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for add_const base_id consistency (Viktor Malik) [RHEL-139991]
+- bpf: Enforce regsafe base id consistency for BPF_ADD_CONST scalars (Viktor Malik) [RHEL-139991]
+- bpf: poison dead stack slots (Viktor Malik) [RHEL-139991]
+- selftests/bpf: add new tests for static stack liveness analysis (Viktor Malik) [RHEL-139991]
+- selftests/bpf: adjust verifier_log buffers (Viktor Malik) [RHEL-139991]
+- selftests/bpf: update existing tests due to liveness changes (Viktor Malik) [RHEL-139991]
+- bpf: change logging scheme for live stack analysis (Viktor Malik) [RHEL-139991]
+- bpf: simplify liveness to use (callsite, depth) keyed func_instances (Viktor Malik) [RHEL-139991]
+- bpf: record arg tracking results in bpf_liveness masks (Viktor Malik) [RHEL-139991]
+- bpf: introduce forward arg-tracking dataflow analysis (Viktor Malik) [RHEL-139991]
+- bpf: prepare liveness internal API for static analysis pass (Viktor Malik) [RHEL-139991]
+- bpf: 4-byte precise clean_verifier_state (Viktor Malik) [RHEL-139991]
+- bpf: make liveness.c track stack with 4-byte granularity (Viktor Malik) [RHEL-139991]
+- bpf: Add spis_*() helpers for 4-byte stack slot bitmasks (Viktor Malik) [RHEL-139991]
+- bpf: save subprogram name in bpf_subprog_info (Viktor Malik) [RHEL-139991]
+- bpf: share several utility functions as internal API (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add BTF sanitize test covering BTF layout (Viktor Malik) [RHEL-139991]
+- libbpf: Allow use of feature cache for non-token cases (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Remove test_access_variable_array (Viktor Malik) [RHEL-139991]
+- bpf: Fix RCU stall in bpf_fd_array_map_clear() (Viktor Malik) [RHEL-139991]
+- bpf: return VMA snapshot from task_vma iterator (Viktor Malik) [RHEL-139991]
+- bpf: switch task_vma iterator from mmap_lock to per-VMA locks (Viktor Malik) [RHEL-139991]
+- bpf: fix mm lifecycle in open-coded task_vma iterator (Viktor Malik) [RHEL-139991]
+- bpf: Fix use-after-free in offloaded map/prog info fill (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for stale pkt range after scalar arithmetic (Viktor Malik) [RHEL-139991]
+- bpf: Drop pkt_end markers on arithmetic to prevent is_pkt_ptr_branch_taken (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test to ensure kprobe_multi is not sleepable (Viktor Malik) [RHEL-139991]
+- bpf: Make find_linfo widely available (Viktor Malik) [RHEL-139991]
+- bpf: Extract bpf_get_linfo_file_line (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test overwriting referenced dynptr (Viktor Malik) [RHEL-139991]
+- bpf: Allow overwriting referenced dynptr when refcnt > 1 (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for stale delta leaking through id reassignment (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for delta tracking when src_reg == dst_reg (Viktor Malik) [RHEL-139991]
+- bpf: Clear delta when clearing reg id for non-{add,sub} ops (Viktor Malik) [RHEL-139991]
+- bpf: Fix linked reg delta tracking when src_reg == dst_reg (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for kprobe attachment with duplicate symbols (Viktor Malik) [RHEL-139991]
+- bpf: Prefer vmlinux symbols over module symbols for unqualified kprobes (Viktor Malik) [RHEL-139991]
+- selftests/bpf: add test for nullable PTR_TO_BUF access (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Allow prog name matching for tests with __description (Viktor Malik) [RHEL-139991]
+- bpf: reject negative CO-RE accessor indices in bpf_core_parse_spec() (Viktor Malik) [RHEL-139991]
+- bpf: Drop task_to_inode and inet_conn_established from lsm sleepable hooks (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add more tests for loading insn arrays with offsets (Viktor Malik) [RHEL-139991]
+- bpf: Do not ignore offsets for loads from insn_arrays (Viktor Malik) [RHEL-139991]
+- bpf: Avoid -Wflex-array-members-not-at-end warnings (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for syscall ctx accesses beyond U16_MAX (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for unaligned syscall ctx accesses (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test modified syscall ctx for ARG_PTR_TO_CTX (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add syscall ctx variable offset tests (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Convert ctx tests from ASM to C (Viktor Malik) [RHEL-139991]
+- bpf: Enable unaligned accesses for syscall ctx (Viktor Malik) [RHEL-139991]
+- bpf: Support variable offsets for syscall PTR_TO_CTX (Viktor Malik) [RHEL-139991]
+- bpf: Fix stale offload->prog pointer after constant blinding (Viktor Malik) [RHEL-139991]
+- selftests/bpf: add get_next_key boundary test for cgroup_storage (Viktor Malik) [RHEL-139991]
+- bpf: fix end-of-list detection in cgroup_storage_get_next_key() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add torn write detection test for htab BPF_F_LOCK (Viktor Malik) [RHEL-139991]
+- bpf: Use copy_map_value_locked() in alloc_htab_elem() for BPF_F_LOCK (Viktor Malik) [RHEL-139991]
+- bpf: Add helper and kfunc stack access size resolution (Viktor Malik) [RHEL-139991]
+- bpf: Move verifier helpers to header (Viktor Malik) [RHEL-139991]
+- bpf: Add bpf_compute_const_regs() and bpf_prune_dead_branches() passes (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for subprog topological ordering (Viktor Malik) [RHEL-139991]
+- bpf: Sort subprogs in topological order after check_cfg() (Viktor Malik) [RHEL-139991]
+- bpf: Do register range validation early (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Remove invariant violation flags (Viktor Malik) [RHEL-139991 RHEL-264704]
+- selftests/bpf: Cover invariant violation case from syzbot (Viktor Malik) [RHEL-139991 RHEL-264704]
+- bpf: Simulate branches to prune based on range violations (Viktor Malik) [RHEL-139991 RHEL-264704]
+- bpf: Exit early if reg_bounds_sync gets invalid inputs (Viktor Malik) [RHEL-139991 RHEL-264704]
+- bpf: Use bpf_verifier_env buffers for reg_set_min_max (Viktor Malik) [RHEL-139991 RHEL-264704]
+- bpf: Refactor reg_bounds_sanity_check (Viktor Malik) [RHEL-139991 RHEL-264704]
+- selftests/bpf: Improve task local data documentation and fix potential memory leak (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Remove TLD_READ_ONCE() in the user space header (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Make sure TLD_DEFINE_KEY runs first (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Simplify task_local_data memory allocation (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix task_local_data data allocation size (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for raw-address single kprobe attach (Viktor Malik) [RHEL-139991]
+- libbpf: Clarify raw-address single kprobe attach behavior (Viktor Malik) [RHEL-139991]
+- libbpf: Use direct error codes for kprobe/uprobe attach (Viktor Malik) [RHEL-139991]
+- selftest/bpf: Enable gotox tests for powerpc64 (Viktor Malik) [RHEL-139991]
+- powerpc64/bpf: Add support for indirect jump (Viktor Malik) [RHEL-139991]
+- selftest/bpf: Enable instruction array test for powerpc (Viktor Malik) [RHEL-139991]
+- powerpc/bpf: Add support for instruction array (Viktor Malik) [RHEL-139991]
+- powerpc64/bpf: Implement fsession support (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Enable private stack tests for powerpc64 (Viktor Malik) [RHEL-139991]
+- powerpc64/bpf: Implement JIT support for private stack (Viktor Malik) [RHEL-139991]
+- libbpf: Fix BTF handling in bpf_program__clone() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Suppress veristat error messages in non-verbose mode (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test access to ringbuf position with map pointer (Viktor Malik) [RHEL-139991]
+- bpf: Clarify BPF_RB_NO_WAKEUP behavior for bpf_ringbuf_discard() (Viktor Malik) [RHEL-139991]
+- bpf: Fix block device hooks names (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add few tests for alu32 shift value tracking and zext (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Update kfuncs using btf_struct_meta to new variants (Viktor Malik) [RHEL-139991]
+- bpf: Support struct btf_struct_meta via KF_IMPLICIT_ARGS (Viktor Malik) [RHEL-139991]
+- selftests/bpf: add block device management selftests (Viktor Malik) [RHEL-139991]
+- bpf: classify block device hooks appropriately (Viktor Malik) [RHEL-139991]
+- kbuild, bpf: Specify "layout" optional feature (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test kind encoding/decoding (Viktor Malik) [RHEL-139991]
+- btf: Support kernel parsing of BTF with layout info (Viktor Malik) [RHEL-139991]
+- libbpf: Support sanitization of BTF layout for older kernels (Viktor Malik) [RHEL-139991]
+- libbpf: BTF validation can use layout for unknown kinds (Viktor Malik) [RHEL-139991]
+- libbpf: Add layout encoding support (Viktor Malik) [RHEL-139991]
+- libbpf: Use layout to compute an unknown kind size (Viktor Malik) [RHEL-139991]
+- libbpf: Support layout section handling in BTF (Viktor Malik) [RHEL-139991]
+- btf: Add BTF kind layout encoding to UAPI (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Make reg_bounds test more robust (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test variable length stack write (Viktor Malik) [RHEL-139991]
+- bpf: Fix variable length stack write over spilled pointers (Viktor Malik) [RHEL-139991]
+- selftests/bpf: move trampoline_count to dedicated bpf_testmod target (Viktor Malik) [RHEL-139991]
+- bpf: update outdated comment for refactored btf_check_kfunc_arg_match() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add trampolines single and multi-level pointer params test coverage (Viktor Malik) [RHEL-139991]
+- bpf: Support pointer param types via SCALAR_VALUE for trampolines (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test 32-bit scalar spill pruning in stacksafe() (Viktor Malik) [RHEL-139991]
+- bpf: Support 32-bit scalar spills in stacksafe() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for struct_ops __ref argument in any position (Viktor Malik) [RHEL-139991]
+- bpf: Fix refcount check in check_struct_ops_btf_id() (Viktor Malik) [RHEL-139991]
+- bpf: propagate kvmemdup_bpfptr errors from bpf_prog_verify_signature (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix compiler warnings in task_local_data.h (Viktor Malik) [RHEL-139991]
+- bpf: Simplify tnum_step() (Viktor Malik) [RHEL-139991]
+- bpftool: Enable aarch64 ISA extensions for JIT disassembly (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test bpf_program__clone() attach_btf_id override (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Use bpf_program__clone() in veristat (Viktor Malik) [RHEL-139991]
+- libbpf: Introduce bpf_program__clone() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add alignment flag for test_verifier 190 testcase (Viktor Malik) [RHEL-139991]
+- bpf: Consolidate sleepable checks in check_func_call() (Viktor Malik) [RHEL-139991]
+- bpf: Consolidate sleepable checks in check_kfunc_call() (Viktor Malik) [RHEL-139991]
+- bpf: Consolidate sleepable checks in check_helper_call() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Isolate fmod_ret hooks by pid (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Avoid spurious failures perf_link (Viktor Malik) [RHEL-139991]
+- libbpf: Start v1.8 development cycle (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Bump path and command buffer sizes in bpftool_helpers.c (Viktor Malik) [RHEL-139991]
+- bpftool: Allow explicitly skip llvm, libbfd and libcrypto dependencies (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add deep call stack selftests (Viktor Malik) [RHEL-139991]
+- bpf: Only enforce 8 frame call stack limit for all-static stacks (Viktor Malik) [RHEL-139991]
+- s390/bpf: Zero-extend bpf prog return values and kfunc arguments (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test case for refinement improvement using 64b bounds (Viktor Malik) [RHEL-139991]
+- bpf: Avoid one round of bounds deduction (Viktor Malik) [RHEL-139991]
+- bpf: better naming for __reg_deduce_bounds() parts (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Improve test coverage for kfunc call (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix const qualifier warning in fexit_bpf2bpf.c (Viktor Malik) [RHEL-139991]
+- selftests/bpf: drop serial restriction (Viktor Malik) [RHEL-139991]
+- selftests/bpf: filter by pid to avoid cross-test interference (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Speed up module_attach test (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Use bpf_core_enum_value for stats in cgroup_iter_memcg (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Remove kmem subtest from cgroup_iter_memcg (Viktor Malik) [RHEL-139991]
+- selftests/bpf: tests to non_null ptr detection using register operand in JEQ/JNE (Viktor Malik) [RHEL-139991]
+- bpf: detect non null pointer with register operand in JEQ/JNE. (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Move sleepable refcounted_kptr tests to syscalls (Viktor Malik) [RHEL-139991]
+- bpf: Always allow fmod_ret programs on syscalls (Viktor Malik) [RHEL-139991]
+- bpf: Always allow sleepable programs on syscalls (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for kprobe.session optimization (Viktor Malik) [RHEL-139991]
+- libbpf: Optimize kprobe.session attachment for exact function names (Viktor Malik) [RHEL-139991]
+- selftests/bpf: bpf_cookie: Make perf_event subtest trigger reliably (Viktor Malik) [RHEL-139991]
+- selftests/bpf: bpf_cookie: Skip kprobe_multi tests without bpf_testmod (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test for btf__add_btf() with split BTF sources (Viktor Malik) [RHEL-139991]
+- bpftool: Support merging multiple module BTFs in btf dump (Viktor Malik) [RHEL-139991]
+- libbpf: Support appending split BTF in btf__add_btf() (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Split module_attach into subtests (Viktor Malik) [RHEL-139991]
+- selftests: bpf: Add tests for void global subprogs (Viktor Malik) [RHEL-139991]
+- bpf: Allow void global functions in the verifier (Viktor Malik) [RHEL-139991]
+- bpf: extract check_global_subprog_return_code() for clarity (Viktor Malik) [RHEL-139991]
+- bpf: Extract program_returns_void() for clarity (Viktor Malik) [RHEL-139991]
+- bpf: Factor out program return value calculation (Viktor Malik) [RHEL-139991]
+- selftests/bpf: drop test_bpftool.sh (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add tests for ctx fixed offset support (Viktor Malik) [RHEL-139991]
+- bpf: Relax fixed offset check for PTR_TO_CTX (Viktor Malik) [RHEL-139991]
+- bpf, arm64: Use ORR-based MOV for general-purpose registers (Viktor Malik) [RHEL-139991]
+- bpf: Add missing XDP_ABORTED handling in cpumap (Viktor Malik) [RHEL-139991]
+- selftests/bpf: factor out get_func_* tests for fsession (Viktor Malik) [RHEL-139991]
+- bpf,s390: add fsession support for trampolines (Viktor Malik) [RHEL-139991]
+- bpf,s390: introduce emit_store_stack_imm64() for trampoline (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Test accounting of tail calls when prog is NULL (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Fix flakiness of task_local_storage/sys_enter_exit (Viktor Malik) [RHEL-139991]
+- s390/bpf: Do not increment tailcall count when prog is NULL (Viktor Malik) [RHEL-139991]
+- bpf: Do not increment tailcall count when prog is NULL (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Update task local data license (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Enable test for instruction array on arm64 (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add test case for rbtree nodes that contain both bpf_refcount and kptr fields. (Viktor Malik) [RHEL-139991]
+- bpf: allow using bpf_kptr_xchg even if the MEM_RCU flag is set (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Add supplementary tests for bpf_kptr_xchg (Viktor Malik) [RHEL-139991]
+- bpf: allow using bpf_kptr_xchg even if the NON_OWN_REF flag is set (Viktor Malik) [RHEL-139991]
+- bpf: allow calling bpf_kptr_xchg while holding a lock (Viktor Malik) [RHEL-139991]
+- selftests/bpf: align build_id test mapping to 64K page size (Viktor Malik) [RHEL-139991]
+- selftests/bpf: fix flaky build_id test (Viktor Malik) [RHEL-139991 RHEL-79925]
+- bpf: rename bpf_reg_state->off to bpf_reg_state->delta (Viktor Malik) [RHEL-139991]
+- bpf: use reg->var_off instead of reg->off for pointers (Viktor Malik) [RHEL-139991]
+- bpf: split check_reg_sane_offset() in two parts (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Migrate align.c tests to test_loader framework (Viktor Malik) [RHEL-139991]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [bpf] (Viktor Malik) [RHEL-139991]
+- selftests/bpf: Extend live regs tests with a test for gotox (Viktor Malik) [RHEL-180327]
+- bpf: Properly mark live registers for indirect jumps (Viktor Malik) [RHEL-180327]
+- selftests/bpf: Add tests for loading insn array values with offsets (Viktor Malik) [RHEL-180327]
+- bpf: Return EACCES for incorrect access to insn array (Viktor Malik) [RHEL-180327]
+- bpf: Return proper address for non-zero offsets in insn array (Viktor Malik) [RHEL-180327]
+- bpf: Reject BPF_MAP_TYPE_INSN_ARRAY in check_reg_const_str() (Viktor Malik) [RHEL-180327]
+- bpf: Add a check to make static analysers happy (Viktor Malik) [RHEL-180327]
+- selftests: bpf: Enable gotox tests from arm64 (Viktor Malik) [RHEL-180327]
+- bpf: arm64: Add support for indirect jumps (Viktor Malik) [RHEL-180327]
+- bpf: arm64: Add support for instructions array (Viktor Malik) [RHEL-180327]
+- selftests/bpf: add new verifier_gotox test (Viktor Malik) [RHEL-180327]
+- bpf, x86: add support for indirect jumps (Viktor Malik) [RHEL-180327]
+- bpf, x86: allow indirect jumps to r8...r15 (Viktor Malik) [RHEL-180327]
+- dma-contiguous: simplify numa cma area handling (Jakub Brnak) [RHEL-214192]
+- redhat/configs: enable CONFIG_CMA_SIZE_PERNUMA for x86_64 and aarch64 (Jakub Brnak) [RHEL-214192]
+- dma-contiguous: add kconfig option to setup numa cma area if not configured explicitly (Jakub Brnak) [RHEL-214192]
+- iommu/iommufd: Fix IOPF group ownership UAF (Jakub Brnak) [RHEL-214192] {CVE-2026-74520}
+- iommu/arm-smmu-v3-iommufd: Require exactly one Stream ID for a vDEVICE (Jakub Brnak) [RHEL-214192] {CVE-2026-74573}
+- iommufd/viommu: Publish a vDEVICE only after vdevice_init() succeeds (Jakub Brnak) [RHEL-214192]
+- iommufd/viommu: Release the igroup lock on the vdevice_size error path (Jakub Brnak) [RHEL-214192] {CVE-2026-80687}
+- iommufd: Reject DMABUF pages from the access pin path (Jakub Brnak) [RHEL-214192]
+- iommufd: Fix wrong hwpt passed to iommufd_auto_response_faults on replace (Jakub Brnak) [RHEL-214192] {CVE-2026-80894}
+- iommu/intel: Fix out-of-bounds memset in dmar_latency_disable() (Jakub Brnak) [RHEL-214192] {CVE-2026-68324}
+- iommu/amd: Bound the early ACPI HID map (Jakub Brnak) [RHEL-214192] {CVE-2026-68325}
+- iommu/vt-d: Disallow SVA if page walk is not coherent (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Wait for completion instead of returning early in iommu_completion_wait() (Jakub Brnak) [RHEL-214192] {CVE-2026-68329}
+- iommu/amd: Fix nested domain leak (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Fix IRQ unsafe locking in gdom allocation (Jakub Brnak) [RHEL-214192] {CVE-2026-68347}
+- iommu/amd: Control INVALIDATE_IOMMU_PAGES PDE from the gather (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Make CMD_INV_IOMMU_ALL_PAGES_ADDRESS match the spec (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Have amd_iommu_domain_flush_pages() use last (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Pass last in through to build_inv_address() (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Simplify build_inv_address() (Jakub Brnak) [RHEL-214192]
+- iommu/vt-d: Improve IOMMU fault information (Jakub Brnak) [RHEL-214192]
+- iommu/vt-d: Remove typo from pasid_pte_config_nested() (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3-sva: Enable Hardware Access and Hardware Dirty bits (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Directly encode TLBI commands (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Directly encode CMDQ_OP_SYNC (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Directly encode CMDQ_OP_ATC_INV (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Directly encode simple commands (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Remove CMDQ_OP_CFGI_CD_ALL from arm_smmu_cmdq_build_cmd() (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Convert arm_smmu_cmdq_batch cmds to struct arm_smmu_cmd (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Use the HW arm_smmu_cmd in cmdq submission functions (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Use the HW arm_smmu_cmd in cmdq selection functions (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Add struct arm_smmu_cmd to represent the HW format command (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-v3: Limit queue allocation retry boundary to PAGE_SIZE (Jakub Brnak) [RHEL-214192]
+- iommu: arm-smmu-qcom: Ensure smmu is powered up in set_ttbr0_cfg (Jakub Brnak) [RHEL-214192]
+- iommu/arm-smmu-qcom: Add glymur MDSS to ACTLR client table (Jakub Brnak) [RHEL-214192]
+- iommu/io-pgtable-arm: Use address conversion consistently (Jakub Brnak) [RHEL-214192]
+- iommu/io-pgtable-arm: Rework to use the iommu-pages API (Jakub Brnak) [RHEL-214192]
+- iommu/io-pgtable-arm: Use consistent sizes for page allocation and freeing (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Adhere to IVINFO[VASIZE] for address limits (Jakub Brnak) [RHEL-214192]
+- iommu_pt: add kunit config for 32-bit VA (amdv1_cfg_1) (Jakub Brnak) [RHEL-214192]
+- iommu_pt: support small VA for AMDv1 (Jakub Brnak) [RHEL-214192]
+- iommu_pt: Fix pgsize_bitmap calculation in get_info for smaller vasz's (Jakub Brnak) [RHEL-214192]
+- iommu/riscv: Add NAPOT range invalidation support (Jakub Brnak) [RHEL-214192]
+- iommu/riscv: Include the dword number in RISCV_IOMMU_CMD macros (Jakub Brnak) [RHEL-214192]
+- iommu/riscv: Add RISCV_IOMMU_CAPABILITIES_NL (Jakub Brnak) [RHEL-214192]
+- iommu/riscv: Compute best stride for single invalidation (Jakub Brnak) [RHEL-214192]
+- iommu/riscv: Enable PT_FEAT_DETAILED_GATHER and pass gather to iotlb_inval (Jakub Brnak) [RHEL-214192]
+- iommupt: Add PT_FEAT_DETAILED_GATHER (Jakub Brnak) [RHEL-214192]
+- iommupt: Add struct iommupt_pending_gather (Jakub Brnak) [RHEL-214192]
+- iommu: Split the kdoc comment for struct iommu_iotlb_gather (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Remove unused IOMMU_IN/OUT_ADDR_BIT_SIZE macros (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Add support for Hygon family 18h model 4h IOAPIC (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Remove dead code for exclusion ranges in IVMD (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Fix a stale comment about which legacy mode is user visible (Jakub Brnak) [RHEL-214192]
+- iommu/amd: Explicitly bail from enable_iommus_vapic() when in legacy mode (Jakub Brnak) [RHEL-214192]
+- dma-debug: Ensure mappings are created and released with matching attributes (Jakub Brnak) [RHEL-214192]
+- dma-debug: Feed DMA attribute for unmapping flows too (Jakub Brnak) [RHEL-214192]
+- dma-debug: Record DMA attributes in debug entry (Jakub Brnak) [RHEL-214192]
+- dma-debug: Remove unused DMA attribute parameter (Jakub Brnak) [RHEL-214192]
+- usb: usbfs: fix use-after-free of usb_device in usbdev_release() (CKI Backport Bot) [RHEL-258588] {CVE-2026-80824}
+
+* Wed Oct 21 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-279.el10]
+- netfilter: flowtable: hold reference on ct until flow is released (CKI Backport Bot) [RHEL-280059] {CVE-2026-98320}
+- xfs: bounds-check buffer log item's dirty bitmap (Pavel Reichl) [RHEL-253370] {CVE-2026-80536}
+- selftests/net: fin_ack_lat: fix latency threshold typo (Stella Stamou) [RHEL-228264]
+- mailbox: riscv-sbi-mpxy: validate RPMI notification lengths (Jennifer Berringer) [RHEL-275139] {CVE-2026-90191}
+- mailbox: Improve RISCV_SBI_MPXY_MBOX guidance (Jennifer Berringer) [RHEL-275139]
+- rpmsg: qcom_smd: Fix fallback to qcom,ipc parse (Jennifer Berringer) [RHEL-275139]
+- rpmsg: qcom_smd: Improve error handling for qcom_smd_parse_edge (Jennifer Berringer) [RHEL-275139]
+- soc: qcom: smp2p: Fix fallback to qcom,ipc parse (Jennifer Berringer) [RHEL-275139]
+- clk: COMMON_CLK_RPMI should depend on RISCV (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-rpmi-sysmsi: Fix mailbox channel leak in rpmi_sysmsi_probe() (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-rpmi-sysmsi: Add ACPI support (Jennifer Berringer) [RHEL-275139]
+- mailbox/riscv-sbi-mpxy: Add ACPI support (Jennifer Berringer) [RHEL-275139]
+- irqchip: Add driver for the RPMI system MSI service group (Jennifer Berringer) [RHEL-275139]
+- clk: Add clock driver for the RISC-V RPMI clock service group (Jennifer Berringer) [RHEL-275139]
+- mailbox: Add RISC-V SBI message proxy (MPXY) based mailbox driver (Jennifer Berringer) [RHEL-275139]
+- redhat/configs: riscv: Enable RPMI clock (Jennifer Berringer) [RHEL-275139]
+- byteorder: Add memcpy_to_le32() and memcpy_from_le32() (Jennifer Berringer) [RHEL-275139]
+- mailbox: Allow controller specific mapping using fwnode (Jennifer Berringer) [RHEL-275139]
+- mailbox: Add common header for RPMI messages sent via mailbox (Jennifer Berringer) [RHEL-275139]
+- RISC-V: Add defines for the SBI message proxy extension (Jennifer Berringer) [RHEL-275139]
+- mailbox: Use guard/scoped_guard for spinlock (Jennifer Berringer) [RHEL-275139]
+- mailbox: Use guard/scoped_guard for con_mutex (Jennifer Berringer) [RHEL-275139]
+- mailbox: Remove devm_mbox_controller_unregister (Jennifer Berringer) [RHEL-275139]
+- mailbox: Propagate correct error return value (Jennifer Berringer) [RHEL-275139]
+- mailbox: Not protect module_put with spin_lock_irqsave (Jennifer Berringer) [RHEL-275139]
+- mailbox: Use dev_err when there is error (Jennifer Berringer) [RHEL-275139]
+- mailbox: remove unused header files (Jennifer Berringer) [RHEL-275139]
+- mailbox: sort headers alphabetically (Jennifer Berringer) [RHEL-275139]
+- mailbox: don't protect of_parse_phandle_with_args with con_mutex (Jennifer Berringer) [RHEL-275139]
+- mailbox: use error ret code of of_parse_phandle_with_args() (Jennifer Berringer) [RHEL-275139]
+- irqchip/irq-riscv-imsic-early: Fix fwnode leak on state setup failure (Jennifer Berringer) [RHEL-275139] {CVE-2026-72026}
+- irqchip/riscv-imsic: Add nr_guest_files in per-HART local config (Jennifer Berringer) [RHEL-275139]
+- RISC-V: Select CONFIG_GENERIC_PENDING_IRQ (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-imsic: Special handling for non-atomic device MSI update (Jennifer Berringer) [RHEL-275139]
+- genirq: Provide IRQCHIP_MOVE_DEFERRED (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-intc: Add missing free() callback in riscv_intc_domain_ops (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Adjustments for old syscore definitions (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Restrict genpd notifier to device tree only (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Register syscore operations only once (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Do not clear ACPI dependencies on probe failure (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Preserve APLIC states across suspend/resume (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Use riscv_get_hart_index() (Jennifer Berringer) [RHEL-275139]
+- irqchip/riscv-aplic: Add support for hart indexes (Jennifer Berringer) [RHEL-275139]
+- powercap: intel_rapl: Fix kernel panic during PMU unbind (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Sign-extend the PMU delta on counter wraparound (Steve Best) [RHEL-242435]
+- powercap: intel_rapl_tpmi: Handle PMU registration failure during probe (Steve Best) [RHEL-242435]
+- powercap: Stop using 32-bit MSR interfaces (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Use sysfs_emit() in cpumask_show() (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Consolidate PL4 and PMU support flags into rapl_defaults (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Move MSR primitives to MSR driver (Steve Best) [RHEL-242435]
+- thermal: intel: int340x: processor: Move MMIO primitives to MMIO driver (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Move TPMI primitives to TPMI driver (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Move primitive info to header for interface drivers (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Remove unused macro definitions (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Move MSR default settings into MSR interface driver (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Remove unused AVERAGE_POWER primitive (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Move TPMI default settings into TPMI interface driver (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Allow interface drivers to configure rapl_defaults (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Use unit conversion macros from units.h (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Use GENMASK() and BIT() macros (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Use shifts for power-of-2 operations (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Simplify rapl_compute_time_window_atom() (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Remove unused TIME_WINDOW macros (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Cleanup coding style (Steve Best) [RHEL-242435]
+- powercap: intel_rapl: Add a symbol namespace for intel_rapl exports (Steve Best) [RHEL-242435]
+- calipso: unlock rcu before returning -EAFNOSUPPORT (CKI Backport Bot) [RHEL-257679] {CVE-2025-38147}
+- calipso: Don't call calipso functions for AF_INET sk. (CKI Backport Bot) [RHEL-257679] {CVE-2025-38147}
+- dmaengine: imx-sdma: Use dev_err_probe() to simplify code (Eder Zulian) [RHEL-214194]
+- dmaengine: imx-sdma: Use managed API to simplify code (Eder Zulian) [RHEL-214194]
+- dmaengine: imx-sdma: Use devm_clk_get_prepared() to simplify code (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Turn MXS_DMA as tristate (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Add module license and description (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Use managed API devm_of_dma_controller_register() (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Use dev_err_probe() to simplify code (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Use local dev variable in probe() (Eder Zulian) [RHEL-214194]
+- dmaengine: mxs-dma: Fix missing return value from of_dma_controller_register() (Eder Zulian) [RHEL-214194]
+- dmaengine: qcom: qcom-gpi-dma.h: fix all kernel-doc warnings (Eder Zulian) [RHEL-214194]
+- dmaengine: Document cyclic transfer for dmaengine_prep_peripheral_dma_vec() (Eder Zulian) [RHEL-214194]
+- dmaengine: ioatdma: move sysfs entry definition out of header (Eder Zulian) [RHEL-214194]
+- dmaengine: ioatdma: make some sysfs structures static (Eder Zulian) [RHEL-214194]
+- dmaengine: Sort headers alphabetically (Eder Zulian) [RHEL-214194]
+- dmaengine: Use device_match_of_node() helper (Eder Zulian) [RHEL-214194]
+- dmaengine: Refactor devm_dma_request_chan() for readability (Eder Zulian) [RHEL-214194]
+- redhat/configs: automotive: enable NXP i.MX platform support (Vinicius Zein) [RHEL-254743]
+
+* Mon Oct 19 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-278.el10]
+- virt: vmgenid: remap memory as decrypted (Vitaly Kuznetsov) [RHEL-275695]
+- s390/cio: Guard PMCW field accesses with dnv check (Ramesh Chhetri) [RHEL-278003]
+- s390/cio: Fix cio_update_schib() to not cache invalid schib (Ramesh Chhetri) [RHEL-278003]
+- s390/cio: Fix NULL pointer dereference in ccw_device_get_util_str() (Ramesh Chhetri) [RHEL-278003]
+- s390/cio: Check pmcw.dnv before pmcw.ena in I/O entry points (Ramesh Chhetri) [RHEL-278003]
+- powerpc: enable dynamic preemption (Mamatha Inamdar) [RHEL-190825]
+- arm64,ppc64le/kdump: pass dm-crypt keys to kdump kernel (Mukesh Pilaniya) [RHEL-127467]
+- crash: align the declaration of crash_load_dm_crypt_keys with CONFIG_CRASH_DM_CRYPT (Mukesh Pilaniya) [RHEL-127467]
+- crash_dump/dm-crypt: don't print in arch-specific code (Mukesh Pilaniya) [RHEL-127467]
+- kexec: fix error propagation in kexec_image_probe_default() (Mukesh Pilaniya) [RHEL-277493]
+- kexec: return -ENOEXEC from image probe functions on mismatch (Mukesh Pilaniya) [RHEL-277493]
+- net/smc: carry oversized SMC-Rv2 LLC messages in the queue entry (CKI Backport Bot) [RHEL-271477] {CVE-2026-80985}
+- net/smc: bound the peer rkey counts in SMC-Rv2 LLC messages (CKI Backport Bot) [RHEL-271477] {CVE-2026-80985}
+- tools headers svm: Sync svm headers with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools arch x86: Sync the msr-index.h copy with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers x86 cpufeatures: Sync with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers UAPI: Sync x86's asm/kvm.h with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers UAPI: Sync linux/kvm.h with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools arch x86: Sync the msr-index.h copy with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools arch x86: Sync msr-index.h to pick MSR_{OMR_[0-3],CORE_PERF_GLOBAL_STATUS_SET} (Maxim Levitsky) [RHEL-210871]
+- tools headers UAPI: Sync x86's asm/kvm.h with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers x86 cpufeatures: Sync with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers UAPI: Sync linux/kvm.h with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers UAPI: Sync linux/kvm.h with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools headers x86 cpufeatures: Sync with the kernel sources (Maxim Levitsky) [RHEL-210871]
+- tools arch x86: Sync msr-index.h to pick AMD64_{PERF_CNTR_GLOBAL_STATUS_SET,SAVIC_CONTROL}, IA32_L3_QOS_{ABMC,EXT}_CFG (Maxim Levitsky) [RHEL-210871]
+- tools headers: Sync x86 headers with the kernel source (Maxim Levitsky) [RHEL-210871]
+- perf build: Fix a build error on 32-bit x86 (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: fix steal_time for arm64 with host page size > 4K (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Allocate full pages for {DE,EN}CRYPT ops on SNP-enabled hosts (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: WARN and clear role.invalid when creating a child shadow page (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Serialize accesses to the owner and mirror list with separate lock (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Check all address spaces before skipping unsync (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Check write tracking in all address spaces (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Cancel delayed I/O APIC EOI handling before destroying vCPUs (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: add memory clobber to asm for VMX instructions (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Only reset TSC Deadline Timer in apic_timer_expired on KVM_RUN (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: sev_init2_tests: Derive SEV availability from KVM (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: sev_smoke_test: Only run VM types the host offers (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Fix use-after-free on vendor module reload (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Preserve nested TDP shadow page tables if they are used as roots (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Bump asid_generation on CPU online to avoid ASID collision after hotplug (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Reject concurrent change to CPUID entry count (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Verify SNP VMs are rejected from migration and mirroring (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Do not allow intra-host migration/mirroring of SNP VMs (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: Don't use vmcs01.GUEST_CR3 to snapshot L1's CR3 when EPT is disabled (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: Move vTPR vs. TPR Threshold consistency check into "normal" checks (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Ignore pending PV EOI if the vCPU has since disabled PV EOIs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Nullify irqfd->producer if updating IRTE for bypass fails (Maxim Levitsky) [RHEL-210871]
+- x86/virt/sev: Revert "Drop WBINVD before setting MSR_AMD64_SYSCFG_SNP_EN" (Maxim Levitsky) [RHEL-210871]
+- x86/apic: KVM: Use cpu_physical_id() to get APIC ID of running vCPU for AVIC (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Expose number of shadow MMU shadow pages as a stat (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Unconditionally recompute CR8 intercept on PPR update (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Grab vmcs12 on CR8 interception update iff vCPU is in guest mode (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: WARN (once) if RTC pending EOI tracking goes off the rails (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: WARN and fail kvm_set_irq() if a PIC or I/O APIC vector is invalid (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Bug the VM, not the kernel, if the ISR count {under,over}flows (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Bug the VM, not the host kernel, if KVM write-protects upper SPTEs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Replace BUG_ON() with WARN_ON_ONCE() on "bad" nested GPA translation (Maxim Levitsky) [RHEL-210871]
+- KVM: Replace guest-triggerable BUG_ON() in ioeventfd datamatch with get_unaligned() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: move pdptrs out of the MMU (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: check that kvm_handle_invpcid is only invoked with shadow paging (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: invalidate cached PDPTRs across nested NPT transitions (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: remove unnecessary code in prepare_vmcs02_rare (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: remove nested_mmu from mmu_is_nested() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a test for gPAT handling in L2 (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Allow Host-Only/Guest-Only bits with nSVM and mediated PMU (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Reprogram Host/Guest-Only counters on nested transitions (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Track mediated PMU counters with mode-specific enables (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Disable counters based on Host-Only/Guest-Only bits in SVM (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Add support for KVM_X86_PMU_OP_OPTIONAL_RET0 (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Check mediated PMU counter enablement before event filters (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Do a single atomic OR when reprogramming counters (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Rename reprogram_counters() to clarify usage (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move enable_pmu/enable_mediated_pmu to pmu.h and pmu.c (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Move VMRUN instruction retirement after entering guest mode (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Unify RIP and PMU handling calls when emulating VMRUN (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Bail early out of VMRUN emulation if advancing RIP fails (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Stop leaking single-stepping on VMRUN into L2 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Only disable x2AVIC WRMSR interception for MSRs that are accelerated (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Disable x2AVIC RDMSR interception for MSRs KVM actually supports (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add dedicated API for getting mask of accelerated x2APIC MSRs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Save/restore gPAT with KVM_{GET,SET}_NESTED_STATE (Maxim Levitsky) [RHEL-210871]
+- KVM: Documentation: document KVM_{GET,SET}_NESTED_STATE for SVM (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Save gPAT to vmcb12.g_pat on VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Redirect IA32_PAT accesses to either hPAT or gPAT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Set vmcb02.g_pat correctly for nested NPT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Cache and validate vmcb12 g_pat (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: nSVM: Clear VMCB_NPT clean bit when updating hPAT from guest mode (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Define KVM_X86_QUIRK_NESTED_SVM_SHARED_PAT (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Handle bad values on proxied writes to LBR MSRs (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Fix x2APIC MSR handling in tdx_has_emulated_msr() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Mark source page dirty when writing back CPUID data on failure (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Unmap local kmaps in LIFO order, per highmem requirements (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Pin source page for write when adding CPUID data for SNP guest (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Allocate only as many bytes as needed for temp crypt buffers (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Rewrite logic to {de,en}crypt memory for debug (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Add helper function to pin/unpin a single page (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Explicitly validate the dst buffer for debug operations (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a test to verify SEV {en,de}crypt debug ioctls (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Fix page overflow in sev_dbg_crypt() for ENCRYPT path (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Teach sev_*_test about revoking VM types (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Don't advertise VM types that are disabled by firmware (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Don't advertise support for unusable VM types (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Consolidate logic for printing state of SEV{,-ES,-SNP} enabling (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Set supported SEV+ VM types during sev_hardware_setup() (Maxim Levitsky) [RHEL-210871]
+- crypto/ccp: export firmware supported vm types (Maxim Levitsky) [RHEL-210871]
+- crypto/ccp: hoist kernel part of SNP_PLATFORM_STATUS (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: hyperv_features: test write of 1 to HV_X64_MSR_RESET (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Randomize dirty_log_test's delay before reaping the bitmap (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add and use kvm_free_fd() to harden against fd goofs (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Cast guest_memfd fd to a signed int when checking for >= 0 (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Fix vcpu_get_stats_fd() ioctl name (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: memslot_perf_test: make host wait timeout configurable (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: hyperv_tlb_flush: replace NOP loop with udelay() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Fix typo in comment in hyperv_features.c (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: sync_regs_test: drop stale TODO comment (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Recursively zap orphaned nested TDP shadow pages on emulated writes (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Move external page table freeing to TDX code (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move error handling inside free_external_spt() (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Rename tdx_sept_remove_private_spte() to show it's for leaf SPTEs (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Drop kvm_x86_ops.remove_external_spte() (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Hoist tdx_sept_remove_private_spte() above set_private_spte() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Drop KVM_BUG_ON() on shared lock to zap child external PTEs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/tdp_mmu: Centrally propagate to-present/atomic zap updates to external PTEs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Plumb "sp" _pointer_ into the TDP MMU's handle_changed_spte() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/tdp_mmu: Morph !is_frozen_spte() check into a KVM_MMU_WARN_ON() (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Move lockdep assert in __tdp_mmu_set_spte_atomic() to TDX code (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Move KVM_BUG_ON()s in __tdp_mmu_set_spte_atomic() to TDX code (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Plumb param "old_spte" into kvm_x86_ops.set_external_spte() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Fold set_external_spte_present() into its sole caller (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Wrap mapping of leaf and non-leaf S-EPT entries into helpers (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Drop kvm_x86_ops.link_external_spt() (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Move mk_keyed_paddr() to tdx.c due to no external users (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Drop exported function tdx_quirk_reset_page() (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Use PFN directly for unmapping guest private memory (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Use PFN directly for mapping guest private memory (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Make "external SPTE" ops that can fail RET0 static calls (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Account all non-transient page allocations for per-TD structures (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Update iter->old_spte if cmpxchg64 on mirror SPTE "fails" (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Use pg_level in TDX APIs, not the TDX-Module's 0-based level (Maxim Levitsky) [RHEL-210871]
+- Documentation: KVM: Synchronize x86 VM types (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add regression test for mediated PMU fixed counter filter bug (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: Use hardware value when reprogramming for FIXED_CTR_CTRL changes (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: hyper-v: Bound the bank index when querying sparse banks (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use <linux/lockdep.h> for lockdep header inclusion (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Remove defunct kvm_load_segment_descriptor() declaration. (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop defunct vcpu_tsc_khz() declaration (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move async #PF helpers to x86.h (as inlines) (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move update_cr8_intercept() to lapic.c (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Harden is_64_bit_hypercall() against bugs on 32-bit kernels (Maxim Levitsky) [RHEL-210871]
+- Revert "KVM: VMX: Read 32-bit GPR values for ENCLS instructions outside of 64-bit mode" (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Use kvm_rax_read() now that it's mode-aware (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop non-raw kvm_<reg>_write() helpers (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add mode-aware versions of kvm_<reg>_{read,write}() helpers (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move inlined GPR, CR, and DR helpers from x86.h to regs.h (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Rename kvm_cache_regs.h => regs.h (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Trace hypercall register *after* truncating values for 32-bit (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Read 32-bit GPR values for ENCLS instructions outside of 64-bit mode (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/xen: Don't truncate RAX when handling hypercall from protected guest (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/xen: Bug the VM if 32-bit KVM observes a 64-bit mode hypercall (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Truncate INVLPGA address in compatibility mode (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Take PIC lock on KVM_GET_IRQCHIP path (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: ioapic: Use old_dest_mode consistently in ioapic_write_indirect() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use fls() instead of ffs() for rmaps histogram bucketing (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Fix wrong return value type in guest_cpuid_has() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Restrict userspace return codes for KVM_HC_MAP_GPA_RANGE (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Allow userspace to return errors to guest for MAPGPA (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Update hwcr_msr_test for CPUID faulting bit (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Virtualize AMD CPUID faulting (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Remove supports_cpuid_fault() helper (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Prioritize CPUID faulting over CPUID VM-exits in nested VMX (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Consolidate CPUID fault handling for emulator and interception logic (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Treat KVM's virtual PMU as disabled for TDX VMs (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add nested page fault injection test (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Synthesize nested EPT violation GVA_IS_VALID/GVA_TRANSLATED bits (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Fix nested NPF injection of PFERR_GUEST_{PAGE,FINAL}_MASK bits (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Tell ->inject_page_fault() whether or a fault came from hardware (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Widen x86_exception's error_code to 64 bits (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Remove unused X86EMUL_MODE_HOST define (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Verify VMX's GUEST_PENDING_DBG_EXCEPTIONS.BS Consistency Check (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Verify guest debug DR7.GD checking during instruction emulation (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add all (known) EFLAGS bit definitions (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop kvm_vcpu_do_singlestep() now that it's been gutted (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move KVM_GUESTDBG_SINGLESTEP handling into kvm_inject_emulated_db() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Honor KVM_GUESTDBG_USE_HW_BP when checking for code breakpoints in emulation (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Honor KVM_GUESTDBG_USE_HW_BP when emulating MOV DR (in emulator) (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Set guest DR6 by kvm_queue_exception_p() in instruction emulation (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Capture "struct x86_exception" in inject_emulated_exception() (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Refresh GUEST_PENDING_DBG_EXCEPTIONS.BS on all injected #DBs (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop superfluous caching of KVM_ASYNC_PF_SEND_ALWAYS (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop superfluous caching of KVM_ASYNC_PF_DELIVERY_AS_PF_VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Don't leave APF half-enabled on bad APF data GPA (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Refresh vcpu->arch.cr{0,3} prior to invoking fastpath handler (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Ensure vendor's exit handler runs before fastpath userspace exits (Maxim Levitsky) [RHEL-210871]
+- KVM: guest_memfd: fix NUMA interleave index double-counting (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add guest_memfd regression test signed offset+size bug (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Expand the guest_memfd test macros to allow passing the VM (Maxim Levitsky) [RHEL-210871]
+- KVM: guest_memfd: Treat memslot binding offset+size as unsigned values (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Remove unnecessary "%%s" formatting of a constant string (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Test guest_memfd binding overlap without GPA overlap (Maxim Levitsky) [RHEL-210871]
+- KVM: guest_memfd: Return -EEXIST for overlapping bindings (Maxim Levitsky) [RHEL-210871]
+- KVM: Fix kvm_vcpu_map[_readonly]() function prototypes (Maxim Levitsky) [RHEL-210871]
+- KVM: Rename invalidate_begin to invalidate_start for consistency (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Remove sometimes-used function-scoped "ret" from #VMGEXIT handler (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Turn sev_es_validate_vmgexit() into a dedicated predicate (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Handle unknown #VMGEXIT reasons in sev_handle_vmgexit() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Return INVALID_INPUT, not MISSING_INPUT, for bad GUEST_REQUEST input(s) (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Return INVALID_EVENT for SNP-only #VMGEXIT from non-SNP guest (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Move GHCB "usage" check out of sev_es_validate_vmgexit() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Don't terminate SNP VMs on #VMGEXIT without a registered GHCB (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Macrofy GPR swapping in __svm_sev_es_vcpu_run() (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Macrofy GPR swapping in __svm_vcpu_run() (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Macrofy GPR swapping in __vmx_vcpu_run() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use a proper bitmap for tracking available/dirty registers (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Track available/dirty register masks as "unsigned long" values (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add wrapper APIs to reset dirty/available register masks (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: Do a bitwise-AND of regs_avail when switching active VMCS (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop the "EX" part of "EXREG" to avoid collision with APX (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add dedicated storage for guest RIP (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: replace vmx_spec_ctrl_restore_host with RESTORE_HOST_SPEC_CTRL_BODY (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: switch to RESTORE_GUEST_SPEC_CTRL_BODY (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: extract RESTORE_*_SPEC_CTRL_BODY out of svm/vmenter.S (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: adopt the same VMX_RUN_* flags as VMX (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: pass struct vcpu_svm to msr_write_intercepted (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: prepare for making SPEC_CTRL switch common with VMX (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: more cleanups to __vmx_vcpu_run (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: remove regs argument of __vmx_vcpu_run (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: enable GMET for guests (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: work around errata 1218 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: enable GMET and set it in MMU role (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: add support for GMET to NPT page table walks (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: hard code more bits in kvm_init_shadow_npt_mmu (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: add GMET bit definitions (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: introduce cpu_role bit for availability of PFEC.I/D (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: propagate access mask from root pages down (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: allow MBEC with EVMCS (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: advertise MBEC to nested guests (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: add support for MBEC to EPT page table walks (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: pass PFERR_USER_MASK to MMU on EPT violations (Maxim Levitsky) [RHEL-210871]
+- KVM: nVMX: pass advanced EPT violation vmexit info to guest (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: enable use of MBEC (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: move cr4_smep to base role (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: split XS/XU bits for EPT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: make translate_nested_gpa vendor-specific (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: pass pte_access for final nGPA->GPA walk (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: pass PFERR_GUEST_PAGE/FINAL_MASK to kvm_translate_gpa (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: introduce ACC_READ_MASK (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: separate more EPT/non-EPT permission_fault() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: rename and clarify BYTE_MASK (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: merge make_spte_{non,}executable (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: remove SPTE_EPT_* (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: shuffle high bits of SPTEs in preparation for MBEC (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: free up bit 10 of PTEs in preparation for MBEC (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: remove SPTE_PERM_MASK (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX/VMX: rework EPT_VIOLATION_EXEC_FOR_RING3_LIN into PROT_MASK (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Treat zero-length cert chain as query for blob lengths (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Do not initialize SNP for ioctl(SNP_CONFIG) (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Do not initialize SNP for ioctl(SNP_VLEK_LOAD) (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Do not initialize SNP for ioctl(SNP_COMMIT) (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Do not initialize SNP for SEV ioctls (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Define pci_device_ids using named initializers (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Fix snp_filter_reserved_mem_regions() off-by-one (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Reverse the cleanup order in psp_dev_destroy() (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Enable TDX module runtime updates (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Refresh TDX module version after update (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Lock out module updates when reading version (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Add module update locking (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Restore TDX module state (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Initialize the newly-installed TDX module (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Install a new TDX module (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Reset software states during TDX module shutdown (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Shut down the current TDX module (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Abort updates after a failed step (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Introduce skeleton for TDX module updates (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Allocate and populate a module update request (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Implement firmware upload sysfs ABI for TDX module updates (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Don't expose P-SEAMLDR information on CPUs with erratum (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Expose P-SEAMLDR information via sysfs (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Add a helper to retrieve P-SEAMLDR information (Maxim Levitsky) [RHEL-210871]
+- x86/virt/seamldr: Introduce a wrapper for P-SEAMLDR SEAMCALLs (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Expose TDX module version (Maxim Levitsky) [RHEL-210871]
+- coco/tdx-host: Introduce a "tdx_host" device (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Move low level SEAMCALL helpers out of <asm/tdx.h> (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Move TDX_FEATURES0 bits to asm/tdx.h (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Consolidate TDX global initialization states (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Move TDX global initialization states to file scope (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Clarify try_init_module_global() result caching (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Disable the TDX module during kexec and kdump (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Add SEAMCALL wrapper for TDH.SYS.DISABLE (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Pull kexec cache flush logic into arch/x86 (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Move TDX architectural error codes into <asm/shared/tdx_errno.h> (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Remove redundant ghcbs_initialized checks around __sev_{get,put}_ghcb() (Maxim Levitsky) [RHEL-210871]
+- crypto/ccp: Skip SNP_INIT if preparation fails (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Do not initialize SNP if missing CPUs (Maxim Levitsky) [RHEL-210871]
+- x86/entry: Zap the #VC entry user and kernel macros (Maxim Levitsky) [RHEL-210871]
+- x86/idtentry: Add missing '*' to kernel-doc lines (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Unmap and unpin the GHCB as needed on vCPU free (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Decouple the need to sync the GHCB SA from the need to free the SA (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Move sev_free_vcpu() down below sev_es_unmap_ghcb() (Maxim Levitsky) [RHEL-210871]
+- KVM: Don't WARN if memory is dirtied without a vCPU when the VM is dying (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Read start/end indices of PSC requests exactly once per #VMGEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Add an anonymous "psc" struct to track current PSC metadata (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Make it more obvious when KVM is writing back the current PSC index (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Use READ_ONCE() when reading entries/indices from PSC buffer (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Check PSC request indices against the actual size of the buffer (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Don't explicitly pass PSC buffer to snp_begin_psc() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: WARN if KVM attempts to setup scratch area with min_len==0 (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Compute the correct max length of the in-GHCB scratch area (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Use the size of the PSC header as the minimum size for PSC requests (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Ignore Port I/O requests of length '0' (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Reject MMIO requests larger than 8 bytes with GHCB v2+ (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Ignore MMIO requests of length '0' (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Require in-GHCB scratch area if GHCB v2+ is in use (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Flush the current TLB when transitioning from xAVIC => x2AVIC (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Guard execinfo.h inclusion for non-glibc builds (Maxim Levitsky) [RHEL-210871]
+- x86/virt: Silence RCU lockdep splat in emergency virt callback path (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Include sys/mman.h *and* linux/mman.h, via kvm_syscalls.h (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Disable AVIC IPI virtualization on Hygon Family 18h (erratum #1235) (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Verify that KVM returns the configured APIC cycle length (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Return the VM's configured APIC bus frequency when queried (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: elf: Include <endian.h> instead of <bits/endian.h> (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Explicitly leak pages in unknown state (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Do not use host-controlled page order in cleanup path (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: use again the flush argument of __link_shadow_page() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: arm64: Fix steal_time test after UAPI refactoring (Maxim Levitsky) [RHEL-210871]
+- Documentation: kvm: update links in the references section of AMD Memory Encryption (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Never use L0's PAUSE loop exiting while L2 is running (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Fix Xen hypercall tracepoint argument assignment (Maxim Levitsky) [RHEL-210871]
+- KVM: Reject wrapped offset in kvm_reset_dirty_gfn() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Fix misleading variable names and add more comments for PIR=>IRR flow (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Do IRR scan in __kvm_apic_update_irr even if PIR is empty (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: check for nEPT/nNPT in slow flush hypercalls (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Replace "paddr" with "gpa" throughout (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Replace "u64 nested_paddr" with "gpa_t l2_gpa" (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Replace "u64 gpa" with "gpa_t" throughout (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Replace "vaddr" with "gva" throughout (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Clarify that arm64's inject_uer() takes a host PA, not a guest PA (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Rename translate_to_host_paddr() => translate_hva_to_hpa() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Rename vm_vaddr_populate_bitmap() => vm_populate_gva_bitmap() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Rename vm_vaddr_unused_gap() => vm_unused_gva_gap() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Drop "vaddr_" from APIs that allocate memory for a given VM (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use u8 instead of uint8_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use s16 instead of int16_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use u16 instead of uint16_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use s32 instead of int32_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use u32 instead of uint32_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use s64 instead of int64_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use u64 instead of uint64_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use gpa_t for GPAs in Hyper-V selftests (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use gpa_t instead of vm_paddr_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Use gva_t instead of vm_vaddr_t (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp: Don't attempt to copy ID to userspace if PSP command failed (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp: Don't attempt to copy PDH cert to userspace if PSP command failed (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp: Don't attempt to copy CSR to userspace if PSP command failed (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: use inlines instead of macros for is_sev_*guest (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Goto an existing error label if charging misc_cg for an ASID fails (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Move lock-protected allocation of SEV ASID into a separate helper (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: use mutex guard in snp_handle_guest_req() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: use mutex guard in sev_mem_enc_unregister_region() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: use mutex guard in sev_mem_enc_ioctl() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: use mutex guard in snp_launch_update() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Assert that kvm->lock is held when querying SEV+ support (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Document that checking for SEV+ guests when reclaiming memory is "safe" (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Hide "struct kvm_sev_info" behind CONFIG_KVM_AMD_SEV=y (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: WARN on unhandled VM type when initializing VM (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Move SEV-specific VM initialization to sev.c (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Move standard VM-scoped helpers to detect SEV+ guests to sev.c (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Document the SEV-ES check when querying SMM support as "safe" (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Add quad-underscore version of VM-scoped APIs to detect SEV+ guests (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Provide vCPU-scoped accessors for detecting SEV+ guests (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Lock all vCPUs for the duration of SEV-ES VMSA synchronization (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Lock all vCPUs when synchronzing VMSAs for SNP launch finish (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Disallow LAUNCH_FINISH if vCPUs are actively being created (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Protect *all* of sev_mem_enc_register_region() with kvm->lock (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Reject attempts to sync VMSA of an already-launched/encrypted vCPU (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Remove duplicate LAUNCH_UPDATE_VMSA call in SEV-ES migrate test (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Use kvzalloc_objs() when pinning userpages (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Use PFN_DOWN() to simplify "number of pages" math when pinning memory (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Disallow pinning more pages than exist in the system (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Drop useless sanity checks in sev_mem_enc_register_region() (Maxim Levitsky) [RHEL-210871]
+- KVM: SEV: Drop WARN on large size for KVM_MEMORY_ENCRYPT_REG_REGION (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Skip OSVW MSR reads if current CPU doesn't support the feature (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Skip OSVW variable updates if current CPU's errata are a subset (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Extract OS-visible workarounds setup to helper function (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Skip OSVW MSR reads if KVM is treating all errata as present (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Serialize updates to global OS-Visible Workarounds variables (Maxim Levitsky) [RHEL-210871]
+- KVM: Isolate apicv_update_lock and apicv_nr_irq_window_req in a cacheline (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Optimize IRQ window inhibit handling (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Fix IRQ window inhibit handling across multiple vCPUs (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Fix clearing IRQ window inhibit with nested guests (Maxim Levitsky) [RHEL-210871]
+- x86/virt: Treat SVM as unsupported when running as an SEV+ guest (Maxim Levitsky) [RHEL-210871]
+- KVM: TDX: Fold tdx_bringup() into tdx_hardware_setup() (Maxim Levitsky) [RHEL-210871]
+- KVM: Bury kvm_{en,dis}able_virtualization() in kvm_main.c once more (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Use ida_is_empty() to detect if any TDs may be running (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: KVM: Consolidate TDX CPU hotplug handling (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Tag a pile of functions as __init, and globals as __ro_after_init (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/tdx: Do VMXON and TDX-Module initialization during subsys init (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Drop the outdated requirement that TDX be enabled in IRQ context (Maxim Levitsky) [RHEL-210871]
+- x86/virt: Add refcounting of VMX/SVM usage to support multiple in-kernel users (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move bulk of emergency virtualizaton logic to virt subsystem (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Move core EFER.SVME enablement to kernel (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Move core VMXON enablement to kernel (Maxim Levitsky) [RHEL-210871]
+- x86/virt: Force-clear X86_FEATURE_VMX if configuring root VMCS fails (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Unconditionally allocate root VMCSes during boot CPU bringup (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move "kvm_rebooting" to kernel as "virt_rebooting" (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Move architectural "vmcs" and "vmcs_hdr" structures to public vmx.h (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move kvm_rebooting to x86 (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Drop 'invalid' from svm_nested_invalid_vmcb12_gpa's name (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Rework svm_nested_invalid_vmcb12_gpa (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Fail emulation of VMRUN/VMLOAD/VMSAVE if mapping vmcb12 fails (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Treat mapping failures equally in VMLOAD/VMSAVE emulation (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Check EFER.SVME and CPL on #GP intercept of SVM instructions (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Move RAX legality check to SVM insn interception handlers (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Properly check RAX on #GP intercept of SVM instructions (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Refactor SVM instruction handling on #GP intercept (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Properly check RAX in the emulator for SVM instructions (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Suppress WARNs on nested_run_pending after userspace exit (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move nested_run_pending to kvm_vcpu_arch (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Simplify error handling of nested_svm_copy_vmcb12_to_cache() (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Add a helper to get LBR field pointer to dedup MSR accesses (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a test for L2 clearing EFER.SVME without intercept (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Triple fault L1 on unintercepted EFER.SVME clear by L2 (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: SVM: Remove vmcb_is_dirty() (Maxim Levitsky) [RHEL-210871]
+- KVM: selftest: Add a selftest for VMRUN/#VMEXIT with unmappable vmcb12 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Only copy SVM_MISC_ENABLE_NP from VMCB01's misc_ctl (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Sanitize INT/EVENTINJ fields when copying from vmcb12 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Sanitize TLB_CONTROL field when copying from vmcb12 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Use PAGE_MASK to drop lower bits of bitmap GPAs from vmcb12 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Restrict mapping vmcb12 on nested VMRUN (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Cache all used fields from VMCB12 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Rename vmcb->virt_ext to vmcb->misc_ctl2 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Rename vmcb->nested_ctl to vmcb->misc_ctl (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Capture svm->nested.ctl as vmcb12_ctrl when preparing vmcb02 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Move vmcb_ctrl_area_cached.bus_lock_rip to svm_nested_state (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Use vmcb12_is_intercept() in nested_sync_control_from_vmcb02() (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Use intuitive local variables in nested_vmcb02_recalc_intercepts() (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Directly (re)calc vmcb02 intercepts from nested_vmcb02_prepare_control() (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: WARN and abort vmcb02 intercepts recalc if vmcb02 isn't active (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Separate recalc_intercepts() into nested vs. non-nested parts (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Recalc instructions intercepts when EFER.SVME is toggled (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Move STGI and CLGI intercept handling (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Always intercept VMMCALL when L2 is active (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Raise #UD if unhandled VMMCALL isn't intercepted by L1 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Explicitly mark vmcb01 dirty after modifying VMCB intercepts (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Add missing consistency check for EVENTINJ (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Add missing consistency check for EFER, CR0, CR4, and CS (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Add missing consistency check for nCR3 validity (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Drop the non-architectural consistency check for NP_ENABLE (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Drop nested_vmcb_check_{save/control}() wrappers (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Clear tracking of L1->L2 NMI and soft IRQ on nested #VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Clear EVENTINJ fields in vmcb12 on nested #VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Clear GIF on nested #VMEXIT(INVALID) (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Triple fault if restore host CR3 fails on nested #VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Triple fault if mapping VMCB12 fails on nested #VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Refactor writing vmcb12 on nested #VMEXIT as a helper (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Refactor checking LBRV enablement in vmcb12 into a helper (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Always inject a #GP if mapping VMCB12 fails on nested VMRUN (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a test for LBR save/restore (ft. nested) (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Add missing save/restore handling of LBR MSRs (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Switch svm_copy_lbrs() to a macro (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Avoid clearing VMCB_LBR in vmcb12 (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Inject #UD for INVLPGA if EFER.SVME=0 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Delay setting soft IRQ RIP tracking fields until vCPU run (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Delay stuffing L2's current RIP into NextRIP until vCPU run (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Always use NextRIP as vmcb02's NextRIP after first L2 VMRUN (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Extend state_test to check next_rip (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Extend state_test to check vGIF (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Sync interrupt shadow to cached vmcb12 after VMRUN of L2 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Sync NextRIP to cached vmcb12 after VMRUN of L2 (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Ensure AVIC is inhibited when restoring a vCPU to guest mode (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Mark all of vmcb02 dirty when restoring nested state (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Defer non-architectural deliver of exception payload to userspace read (Maxim Levitsky) [RHEL-210871]
+- KVM: nSVM: Use vcpu->arch.cr2 when updating vmcb12 on nested #VMEXIT (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: KVM: x86/mmu: Skip unsync when large pages are allowed (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Don't zero-allocate page table used for splitting a hugepage (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/mmu: Fix UBSAN warning when reading nx_huge_pages parameter (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Remove unnecessary parentheses (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Use ASM_INPUT_RM in __vmcs_writel (Maxim Levitsky) [RHEL-210871]
+- KVM: VMX: Drop obsolete branch hint prefixes from inline asm (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add helpers to prepare kvm_run for userspace MMIO exit (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Don't panic the kernel if completing userspace I/O / MMIO goes sideways (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Rename .read_write_emulate() to .read_write_guest() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Fold emulator_write_phys() into write_emulate() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Bury emulator read/write ops in emulator_{read,write}_emulated() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Consolidate SEV-ES MMIO emulation into a single public API (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Dedup kvm_sev_es_mmio_{read,write}() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Harden SEV-ES MMIO against on-stack use-after-free (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move MMIO write tracing into vcpu_mmio_write() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Open code read vs. write userspace MMIO exits in emulator_read_write() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use local MMIO fragment variable to clean up emulator_read_write() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Trace unsatisfied MMIO reads on a per-page basis (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Open code handling of completed MMIO reads in emulator_read_write() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use scratch field in MMIO fragment to hold small write values (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Test MADV_COLLAPSE on guest_memfd (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Wrap madvise() to assert success (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Allow the PMU event filter test for Hygon (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a flag to identify AMD compatible test cases (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add CPU vendor detection for Hygon (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Advertise AVX512 Bit Matrix Multiply (BMM) to userspace (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Immediately fail the build when possible if required #define is missing (Maxim Levitsky) [RHEL-210871]
+- KVM: X86: Fix array_index_nospec protection in __pv_send_ipi (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Add LAPIC guard in kvm_apic_write_nodecode() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Use kvm_cpu_cap_has() for EFER bits enablement checks (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Move some EFER bits enablement to common code (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Drop redundant call to kvm_deliver_exception_payload() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Ignore cpuid faulting in SMM (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Check for injected exceptions before queuing a debug exception (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Mark module parameters as __ro_after_init for security and performance (Maxim Levitsky) [RHEL-210871]
+- KVM: Mark halt poll and other module parameters with appropriate memory attributes (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/pmu: annotate struct kvm_x86_pmu_event_filter with __counted_by() (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: Zero-initialize temporary fxregs_state buffers in FXSAVE emulation (Maxim Levitsky) [RHEL-210871]
+- KVM: guest_memfd: Don't set FGP_ACCESSED when getting folios (Maxim Levitsky) [RHEL-210871]
+- KVM: arm64: set_id_regs: Allow GICv3 support to be set at runtime (Maxim Levitsky) [RHEL-210871]
+- KVM: arm64: selftests: Add no-vgic-v5 selftest (Maxim Levitsky) [RHEL-210871]
+- KVM: arm64: selftests: Introduce a minimal GICv5 PPI selftest (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Refactor UAPI tests into dedicated function (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Replace snprintf("%%s") with strscpy (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - simplify sev_update_firmware() (Maxim Levitsky) [RHEL-210871]
+- KVM: arm64: kselftest: set_id_regs: Add test for FEAT_LSUI (Maxim Levitsky) [RHEL-210871]
+- crypto/ccp: Update HV_FIXED page states to allow freeing of memory (Maxim Levitsky) [RHEL-210871]
+- crypto/ccp: Implement SNP x86 shutdown (Maxim Levitsky) [RHEL-210871]
+- x86/sev, crypto/ccp: Move HSAVE_PA setup to arch/x86/ (Maxim Levitsky) [RHEL-210871]
+- x86/sev, crypto/ccp: Move SNP init to ccp driver (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Create snp_shutdown() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Create snp_prepare() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Create a function to clear/zero the RMP (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Rename SNP_FEATURES_PRESENT to SNP_FEATURES_IMPL (Maxim Levitsky) [RHEL-210871]
+- x86/virt/sev: Keep the RMP table bookkeeping area mapped (Maxim Levitsky) [RHEL-210871]
+- x86/virt/sev: Drop WBINVD before setting MSR_AMD64_SYSCFG_SNP_EN (Maxim Levitsky) [RHEL-210871]
+- x86/virt/sev: Drop support for SNP hotplug (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Return error for GetQuote failures (Maxim Levitsky) [RHEL-210871]
+- KVM/TDX: Rename KVM_SUPPORTED_TD_ATTRS to KVM_SUPPORTED_TDX_TD_ATTRS (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Rename TDX_ATTR_* to TDX_TD_ATTR_* (Maxim Levitsky) [RHEL-210871]
+- KVM/TDX: Remove redundant definitions of TDX_TD_ATTR_* (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Fix the typo in TDX_ATTR_MIGRTABLE (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Print TDX module version during init (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Retrieve TDX module version (Maxim Levitsky) [RHEL-210871]
+- kvm: Use private inode list instead of i_private_list (Maxim Levitsky) [RHEL-210871]
+- x86/cpu: Add comment clarifying CRn pinning (Maxim Levitsky) [RHEL-210871]
+- x86/fred: Fix early boot failures on SEV-ES/SNP guests (Maxim Levitsky) [RHEL-210871]
+- x86/cpu: Remove X86_CR4_FRED from the CR4 pinned bits mask (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Fix handling of host controlled 'quote' buffer length (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Fix leaking the same page twice (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Increase 'maxnode' for guest_memfd tests (Maxim Levitsky) [RHEL-210871]
+- Documentation: KVM: Formalizing taking vcpu->mutex *outside* of kvm->slots_lock (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Allow IBPB-on-Entry feature for SNP guests (Maxim Levitsky) [RHEL-210871]
+- x86/boot/sev: Move SEV decompressor variables into the .data section (Maxim Levitsky) [RHEL-210871]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses (Maxim Levitsky) [RHEL-210871]
+- Convert more 'alloc_obj' cases to default GFP_KERNEL arguments (Maxim Levitsky) [RHEL-210871]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument (Maxim Levitsky) [RHEL-210871]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types (Maxim Levitsky) [RHEL-210871]
+- configfs-tsm-report: tdx_guest: Increase Quote buffer size to 128KB (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - allow callers to use HV-Fixed page API when SEV is disabled (Maxim Levitsky) [RHEL-210871]
+- configfs-tsm-report: Increase TSM_REPORT_OUTBLOB_MAX to 16MB (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Don't emit BSS_DECRYPTED section unless it is in use (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Use kfree_sensitive() when freeing a SNP message descriptor (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Rename sev_es_ghcb_handle_msr() to __vc_handle_msr() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Carve out the SVSM code into a separate compilation unit (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Add internal header guards (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Move the internal header (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Fix a case where SNP_SHUTDOWN is missed (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Add sysfs attribute for boot integrity (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Fix a crash due to incorrect cleanup usage of kfree (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - narrow scope of snp_range_list (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add -U_FORTIFY_SOURCE to avoid some unpredictable test failures (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Disable GCOV on noinstr object (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Drop unused sev_enable() fallback (Maxim Levitsky) [RHEL-210871]
+- x86/coco/sev: Convert has_cpuflag() to use cpu_feature_enabled() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Include XSS value in GHCB CPUID request (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Move boot_*msr helpers to asm/shared/msr.h (Maxim Levitsky) [RHEL-210871]
+- KVM: Fix last_boosted_vcpu index assignment bug (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - use min() instead of min_t() (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Simplify with of_device_get_match_data() (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Constify 'dev_vdata' member (Maxim Levitsky) [RHEL-210871]
+- crypto: ccp - Add support for PCI device 0x115A (Maxim Levitsky) [RHEL-210871]
+- fs: Add uoff_t (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Fix irqfd_test for non-x86 architectures (Maxim Levitsky) [RHEL-210871]
+- KVM: x86: hyper-v: Use guard() instead of mutex_lock() to simplify code (Maxim Levitsky) [RHEL-210871]
+- x86/virt/tdx: Use precalculated TDVPR page physical address (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Fix typo in hyperv cpuid test message (Maxim Levitsky) [RHEL-210871]
+- KVM: Avoid synchronize_srcu() in kvm_io_bus_register_dev() (Maxim Levitsky) [RHEL-210871]
+- KVM: Implement barriers before accessing kvm->buses[] on SRCU read paths (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Drop erroneous __init annotation from early_set_pages_state() (Maxim Levitsky) [RHEL-210871]
+- x86/startup/sev: Document the CPUID flow in the boot #VC handler (Maxim Levitsky) [RHEL-210871]
+- x86/apic/savic: Do not use snp_abort() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Indicate the SEV-SNP guest supports Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Prevent SECURE_AVIC_CONTROL MSR interception for Secure AVIC guests (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Enable Secure AVIC in the control MSR (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add kexec support for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Handle EOI writes for Secure AVIC guests (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Read and write LVT* APIC registers from HV for SAVIC guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Enable NMI support for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Allow NMI to be injected from hypervisor for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add support to send NMI IPI for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Initialize VGIF for secondary vCPUs for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Support LAPIC timer for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add support to send IPI for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add an update_vector() callback for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add update_vector() callback for APIC drivers (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Initialize APIC ID for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Populate .read()/.write() callbacks of Secure AVIC driver (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Initialize Secure AVIC APIC backing page (Maxim Levitsky) [RHEL-210871]
+- x86/apic: Add new driver for Secure AVIC (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Zap snp_abort() (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Get rid of the .head.text section (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Move startup code out of __head section (Maxim Levitsky) [RHEL-210871]
+- efistub/x86: Remap inittext read-execute when needed (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Create a confined code area for startup code (Maxim Levitsky) [RHEL-210871]
+- x86/kbuild: Incorporate boot/startup/ via Kbuild makefile (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Revert "Reject absolute references in .head.text" (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Check startup code for absence of absolute relocations (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Export startup routines for later use (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Move __sev_[get|put]_ghcb() into separate noinstr object (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Provide PIC aliases for SEV related data objects (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Provide PIC aliases for 5-level paging related constants (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Drop redundant RMPADJUST in SEV SVSM presence check (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Use boot SVSM CA for all startup and init code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Pass SVSM calling area down to early page state change API (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Share implementation of MSR-based page state change (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Avoid global variable to store virtual address of SVSM area (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Move GHCB page based HV communication out of startup code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Run RMPADJUST on SVSM calling area page to test VMPL (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Use MSR protocol only for early SVSM PVALIDATE call (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Use MSR protocol for remapping SVSM calling area (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Separate MSR and GHCB based snp_cpuid() via a callback (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Guard sev_evict_cache() with CONFIG_AMD_MEM_ENCRYPT (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Ensure SVSM reserved fields in a page validation entry are initialized to zero (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Satisfy linear mapping requirement in get_derived_key() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Improve handling of writes to intercepted TSC MSRs (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Evict cache lines during SNP memory validation (Maxim Levitsky) [RHEL-210871]
+- KVM: selftests: Add a KVM_IRQFD test to verify uniqueness requirements (Maxim Levitsky) [RHEL-210871]
+- x86/sev/vc: Fix EFI runtime instruction emulation (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Drop unnecessary parameter in snp_issue_guest_request() (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Document requirement for linear mapping of guest request buffers (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Allocate request in TSC_INFO_REQ on stack (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Contain snp_guest_request_ioctl in sev-guest (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Work around broken noinstr on GCC (Maxim Levitsky) [RHEL-210871]
+- KVM: x86/hyper-v: Use preallocated per-vCPU buffer for de-sparsified vCPU masks (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Use TSC_FACTOR for Secure TSC frequency calculation (Maxim Levitsky) [RHEL-210871]
+- tsm-mr: Fix init breakage after bin_attrs constification by scoping non-const pointers to init phase (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Transition to scoped_cond_guard for mutex operations (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Refactor and streamline TDREPORT generation (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Expose TDX MRs as sysfs attributes (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: tdx_mcall_get_report0: Return -EBUSY on TDCALL_OPERAND_BUSY error (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Add tdx_mcall_extend_rtmr() interface (Maxim Levitsky) [RHEL-210871]
+- tsm-mr: Add TVM Measurement Register support (Maxim Levitsky) [RHEL-210871]
+- coco/guest: Move shared guest CC infrastructure to drivers/virt/coco/guest/ (Maxim Levitsky) [RHEL-210871]
+- configfs-tsm: Namespace TSM report symbols (Maxim Levitsky) [RHEL-210871]
+- configfs-tsm-report: Fix NULL dereference of tsm_ops (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Disentangle #VC handling code from startup code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Move instruction decoder into separate source file (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Make sev_snp_enabled() a static function (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Share the sev_secrets_pa value again (Maxim Levitsky) [RHEL-210871]
+- x86/asm: Retire RIP_REL_REF() (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Drop RIP_REL_REF() uses from early SEV code (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Move SEV startup code into startup/ (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Split off startup code from core code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Move noinstr NMI handling code into separate source file (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Prepare for splitting off early SEV code (Maxim Levitsky) [RHEL-210871]
+- x86/boot/startup: Disable objtool validation for library code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Fix operator precedence in GHCB_MSR_VMPL_REQ_LEVEL macro (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Emit warning if IRQs are enabled during HLT #VE handling (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Fix arch_safe_halt() execution for TDX VMs (Maxim Levitsky) [RHEL-210871]
+- x86/paravirt: Move halt paravirt calls under CONFIG_PARAVIRT (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Simplify the code by removing unnecessary 'else' statement (Maxim Levitsky) [RHEL-210871]
+- x86/vmware: Parse MP tables for SEV-SNP enabled guests under VMware hypervisors (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Move SNP Guest Request data pages handling under snp_cmd_mutex (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Allocate request data dynamically (Maxim Levitsky) [RHEL-210871]
+- KVM: SVM: Ensure PSP module is initialized if KVM module is built-in (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Disable jump tables in SEV startup code (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Dump attributes and TD_CTLS on boot (Maxim Levitsky) [RHEL-210871]
+- x86/tdx: Disable unnecessary virtualization exceptions (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Don't hang but terminate on failure to remap SVSM CA (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Reject absolute references in .head.text (Maxim Levitsky) [RHEL-210871]
+- x86/boot: Move .head.text into its own output section (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Avoid WARN()s and panic()s in early boot code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Add the Secure TSC feature for SNP guests (Maxim Levitsky) [RHEL-210871]
+- x86/tsc: Init the TSC for Secure TSC guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Mark the TSC in a secure TSC guest as reliable (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Prevent RDTSC/RDTSCP interception for Secure TSC enabled guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Prevent GUEST_TSC_FREQ MSR interception for Secure TSC enabled guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Change TSC MSR behavior for Secure TSC enabled guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Add Secure TSC support for SNP guests (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Relocate SNP guest messaging routines to common code (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Carve out and export SNP guest messaging init routines (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Replace GFP_KERNEL_ACCOUNT with GFP_KERNEL (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Remove is_vmpck_empty() helper (Maxim Levitsky) [RHEL-210871]
+- virt: tdx-guest: Just leak decrypted memory on unrecoverable errors (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Cleanup vc_handle_msr() (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Carve out SNP message context structure (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Reduce the scope of SNP command mutex (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Consolidate SNP guest messaging parameters to a struct (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Cache the secrets page address (Maxim Levitsky) [RHEL-210871]
+- x86/sev: Handle failures from snp_init() (Maxim Levitsky) [RHEL-210871]
+- virt: sev-guest: Use AES GCM crypto library (Maxim Levitsky) [RHEL-210871]
+- x86/pvh: Avoid absolute symbol references in .head.text (Maxim Levitsky) [RHEL-210871]
+- x86/pvh: Omit needless clearing of phys_base (Maxim Levitsky) [RHEL-210871]
+- x86/pvh: Use correct size value in GDT descriptor (Maxim Levitsky) [RHEL-210871]
+- x86/pvh: Call C code via the kernel virtual mapping (Maxim Levitsky) [RHEL-210871]
+- drm/amd: Create a device link between APU display and XHCI devices (Desnes Nunes) [RHEL-178524]
+- usb: xhci: Make usb_host_endpoint.hcpriv survive endpoint_disable() (Desnes Nunes) [RHEL-178524]
+
+* Thu Oct 15 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-277.el10]
+- timekeeping: Use system_time_snapshot::systime/monoraw instead of ::real/raw (Mohammad Heib) [RHEL-280261]
+- timekeeping: Provide ktime_get_snapshot_id() (Mohammad Heib) [RHEL-280261]
+- platform/x86/amd/pmc: Do not fail probe when STB init fails (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Fix LPS0 and debugfs leaks when STB init fails (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Only expose stb_read after telemetry buffer is mapped (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Propagate SMU errors and validate S2D address (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Fix msg_port restoration in amd_stb_debugfs_open_v2() (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Restore msg_port on amd_stb_s2d_init() error paths (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add T14 Gen2 AMD (20XL) to s2idle quirk list (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86: amd-pmc: Use correct IP block table for AMD 1Ah M80H SoC (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Avoid logging "(null)" for DMI values (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Don't log during intermediate wakeups (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add delay_suspend module parameter (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Delay suspend for some Lenovo Laptops (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Check for intermediate wakeup in function (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add PMC driver support for AMD 1Ah M80H SoC (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Use per-SoC cpu_info struct for SMU mailbox and IP info (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86: amd-pmc: Fix S0i3 wakeup with alarmtimer (Krzysztof Pawlinski) [RHEL-222374]
+- rtc: interface: Add rtc_read_next_alarm() to read next expiring timer (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd: pmc: Add Thinkpad L14 Gen3 to quirk_s2idle_bug (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add quirk for MECHREVO Wujie 15X Pro (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add spurious_8042 to Xbox Ally (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add support for Van Gogh SoC (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd: pmc: Add Lenovo Legion Go 2 to pmc quirk list (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add Stellaris Slim Gen6 AMD to spurious 8042 quirks list (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add MECHREVO Yilong15Pro to spurious_8042 list (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd/pmc: Add TUXEDO IB Pro Gen10 AMD to spurious 8042 quirks list (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd: pmc: Drop SMU F/W match for Cezanne (Krzysztof Pawlinski) [RHEL-222374]
+- platform/x86/amd: pmc: Add Lenovo Yoga 6 13ALC6 to pmc quirk list (Krzysztof Pawlinski) [RHEL-222374]
+- perf test: Skip failing 'perf test aslr' test case (Michael Petlan) [RHEL-140211]
+- perf build: Fix compiler errors with old capstone (Michael Petlan) [RHEL-140211]
+- perf vendor events amd: Reintroduce deprecated Zen 5 core events (Michael Petlan) [RHEL-140211]
+- perf ui hists: Remove duplicated thread in popup_action (Michael Petlan) [RHEL-140211]
+- perf unwind-libdw: Fix unwinding of multi-threaded processes (Michael Petlan) [RHEL-140211]
+- perf annotate: Be robust to annotating without a thread (Michael Petlan) [RHEL-140211]
+- perf ui hists: Fix dso_filter reference leak and exit zoom cleanup (Michael Petlan) [RHEL-140211]
+- perf ui hists: In report UI ensure thread is set with reference counting (Michael Petlan) [RHEL-140211]
+- perf ui hists: Guard against NULL hist_entry in add_script_opt() (Michael Petlan) [RHEL-140211]
+- perf ui hists: Fix stack use-after-return in symbol_filter_str (Michael Petlan) [RHEL-140211]
+- perf ui hists: Fix NULL pointer array gap in add_script_opt() (Michael Petlan) [RHEL-140211]
+- perf disasm: Fix potential NULL pointer dereference and use-after-free in arch__find() (Michael Petlan) [RHEL-140211]
+- perf ui hists: Include limits.h for PATH_MAX definition (Michael Petlan) [RHEL-140211]
+- perf ui hists: Fix uninitialized stack memory free on pstack allocation failure (Michael Petlan) [RHEL-140211]
+- perf hists browser: Increase MAX_OPTIONS to prevent stack buffer overflow (Michael Petlan) [RHEL-140211]
+- perf sched: Free subcommand string after perf sched stats (Michael Petlan) [RHEL-140211]
+- perf sched: Fix memory leaks in perf sched stats report (Michael Petlan) [RHEL-140211]
+- perf sched: Add missing perf_session__delete() (Michael Petlan) [RHEL-140211]
+- perf bench bpf: Add missing .gitignore file (Michael Petlan) [RHEL-140211]
+- perf bpf: Fix up build failure due to change of btf_vlen() return type (Michael Petlan) [RHEL-140211]
+- perf dso: Set standard errno on decompression failure (Michael Petlan) [RHEL-140211]
+- perf bpf: Validate array presence before casting BPF prog info pointers (Michael Petlan) [RHEL-140211]
+- perf c2c: Fix hist entry and format list leaks in c2c_he_free() (Michael Petlan) [RHEL-140211]
+- perf c2c: Free format list entries when c2c_hists__init() fails (Michael Petlan) [RHEL-140211]
+- perf cs-etm: Bounds-check CPU in cs_etm__get_queue() (Michael Petlan) [RHEL-140211]
+- perf cs-etm: Require full global header in auxtrace_info size check (Michael Petlan) [RHEL-140211]
+- perf cs-etm: Validate num_cpu before metadata allocation (Michael Petlan) [RHEL-140211]
+- perf machine: Use snprintf() for guestmount path construction (Michael Petlan) [RHEL-140211]
+- perf machine: Propagate machine__init() error to callers (Michael Petlan) [RHEL-140211]
+- perf trace: Guard __probe_ip suppression with evsel__is_probe() (Michael Petlan) [RHEL-140211]
+- perf evsel: Add lazy-initialized probe type detection helpers (Michael Petlan) [RHEL-140211]
+- perf evsel: Add no-libtraceevent stubs for evsel__field() and evsel__common_field() (Michael Petlan) [RHEL-140211]
+- perf cs-etm: Reject CPU IDs that would overflow signed comparison (Michael Petlan) [RHEL-140211]
+- perf c2c: Free format list entries when releasing c2c hist entries (Michael Petlan) [RHEL-140211]
+- perf bpf: Bounds-check array offsets in bpil_offs_to_addr() (Michael Petlan) [RHEL-140211]
+- perf bpf: Reject oversized BPF metadata events that truncate header.size (Michael Petlan) [RHEL-140211]
+- perf bpf: Validate func_info_rec_size and sub_id in synthesize_bpf_prog_name() (Michael Petlan) [RHEL-140211]
+- perf sched: Replace (void*)1 sentinel with proper runtime allocation (Michael Petlan) [RHEL-140211]
+- perf hwmon: Fix fd check to accept fd 0 in hwmon_pmu__describe_items() (Michael Petlan) [RHEL-140211]
+- perf tools: Use snprintf() for root_dir path construction (Michael Petlan) [RHEL-140211]
+- perf dso: Set error code when open() fails on uncompressed fallback path (Michael Petlan) [RHEL-140211]
+- perf dso: Fix heap overflow in dso__get_filename() on decompressed path (Michael Petlan) [RHEL-140211]
+- perf symbols: Break infinite loop on zero-filled notes in sysfs__read_build_id() (Michael Petlan) [RHEL-140211]
+- perf symbols: Validate p_filesz before use in filename__read_build_id() (Michael Petlan) [RHEL-140211]
+- perf symbols: Fix bswap copy-paste error for 32-bit ELF p_filesz (Michael Petlan) [RHEL-140211]
+- perf tools: Document recent additions to the perf.data file header (Michael Petlan) [RHEL-140211]
+- perf trace: Fix noise and signed formatting of __probe_ip in bare dynamic probes (Michael Petlan) [RHEL-140211]
+- perf test: Add inject ASLR test (Michael Petlan) [RHEL-140211]
+- perf aslr: Strip sample registers (Michael Petlan) [RHEL-140211]
+- perf inject/aslr: Implement sample address remapping (Michael Petlan) [RHEL-140211]
+- perf inject/aslr: Add ASLR tool infrastructure and MMAP tracking (Michael Petlan) [RHEL-140211]
+- perf maps: Add maps__mutate_mapping (Michael Petlan) [RHEL-140211]
+- perf stat: Fix false NMI watchdog warning in aggregation modes (Michael Petlan) [RHEL-140211]
+- perf test: Compile named_threads workload with -O0 (Michael Petlan) [RHEL-140211]
+- perf test: Truncate printed test descriptions dynamically to avoid terminal wrapping (Michael Petlan) [RHEL-140211]
+- perf symbols: Add bounds checks to read_build_id() note iteration in minimal build (Michael Petlan) [RHEL-140211]
+- perf symbols: Add bounds checks to elf_read_build_id() note iteration (Michael Petlan) [RHEL-140211]
+- perf bpf: Fix metadata leak in perf_env__add_bpf_info() on duplicate insert (Michael Petlan) [RHEL-140211]
+- perf bpf: Fix map data leak in bpf_metadata_create() on alloc failure (Michael Petlan) [RHEL-140211]
+- perf bpf: Add NULL check for btf__type_by_id() in synthesize_bpf_prog_name() (Michael Petlan) [RHEL-140211]
+- tools lib api: Fix mount_overload() snprintf truncation and toupper range (Michael Petlan) [RHEL-140211]
+- tools lib api: Fix filename__write_int() writing uninitialized stack data (Michael Petlan) [RHEL-140211]
+- perf tools: Use snprintf() in dso__read_running_kernel_build_id() (Michael Petlan) [RHEL-140211]
+- perf hwmon: Guard label read against empty or failed reads (Michael Petlan) [RHEL-140211]
+- perf tools: Fix uninitialized pathname on uncompressed fallback in filename__decompress() (Michael Petlan) [RHEL-140211]
+- perf symbols: Bounds-check descsz in sysfs__read_build_id() GNU fallback (Michael Petlan) [RHEL-140211]
+- perf hwmon: Fix parse_hwmon_filename() strlcpy buffer overflow (Michael Petlan) [RHEL-140211]
+- perf hwmon: Use scnprintf() in hwmon_pmu__for_each_event() (Michael Petlan) [RHEL-140211]
+- perf hwmon: Fix off-by-one null termination on sysfs reads (Michael Petlan) [RHEL-140211]
+- perf tools: Fix thread__set_comm_from_proc() on empty comm file (Michael Petlan) [RHEL-140211]
+- perf intel-pt: Fix snprintf size tracking bug in insn decoder (Michael Petlan) [RHEL-140211]
+- perf tools: Use mkostemp() for O_CLOEXEC on temporary files (Michael Petlan) [RHEL-140211]
+- perf symbols: Bounds-check .gnu_debuglink section data (Michael Petlan) [RHEL-140211]
+- perf symbols: Fix signed overflow in sysfs__read_build_id() size check (Michael Petlan) [RHEL-140211]
+- tools lib api: Fix missing null termination in filename__read_int/ull() (Michael Petlan) [RHEL-140211]
+- perf pmu: Fix perf_pmu__parse_scale/unit() OOB access on empty sysfs file (Michael Petlan) [RHEL-140211]
+- perf pmu: Fix pmu_id() heap underwrite on empty identifier file (Michael Petlan) [RHEL-140211]
+- perf jitdump: Fix a build error with ASAN (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Move existing tests to coresight folder (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Speed up disassembly test (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Add all branch instructions to test (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Make disassembly test use kcore (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Remove unused Coresight workloads (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Speed up basic test (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Reduce snapshot size (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Skip if not root (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Remove duplicate branch tests (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Test decoding for concurrent threads test (Michael Petlan) [RHEL-140211]
+- perf test: Add named_threads workload (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Replace memcpy test with raw dump stress test (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Remove asm_pure_loop test (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Replace unroll loop thread with deterministic decode test (Michael Petlan) [RHEL-140211]
+- perf test: Add deterministic workload (Michael Petlan) [RHEL-140211]
+- perf test cs-etm: Test process attribution (Michael Petlan) [RHEL-140211]
+- perf test: Add a workload that forces context switches (Michael Petlan) [RHEL-140211]
+- perf test: Add workload-ctl option (Michael Petlan) [RHEL-140211]
+- perf cs-etm: Queue context packets for frontend (Michael Petlan) [RHEL-140211]
+- perf pmu: Use scnprintf in buffer offset calculations (Michael Petlan) [RHEL-140211]
+- perf tools: Fix the check for parameterized field in event term (Michael Petlan) [RHEL-140211]
+- perf s390: Fix TEXTREL in Python extension by compiling as PIC (Michael Petlan) [RHEL-140211]
+- perf build: Do not duplicate CFLAGS in Python extension builds (Michael Petlan) [RHEL-140211]
+- perf build: Respect V=1 for Python extension builds (Michael Petlan) [RHEL-140211]
+- perf riscv: fix register name strings (Michael Petlan) [RHEL-140211]
+- perf dwarf: Avoid redefinition warnings for REG_DWARFNUM_NAME (Michael Petlan) [RHEL-140211]
+- libperf: Document code simplification case for widening struct perf_cpu (Michael Petlan) [RHEL-140211]
+- perf tools: Use scnprintf() in build_id__snprintf() and hwmon read_events() (Michael Petlan) [RHEL-140211]
+- perf hists: Fix snprintf() in hists__scnprintf_title() UID filter path (Michael Petlan) [RHEL-140211]
+- perf bpf: Use scnprintf() in snprintf_hex() and synthesize_bpf_prog_name() (Michael Petlan) [RHEL-140211]
+- perf tools: Add O_CLOEXEC to open() calls in DSO and ELF code (Michael Petlan) [RHEL-140211]
+- perf sched: Fix idle-hist callchain display using wrong rb_first variant (Michael Petlan) [RHEL-140211]
+- perf sched: Bounds-check prio before test_bit() in timehist (Michael Petlan) [RHEL-140211]
+- perf tools: NULL bitmap pointers after bitmap_free() (Michael Petlan) [RHEL-140211]
+- perf tools: Use perf_env__get_cpu_topology() in machine__resolve() (Michael Petlan) [RHEL-140211]
+- perf tools: Use scnprintf() in cpu_map__snprint() to prevent overflow (Michael Petlan) [RHEL-140211]
+- perf tools: Fix get_max_num() size_t underflow on empty sysfs file (Michael Petlan) [RHEL-140211]
+- libperf: Document struct perf_cpu int16_t ABI limitation (Michael Petlan) [RHEL-140211]
+- perf sched: Free callchain nodes in idle thread cleanup (Michael Petlan) [RHEL-140211]
+- perf tools: Fix int16_t truncation of max_cpu_num in set_max_cpu_num() (Michael Petlan) [RHEL-140211]
+- perf timechart: Fix cpu2y() OOB read on untrusted CPU index (Michael Petlan) [RHEL-140211]
+- perf c2c: Fix use-after-free in he__get_c2c_hists() error path (Michael Petlan) [RHEL-140211]
+- perf stat: Introduce perf_env__get_cpu_topology() to guard NULL env->cpu (Michael Petlan) [RHEL-140211]
+- perf mmap: Fix NULL deref in aio cleanup on alloc failure (Michael Petlan) [RHEL-140211]
+- perf sched: Replace BUG_ON and add NULL checks in replay event helpers (Michael Petlan) [RHEL-140211]
+- perf sched: Use thread__put() in free_idle_threads() (Michael Petlan) [RHEL-140211]
+- perf sched: Fix thread reference leak in idle hist processing (Michael Petlan) [RHEL-140211]
+- perf sched: Use is_idle_sample() for idle thread runtime cast guard (Michael Petlan) [RHEL-140211]
+- perf sched: Clean up idle_threads entry on init failure (Michael Petlan) [RHEL-140211]
+- perf c2c: Bounds-check CPU IDs in setup_nodes() topology loop (Michael Petlan) [RHEL-140211]
+- perf c2c: Bounds-check CPU and node IDs before bitmap and array access (Michael Petlan) [RHEL-140211]
+- perf stat: Bounds-check CPU index in topology aggregation callbacks (Michael Petlan) [RHEL-140211]
+- perf mmap: Guard cpu__get_node() return in aio_bind() (Michael Petlan) [RHEL-140211]
+- perf sched: Fix register_pid() overflow, strcpy, and BUG_ON (Michael Petlan) [RHEL-140211]
+- perf sched: Cap max_cpu at MAX_CPUS in timehist sample processing (Michael Petlan) [RHEL-140211]
+- perf sched: Fix thread reference leaks in timehist_get_thread() (Michael Petlan) [RHEL-140211]
+- perf tools: Add bounds check to cpu__get_node() (Michael Petlan) [RHEL-140211]
+- perf tools: Guard remaining test_bit calls from OOB sample CPU (Michael Petlan) [RHEL-140211]
+- perf sched: Fix comp_cpus heap overflow with cross-machine recordings (Michael Petlan) [RHEL-140211]
+- perf sched: Fix NULL dereference in latency_runtime_event (Michael Petlan) [RHEL-140211]
+- perf sched: Fix thread reference leak in latency_switch_event (Michael Petlan) [RHEL-140211]
+- perf tools: Guard test_bit from out-of-bounds sample CPU (Michael Petlan) [RHEL-140211]
+- perf lock contention: Enable end-timestamp accounting for cgroup aggregation (Michael Petlan) [RHEL-140211]
+- perf pmu: Recognize 'default_core' as a core PMU and document matching (Michael Petlan) [RHEL-140211]
+- perf data ctf: replace libbabeltrace with babeltrace2-ctf-writer (Michael Petlan) [RHEL-140211]
+- perf lock contention: Allow 'mmap_lock' in -L/--lock-filter (Michael Petlan) [RHEL-140211]
+- perf test: Remove /usr/bin/cc dependency from Intel PT shell test (Michael Petlan) [RHEL-140211]
+- perf test: Add shell test to validate JUnit XML reporting output (Michael Petlan) [RHEL-140211]
+- perf test: Add -j/--junit option for JUnit XML test reports (Michael Petlan) [RHEL-140211]
+- perf test: Split monolithic 'util' test suite into sub-tests (Michael Petlan) [RHEL-140211]
+- perf test: Skip shebang and SPDX comments in shell test descriptions (Michael Petlan) [RHEL-140211]
+- perf test: Fix subtest status alignment for multi-digit indexes (Michael Petlan) [RHEL-140211]
+- perf test: Add summary reporting (Michael Petlan) [RHEL-140211]
+- perf test: Show snippet failure output for verbose=1 (Michael Petlan) [RHEL-140211]
+- perf test: Refactor parallel poll loop to drain all pipes simultaneously (Michael Petlan) [RHEL-140211]
+- tools subcmd: Robust fallback and existence checks for process reaping (Michael Petlan) [RHEL-140211]
+- perf test pmu-events: A sub-test per metric table (Michael Petlan) [RHEL-140211]
+- perf test: Support dynamic test suites with setup callback and private data (Michael Petlan) [RHEL-140211]
+- perf test: Drain pipe after child finishes to avoid losing output (Michael Petlan) [RHEL-140211]
+- perf pmu-events: Add API to get metric table name and iterate tables (Michael Petlan) [RHEL-140211]
+- perf jevents.py: Make generated C code more kernel style (Michael Petlan) [RHEL-140211]
+- perf tpebs: Fix concurrent stop races and PID reuse hazards in tpebs_stop (Michael Petlan) [RHEL-140211]
+- perf annotate: Fix crashes on empty annotate windows (Michael Petlan) [RHEL-140211]
+- perf tools: Ensure event leader stays at head of evlist after sorting (Michael Petlan) [RHEL-140211]
+- perf: Fix off-by-one stack buffer overflow in kallsyms__parse() (Michael Petlan) [RHEL-140211]
+- perf stat: Use aggr_nr scaling for Intel uncore miss latency metrics (Michael Petlan) [RHEL-140211]
+- perf stat: Add aggr_nr metric parser support (Michael Petlan) [RHEL-140211]
+- tools build: Fix feature checks to touch target files on success (Michael Petlan) [RHEL-140211]
+- perf build: Compile BPF skeletons with -mcpu=v3 (Michael Petlan) [RHEL-140211]
+- perf lock: Fix non-atomic max/time and min_time updates in contention_data (Michael Petlan) [RHEL-140211]
+- perf bench: Add --write-size option to sched pipe (Michael Petlan) [RHEL-140211]
+- perf symbol: Lazily compute idle (Michael Petlan) [RHEL-140211]
+- perf symbol: Add setters for bitfields sharing a byte to avoid concurrent update issues (Michael Petlan) [RHEL-140211]
+- perf env: Add helper to lazily compute the os_release (Michael Petlan) [RHEL-140211]
+- perf env: Add mutex to protect lazy environment initialization (Michael Petlan) [RHEL-140211]
+- perf env: Remove unused perf_env__raw_arch (Michael Petlan) [RHEL-140211]
+- perf env: Refactor perf_env__arch_strerrno (Michael Petlan) [RHEL-140211]
+- perf lock-contention: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf c2c: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf header: In print_pmu_caps use perf_env e_machine (Michael Petlan) [RHEL-140211]
+- perf arch common: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf sort: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf sample-raw: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf machine: Use perf_env e_machine rather than arch (Michael Petlan) [RHEL-140211]
+- perf symbol: Avoid use of machine__is (Michael Petlan) [RHEL-140211]
+- perf print_insn: Use e_machine for fallback IP length check (Michael Petlan) [RHEL-140211]
+- perf capstone: Determine architecture from e_machine (Michael Petlan) [RHEL-140211]
+- perf env, dso, thread: Add _endian variants for e_machine helpers (Michael Petlan) [RHEL-140211]
+- perf tests topology: Switch env->arch use to env->e_machine (Michael Petlan) [RHEL-140211]
+- perf env: Add perf_env__e_machine helper and use in perf_env__arch (Michael Petlan) [RHEL-140211]
+- perf test: Add file offset diagnostic test for corrupted perf.data (Michael Petlan) [RHEL-140211]
+- perf sched: Replace BUG_ON on invalid CPU with graceful skip (Michael Petlan) [RHEL-140211]
+- perf timechart: Fix cat_backtrace() use-after-free on corrupted callchain (Michael Petlan) [RHEL-140211]
+- perf tools: Include file offset and event type name in skip messages (Michael Petlan) [RHEL-140211]
+- perf timechart: Include file offset in CPU bounds check messages (Michael Petlan) [RHEL-140211]
+- perf sched: Include file offset in event skip messages (Michael Petlan) [RHEL-140211]
+- perf session: Include file offset in event skip/stop messages (Michael Petlan) [RHEL-140211]
+- perf sample: Add file_offset field to struct perf_sample (Michael Petlan) [RHEL-140211]
+- perf annotate: Fix missing branch counter column in TUI mode (Michael Petlan) [RHEL-140211]
+- perf script: Fix missing '+' indicator when branch counter reaches upper limit (Michael Petlan) [RHEL-140211]
+- perf arm-spe: Don't warn about the discard bit if it doesn't exist (Michael Petlan) [RHEL-140211]
+- perf util: Fix perf_exe() buffer write past end (Michael Petlan) [RHEL-140211]
+- perf jevents: Add IOMMU metrics for Intel (Michael Petlan) [RHEL-140211]
+- perf jevents: Add IOMMU metrics for AMD (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update sierraforest events from 1.15 to 1.17 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update sapphirerapids events from 1.36 to 1.39 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update pantherlake events from 1.04 to 1.05 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update meteorlake events from 1.20 to 1.21 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update lunarlake events from 1.21 to 1.22 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update graniterapids events from 1.17 to 1.18 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update grandridge events from 1.11 to 1.12 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update emeraldrapids events from 1.21 to 1.23 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update clearwaterforest events and metrics from 1.00 to 1.02 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update arrowlake events from 1.16 to 1.17 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update alderlaken events from 1.37 to 1.39 (Michael Petlan) [RHEL-140211]
+- perf vendor events intel: Update alderlake events from 1.37 to 1.39 (Michael Petlan) [RHEL-140211]
+- perf test: Make leafloop workload immune to compiler options (Michael Petlan) [RHEL-140211]
+- perf test: Add truncated perf.data robustness test (Michael Petlan) [RHEL-140211]
+- perf session: Snapshot event->header.size in process_user_event() (Michael Petlan) [RHEL-140211]
+- perf kwork: Bounds check work->cpu before indexing cpus_runtime[] (Michael Petlan) [RHEL-140211]
+- perf session: Bound nr_cpus_avail and validate sample CPU (Michael Petlan) [RHEL-140211]
+- perf session: Check for decompression buffer size overflow (Michael Petlan) [RHEL-140211]
+- perf tools: Harden compressed event processing (Michael Petlan) [RHEL-140211]
+- perf session: Add byte-swap handler for PERF_RECORD_COMPRESSED2 (Michael Petlan) [RHEL-140211]
+- perf header: Sanity check HEADER_EVENT_DESC attr.size before swap (Michael Petlan) [RHEL-140211]
+- perf header: Validate feature section size and add read path bounds checking (Michael Petlan) [RHEL-140211]
+- perf header: Validate f_attr.ids section before use in perf_session__read_header() (Michael Petlan) [RHEL-140211]
+- perf header: Propagate feature section processing errors (Michael Petlan) [RHEL-140211]
+- perf tools: Bounds check perf_event_attr fields against attr.size before printing (Michael Petlan) [RHEL-140211]
+- perf header: Validate null-termination in PERF_RECORD_EVENT_UPDATE string fields (Michael Petlan) [RHEL-140211]
+- perf session: Add byte-swap and bounds check for PERF_RECORD_BPF_METADATA events (Michael Petlan) [RHEL-140211]
+- perf auxtrace: Harden auxtrace_error event handling (Michael Petlan) [RHEL-140211]
+- perf cpumap: Reject RANGE_CPUS with start_cpu > end_cpu (Michael Petlan) [RHEL-140211]
+- perf header: Byte-swap build ID event pid and bounds check section entries (Michael Petlan) [RHEL-140211]
+- perf session: Validate nr fields against event size on both swap and common paths (Michael Petlan) [RHEL-140211]
+- perf session: Validate HEADER_ATTR attr.size before swapping (Michael Petlan) [RHEL-140211]
+- perf session: Use bounded copy for PERF_RECORD_TIME_CONV (Michael Petlan) [RHEL-140211]
+- perf session: Add validated swap infrastructure with null-termination checks (Michael Petlan) [RHEL-140211]
+- perf session: Fix swap_sample_id_all() crash on crafted events (Michael Petlan) [RHEL-140211]
+- perf session: Fix PERF_RECORD_READ swap and dump for variable-length events (Michael Petlan) [RHEL-140211]
+- perf zstd: Fix multi-iteration decompression and error handling (Michael Petlan) [RHEL-140211]
+- perf zstd: Fix compression error path in zstd_compress_stream_to_records() (Michael Petlan) [RHEL-140211]
+- perf tools: Fix event_contains() macro to verify full field extent (Michael Petlan) [RHEL-140211]
+- perf session: Bounds-check one_mmap event pointer in peek_event (Michael Petlan) [RHEL-140211]
+- perf session: Add minimum event size and alignment validation (Michael Petlan) [RHEL-140211]
+- perf tests hwmon_pmu: Use PRIu64 + (uint64_t) cast for a __u64 field to work more widely (Michael Petlan) [RHEL-140211]
+- perf script: Sort includes and add missed explicit dependencies (Michael Petlan) [RHEL-140211]
+- perf tests: Sort includes and add missed explicit dependencies (Michael Petlan) [RHEL-140211]
+- perf arch x86: Sort includes and add missed explicit dependencies (Michael Petlan) [RHEL-140211]
+- perf arch arm: Sort includes and add missed explicit dependencies (Michael Petlan) [RHEL-140211]
+- perf: Apply is_ignored_kernel_symbol() filter in ELF loading path for kernel DSOs (Michael Petlan) [RHEL-140211]
+- perf: Extract is_ignored_kernel_symbol() for kernel mapping symbol filtering (Michael Petlan) [RHEL-140211]
+- perf auxtrace: Add kernel-doc comment to auxtrace_record__init() function (Michael Petlan) [RHEL-140211]
+- powerpc tools perf: Initialize error code in auxtrace_record_init function (Michael Petlan) [RHEL-140211]
+- perf test: Add stat metrics --for-each-cgroup test (Michael Petlan) [RHEL-140211]
+- perf stat: Propagate supported flag to follower cgroup BPF events (Michael Petlan) [RHEL-140211]
+- perf riscv: Fix discarded const qualifier in _get_field() (Michael Petlan) [RHEL-140211]
+- perf tests: Add test for stat delay option with duration_time (Michael Petlan) [RHEL-140211]
+- perf tool_pmu: Make tool PMU events respect enable/disable (Michael Petlan) [RHEL-140211]
+- perf doc: Document new IBS capabilities in man page (Michael Petlan) [RHEL-140211]
+- perf amd ibs: Decode Streaming-store flag in IBS OP raw dump (Michael Petlan) [RHEL-140211]
+- perf amd ibs: Decode Remote-Socket flag in IBS OP raw dump (Michael Petlan) [RHEL-140211]
+- perf amd ibs: Make Fetch status bits dependent on PhyAddrValid for newer platforms (Michael Petlan) [RHEL-140211]
+- perf amd ibs: Suppress bogus TlbRefillLat and DCPhysAd on Zen4+ (Michael Petlan) [RHEL-140211]
+- perf test ibs: Skip privilege test on Zen6 and newer platforms (Michael Petlan) [RHEL-140211]
+- perf tool ibs: Sync AMD IBS header file (Michael Petlan) [RHEL-140211]
+- perf test amd ibs: Fix incorrect kernel version check (Michael Petlan) [RHEL-140211]
+- perf kwork: Fix memory management of kwork_work (Michael Petlan) [RHEL-140211]
+- perf kwork: Fix address sanitizer issues (Michael Petlan) [RHEL-140211]
+- perf build: Unconditionally set up libunwind feature build flags (Michael Petlan) [RHEL-140211]
+- perf stat: Make metric only column line up with header (Michael Petlan) [RHEL-140211]
+- perf build: Fix fsmount.o build (Michael Petlan) [RHEL-140211]
+- perf build: Prefix SCRIPTS with output directory to fix continuous rebuilds (Michael Petlan) [RHEL-140211]
+- perf arch x86 tests: Add test for topdown event sorting (Michael Petlan) [RHEL-140211]
+- perf tests: Add test for uncore event sorting (Michael Petlan) [RHEL-140211]
+- perf build: Convert llvm-config shell queries to simply expanded variables (Michael Petlan) [RHEL-140211]
+- perf pmu-events: Convert recursive shell assignments and macros to Make built-ins (Michael Petlan) [RHEL-140211]
+- perf pmu-events: Split big_c_string storage into standalone compilation unit (Michael Petlan) [RHEL-140211]
+- perf build: Remove redundant libbpf feature check for static builds (Michael Petlan) [RHEL-140211]
+- perf build: Move libsymbol dependency out of prepare step (Michael Petlan) [RHEL-140211]
+- perf build: Pre-generate BPF skeleton tooling during umbrella prepare phase (Michael Petlan) [RHEL-140211]
+- perf build: Encapsulate vmlinux.h and bpftool in bpf_skel.mak (Michael Petlan) [RHEL-140211]
+- perf build: Move BPF skeleton generation out of Makefile.perf (Michael Petlan) [RHEL-140211]
+- perf build: Remove empty archheaders target (Michael Petlan) [RHEL-140211]
+- perf build: Decouple pmu-events from prepare umbrella target (Michael Petlan) [RHEL-140211]
+- perf trace beauty: Make beauty generated C code standalone .o files (Michael Petlan) [RHEL-140211]
+- perf lock contention: Fix SIGCHLD vs pause() race in __cmd_contention() (Michael Petlan) [RHEL-140211]
+- perf sched stats: Fix SIGCHLD vs pause() race in schedstat_live() (Michael Petlan) [RHEL-140211]
+- perf sched stats: Fix SIGCHLD vs pause() race in schedstat_record() (Michael Petlan) [RHEL-140211]
+- perf evsel: Add bounds checking to trace point raw data accessors (Michael Petlan) [RHEL-140211]
+- perf timechart: Bounds check CPU (Michael Petlan) [RHEL-140211]
+- perf sched: Bounds check CPU in sched switch events (Michael Petlan) [RHEL-140211]
+- perf kmem: Add bounds checks to tracepoint read values (Michael Petlan) [RHEL-140211]
+- perf synthetic-events: Bound check when synthesizing mmap2 and build_id events (Michael Petlan) [RHEL-140211]
+- perf kmem: Fix memory leaks on error path and when skipping (Michael Petlan) [RHEL-140211]
+- perf timechart: Fix memory leaks (Michael Petlan) [RHEL-140211]
+- perf lock: Avoid segv if event is missing a callchain (Michael Petlan) [RHEL-140211]
+- perf lock: Constify trace_lock_handler variables (Michael Petlan) [RHEL-140211]
+- perf evsel: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf s390-sample-raw: Don't pass evsel or its PMU with sample (Michael Petlan) [RHEL-140211]
+- perf script: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf evlist: Try to avoid computing evsel from sample (Michael Petlan) [RHEL-140211]
+- perf trace: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf timechart: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf sched: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf kwork: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf kmem: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf inject: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf annotate: Don't pass evsel to add_sample (Michael Petlan) [RHEL-140211]
+- perf report: Directly use sample->evsel to avoid computing from sample->id (Michael Petlan) [RHEL-140211]
+- perf hist: Remove evsel from struct hist_entry_iter (Michael Petlan) [RHEL-140211]
+- perf db-export: Remove evsel from struct export_sample (Michael Petlan) [RHEL-140211]
+- perf hist: Remove evsel parameter from inc samples functions (Michael Petlan) [RHEL-140211]
+- perf lock: Only pass sample to handlers (Michael Petlan) [RHEL-140211]
+- perf callchain: Don't pass evsel and sample (Michael Petlan) [RHEL-140211]
+- perf trace: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf evsel: Refactor evsel tracepoint sample accessors perf_sample (Michael Petlan) [RHEL-140211]
+- perf kvm: Don't pass evsel with sample (Michael Petlan) [RHEL-140211]
+- perf tool: Remove evsel from tool APIs that pass the sample (Michael Petlan) [RHEL-140211]
+- perf header: Validate bitmap size before allocating in do_read_bitmap() (Michael Petlan) [RHEL-140211]
+- perf sample: Fix documentation typo (Michael Petlan) [RHEL-140211]
+- perf cgroup: Update metric leader in evlist__expand_cgroup (Michael Petlan) [RHEL-140211]
+- perf sample: Add evsel to struct perf_sample (Michael Petlan) [RHEL-140211]
+- perf sample: Make sure perf_sample__init/exit are used (Michael Petlan) [RHEL-140211]
+- perf sample: Document struct perf_sample (Michael Petlan) [RHEL-140211]
+- perf inject: Fix itrace branch stack synthesis (Michael Petlan) [RHEL-140211]
+- perf event: Fix size of synthesized sample with branch stacks (Michael Petlan) [RHEL-140211]
+- perf clang-format: Add a perf clang-format that overrides some kernel behaviors (Michael Petlan) [RHEL-140211]
+- perf riscv: Add SDT argument parsing for RISC-V (Michael Petlan) [RHEL-140211]
+- perf trace: Introduce --show-cpu option to display cpu id (Michael Petlan) [RHEL-140211]
+- perf trace beauty fcntl: Fix build with older kernel headers (Michael Petlan) [RHEL-140211]
+- perf unwind-libunwind: Add RISC-V libunwind support (Michael Petlan) [RHEL-140211]
+- perf unwind-libunwind: Remove libunwind-local (Michael Petlan) [RHEL-140211]
+- perf unwind-libunwind: Move flush/finish access out of local (Michael Petlan) [RHEL-140211]
+- perf unwind-libunwind: Make libunwind register reading cross platform (Michael Petlan) [RHEL-140211]
+- perf build: Be more programmatic when setting up libunwind variables (Michael Petlan) [RHEL-140211]
+- tools build: Deduplicate test-libunwind for different architectures (Michael Petlan) [RHEL-140211]
+- perf unwind: Refactor get_entries to allow dynamic libdw/libunwind selection (Michael Petlan) [RHEL-140211]
+- perf record: Refactor ARM64 leaf caller setup out of arch (Michael Petlan) [RHEL-140211]
+- perf tool: Fix missing schedstat delegates and dont_split_sample_group in delegate_tool (Michael Petlan) [RHEL-140211]
+- perf test: Fix "trace summary" test for musl-based systems (Michael Petlan) [RHEL-140211]
+- perf test: Fix sys_enter_openat event test for musl (Michael Petlan) [RHEL-140211]
+- perf test: Fix nanosleep check in the ftrace test (Michael Petlan) [RHEL-140211]
+- perf build: Remove NO_GTK2 build test (Michael Petlan) [RHEL-140211]
+- perf build: Add -fms-extensions for GEN_VMLINUX_H=1 (Michael Petlan) [RHEL-140211]
+- perf build: Update error message for BUILD_NONDISTRO=1 (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Print remaining IMPDEF event numbers (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Decode Arm N1 IMPDEF events (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Turn event name mappings into an array (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Store MIDR in arm_spe_pkt (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Handle missing CPU IDs (Michael Petlan) [RHEL-140211]
+- perf arm_spe: Make a function to get the MIDR (Michael Petlan) [RHEL-140211]
+- powerpc/perf: Use strstarts() to simplify is_thread_imc_pmu() (Michael Petlan) [RHEL-140211]
+- powerpc/perf: fix preempt count underflow in fsl_emb_pmu_del (Michael Petlan) [RHEL-140211]
+- powerpc/perf: Use cpumask_intersects api for checking disable path (Michael Petlan) [RHEL-140211]
+- perf/core: Fix group leader use-after-free after sibling detach (Michael Petlan) [RHEL-140211]
+- perf: Reject exited events as group leaders (Michael Petlan) [RHEL-140211]
+- perf/x86/amd/brs: Fix kernel address leakage (Michael Petlan) [RHEL-140211]
+- perf/x86/amd/lbr: Fix kernel address leakage (Michael Petlan) [RHEL-140211]
+- perf/x86/amd/core: Avoid enabling BRS from the SVM reload path (Michael Petlan) [RHEL-140211]
+- perf/core: Detach event groups during remove_on_exec (Michael Petlan) [RHEL-140211]
+- perf: Fix addr_filter_ranges lifetime (Michael Petlan) [RHEL-140211]
+- perf/x86/amd/uncore: Use Node ID to identify DF and UMC domains (Michael Petlan) [RHEL-140211]
+- perf: Reveal PMU type in fdinfo (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Implement global init callback for GNR uncore (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Fix uncore_die_to_cpu() for offline dies (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Move die_to_cpu() to uncore.c (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Defer ADL global PMON enable to enable_box() (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Fix PCI device refcount leak in UPI discovery (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Guard against invalid box control address (Michael Petlan) [RHEL-140211]
+- perf/x86/intel/uncore: Fix discovery unit lookup for multi-die systems (Michael Petlan) [RHEL-140211]
+- perf/x86/amd/core: Always use the NMI latency mitigation (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor CWF (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor SRF (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor NVL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints for PTL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor ARL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor LNL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor MTL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor ADL (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints for DMR (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor SPR (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Update event constraints and cache_extra_regsfor ICX (Michael Petlan) [RHEL-140211]
+- perf/x86/intel: Consolidate MSR_IA32_PERF_CFG_C tracking (Michael Petlan) [RHEL-140211]
+- perf libdw: Fix outer-frame name resolution and spurious "(inlined)" tag (Michael Petlan) [RHEL-140205]
+- perf sched: Add missing mmap2 handler in timehist (Michael Petlan) [RHEL-140205]
+- perf sched stats: Fix segmentation faults, memory leaks, and stale pointers in diff mode (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Update Zen 6 core events (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Update Zen 5 core events (Michael Petlan) [RHEL-140205]
+- perf pmu: Recognize default_core as a core PMU in more places (Michael Petlan) [RHEL-140205]
+- perf metricgroup: Avoid scanning unnecessary PMUs for identifier match (Michael Petlan) [RHEL-140205]
+- perf data convert json: Fix trace_seq memory leak in process_sample_event() (Michael Petlan) [RHEL-140205]
+- perf data convert json: Fix addr_location leak on time-filtered samples (Michael Petlan) [RHEL-140205]
+- perf pmu: Skip test on Arm64 when #slots is zero (Michael Petlan) [RHEL-140205]
+- perf pmu-events AMD: Switch l2_itlb_misses to bp_l1_tlb_miss_l2_tlb_miss.all (Michael Petlan) [RHEL-140205]
+- perf callchain: Handle multiple address spaces (Michael Petlan) [RHEL-140205]
+- perf debuginfo: Fix libdw API contract violations (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Fix libdw API contract violations (Michael Petlan) [RHEL-140205]
+- perf probe-finder: Fix libdw API contract violations (Michael Petlan) [RHEL-140205]
+- perf libdw: Fix libdw API contract violations and memory leaks (Michael Petlan) [RHEL-140205]
+- perf libdw: Support DWARF line 0 in inline list (Michael Petlan) [RHEL-140205]
+- perf libdw: Fix callchain parent update in ORDER_CALLER mode (Michael Petlan) [RHEL-140205]
+- perf srcline: Introduce inline_node__clear_frames() (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Fix libdw API contract violations (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Fix libdw segmentation fault in cu_walk_functions_at (Michael Petlan) [RHEL-140205]
+- perf trace: Update beautifier script for clone flags (Michael Petlan) [RHEL-140205]
+- perf trace: Add beautifier script for fsmount flags (Michael Petlan) [RHEL-140205]
+- perf build: Add make check-headers target (Michael Petlan) [RHEL-140205]
+- perf loongarch: Fix build failure with CONFIG_LIBDW_DWARF_UNWIND (Michael Petlan) [RHEL-140205]
+- perf annotate: Use jump__delete when freeing LoongArch jumps (Michael Petlan) [RHEL-140205]
+- perf test: Fixes for check branch stack sampling (Michael Petlan) [RHEL-140205]
+- perf test: Fix inet_pton probe failure and unroll call graph (Michael Petlan) [RHEL-140205]
+- perf build: fix "argument list too long" in second location (Michael Petlan) [RHEL-140205]
+- perf header: Add sanity checks to HEADER_BPF_BTF processing (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_BPF_PROG_INFO (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_PMU_CAPS (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_HYBRID_TOPOLOGY (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_CACHE (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_GROUP_DESC (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_PMU_MAPPINGS (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_MEM_TOPOLOGY (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_NUMA_TOPOLOGY (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_CPU_TOPOLOGY (Michael Petlan) [RHEL-140205]
+- perf header: Sanity check HEADER_NRCPUS and HEADER_CPU_DOMAIN_INFO (Michael Petlan) [RHEL-140205]
+- perf header: Bump up the max number of command line args allowed (Michael Petlan) [RHEL-140205]
+- perf header: Validate nr_domains when reading HEADER_CPU_DOMAIN_INFO (Michael Petlan) [RHEL-140205]
+- perf arm_spe: Improve SIMD flags setting (Michael Petlan) [RHEL-140205]
+- perf report: Update document for SIMD flags (Michael Petlan) [RHEL-140205]
+- perf sort: Sort disabled and full predicated flags (Michael Petlan) [RHEL-140205]
+- perf sort: Support sort ASE and SME (Michael Petlan) [RHEL-140205]
+- perf test: Make perf trace BTF general tests exclusive (Michael Petlan) [RHEL-140205]
+- perf data: Clean up use_stdio and structures (Michael Petlan) [RHEL-140205]
+- perf tools: Replace basename() calls with perf_basename() (Michael Petlan) [RHEL-140205]
+- perf tools: Use calloc() where applicable (Michael Petlan) [RHEL-140205]
+- perf header: Do validation of perf.data HEADER_CPU_DOMAIN_INFO (Michael Petlan) [RHEL-140205]
+- perf header: Use a max number of command line args (Michael Petlan) [RHEL-140205]
+- perf bench: Constify tables (Michael Petlan) [RHEL-140205]
+- perf tools: Make more global variables static (Michael Petlan) [RHEL-140205]
+- perf util: Kill die() prototype, dead for a long time (Michael Petlan) [RHEL-140205]
+- perf symbols: Make variable receiving result strrchr() const (Michael Petlan) [RHEL-140205]
+- perf maps: Fix copy_from that can break sorted by name order (Michael Petlan) [RHEL-140205]
+- perf maps: Fix fixup_overlap_and_insert that can break sorted by name order (Michael Petlan) [RHEL-140205]
+- perf maps: Move getting debug_file to verbose path (Michael Petlan) [RHEL-140205]
+- perf addr2line: Remove global variable addr2line_timeout_ms (Michael Petlan) [RHEL-140205]
+- perf config: Make symbol_conf::addr2line_disable_warn configurable (Michael Petlan) [RHEL-140205]
+- perf config: Rename symbol_conf::disable_add2line_warn (Michael Petlan) [RHEL-140205]
+- perf test: Skip sched stats test for !root (Michael Petlan) [RHEL-140205]
+- perf tools: Save cln_size header (Michael Petlan) [RHEL-140205]
+- perf tests sched stats: Write output to temp file (Michael Petlan) [RHEL-140205]
+- perf sched: Avoid crash for unexpected perf sched stats report (Michael Petlan) [RHEL-140205]
+- perf tests kwork: Add basic kwork coverage tests (Michael Petlan) [RHEL-140205]
+- perf data convert ctf: Pipe mode improvements (Michael Petlan) [RHEL-140205]
+- perf evsel: Make unknown event names more unique (Michael Petlan) [RHEL-140205]
+- perf ordered-events: Event processing consistency with the regular reader (Michael Petlan) [RHEL-140205]
+- perf header: Refactor pipe mode end marker handling (Michael Petlan) [RHEL-140205]
+- perf session: Extra logging for failed to process events (Michael Petlan) [RHEL-140205]
+- perf header: Properly warn/print when libtraceevent/libbpf support is missing (Michael Petlan) [RHEL-140205]
+- perf header: Add utility to convert feature number to a string (Michael Petlan) [RHEL-140205]
+- perf clockid: Add missing include (Michael Petlan) [RHEL-140205]
+- perf trace: Fix potential u64 underflow in duration calculation (Michael Petlan) [RHEL-140205]
+- perf header: Validate build_id filename length to prevent buffer overflow (Michael Petlan) [RHEL-140205]
+- perf metricgroup: Refine error logs (Michael Petlan) [RHEL-140205]
+- perf expr: Add '\n' in literal parse errors (Michael Petlan) [RHEL-140205]
+- perf expr: Return -EINVAL for syntax error in expr__find_ids() (Michael Petlan) [RHEL-140205]
+- perf test: Skip perf data type profiling tests for s390 (Michael Petlan) [RHEL-140205]
+- perf tools: prevent null dsos from being added (Michael Petlan) [RHEL-140205]
+- perf test: Fix ratio_to_prev event parsing test (Michael Petlan) [RHEL-140205]
+- perf tools: Fix module symbol resolution for non-zero .text sh_addr (Michael Petlan) [RHEL-140205]
+- perf trace: Skip unnecessary synthesis for summary-only mode (Michael Petlan) [RHEL-140205]
+- perf test: Fix perf stat --bpf-counters on hybrid machines (Michael Petlan) [RHEL-140205]
+- perf tests: Write test files to tmpdir (Michael Petlan) [RHEL-140205]
+- libperf cpumap: Make index and nr types unsigned (Michael Petlan) [RHEL-140205]
+- perf beauty: Move copy of fadvise.h from tools/include/ to tools/perf/trace/beauty/include/ (Michael Petlan) [RHEL-140205]
+- perf beauty: Move tools/include/uapi/drm to tools/perf/trace/beauty/include/uapi (Michael Petlan) [RHEL-140205]
+- perf build: Add -funsigned-char to default CFLAGS (Michael Petlan) [RHEL-140205]
+- perf tools: Add --pmu-filter option for filtering PMUs (Michael Petlan) [RHEL-140205]
+- perf report: Add comm_nodigit sort key (Michael Petlan) [RHEL-140205]
+- perf stat: Fix opt->value type for parse_cache_level (Michael Petlan) [RHEL-140205]
+- perf lock: Fix option value type in parse_max_stack (Michael Petlan) [RHEL-140205]
+- perf record: Add support for arch_sdt_arg_parse_op() on s390 (Michael Petlan) [RHEL-140205]
+- perf evlist: Improve default event for s390 (Michael Petlan) [RHEL-140205]
+- perf callchain: Refactor callchain option parsing (Michael Petlan) [RHEL-140205]
+- perf evsel: Constify option arguments to config functions (Michael Petlan) [RHEL-140205]
+- perf target: Constify simple check functions (Michael Petlan) [RHEL-140205]
+- perf evsel: Improve falling back from cycles (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Collect all variable locations for insn tracking (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Use DWARF location ranges to preserve reg state (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Invalidate caller-saved regs for all calls (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Add invalidate_reg_state() helper for x86 (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Handle global variable access with const register (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Collect global variables without name (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Handle array types in die_get_member_type (Michael Petlan) [RHEL-140205]
+- perf annotate-data: Improve type comparison from different scopes (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Skip check_variable for variable lookup (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Preserve typedefs in match_var_offset (Michael Petlan) [RHEL-140205]
+- perf dwarf-aux: Add die_get_pointer_type to get pointer types (Michael Petlan) [RHEL-140205]
+- perf symbol: Add RISCV case in get_plt_sizes (Michael Petlan) [RHEL-140205]
+- perf tools: Remove duplicate include of stat.h (Michael Petlan) [RHEL-140205]
+- perf tools: Remove duplicate include of debug.h (Michael Petlan) [RHEL-140205]
+- perf: tools: cs-etm: Enhance raw Coresight trace debug display (Michael Petlan) [RHEL-140205]
+- perf: tools: cs-etm: Fix print issue for Coresight debug in ETE/TRBE trace (Michael Petlan) [RHEL-140205]
+- perf record: Remove unused cpu-set-sched.h (Michael Petlan) [RHEL-140205]
+- perf bpf_map: Remove unused code (Michael Petlan) [RHEL-140205]
+- perf tool: Constify the command and option arrays (Michael Petlan) [RHEL-140205]
+- perf dump-insn: Remove dump-insn.c (Michael Petlan) [RHEL-140205]
+- perf symbol: Reduce scope of elf__needs_adjust_symbols (Michael Petlan) [RHEL-140205]
+- perf branch: Avoid incrementing NULL (Michael Petlan) [RHEL-140205]
+- perf disasm: Fix potential use-after-free on fileloc (Michael Petlan) [RHEL-140205]
+- perf tools: Add layout support for --symfs option (Michael Petlan) [RHEL-140205]
+- perf annotate: Specify llvm features="+all" for aarch64 (Michael Petlan) [RHEL-140205]
+- perf test type profiling: Remote typedef on struct (Michael Petlan) [RHEL-140205]
+- perf pmu: Replace starts_with with strstarts (Michael Petlan) [RHEL-140205]
+- perf trace: Avoid an ERR_PTR in syscall_stats (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update sierraforest events from 1.13 to 1.15 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update sapphirerapids events from 1.35 to 1.36 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update pantherlake events from 1.02 to 1.04 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update meteorlake events from 1.18 to 1.20 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update lunarlake events from 1.19 to 1.21 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update graniterapids events from 1.16 to 1.17 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update grandridge events from 1.10 to 1.11 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update emeraldrapid events from 1.20 to 1.21 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update arrowlake events from 1.14 to 1.16 (Michael Petlan) [RHEL-140205]
+- perf vendor events intel: Update alderlake events from 1.35 to 1.37 (Michael Petlan) [RHEL-140205]
+- perf bench: Add -t/--threads option to perf bench mem mmap (Michael Petlan) [RHEL-140205]
+- perf trace: Handle task exit in BPF syscall summary (Michael Petlan) [RHEL-140205]
+- perf trace: Fix IS_ERR() vs NULL check bug (Michael Petlan) [RHEL-140205]
+- perf script: Fix brcntr output with --xed (Michael Petlan) [RHEL-140205]
+- perf kvm stat: Fix relative paths for including headers (Michael Petlan) [RHEL-140205]
+- perf parse-events: Fix big-endian 'overwrite' by writing correct union member (Michael Petlan) [RHEL-140205]
+- tools headers: Skip arm64 cputype.h check (Michael Petlan) [RHEL-140205]
+- tools arch amd ibs: Sync ibs.h with the kernel sources (Michael Petlan) [RHEL-140205]
+- x86/ibs: Fix typo in dc_l2tlb_miss comment (Michael Petlan) [RHEL-140205]
+- x86/platform/amd: Add standard header guards to <asm/amd/ibs.h> (Michael Petlan) [RHEL-140205]
+- perf synthetic-events: Fix stale build ID in module MMAP2 records (Michael Petlan) [RHEL-140205]
+- perf annotate loongarch: Fix off-by-one bug in outside check (Michael Petlan) [RHEL-140205]
+- perf ftrace: Fix hashmap__new() error checking (Michael Petlan) [RHEL-140205]
+- perf annotate: Fix hashmap__new() error checking (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Sync coresight-pmu.h header with the kernel sources (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Finish removal of ETM_OPT_* (Michael Petlan) [RHEL-140205]
+- perf disasm: Fix off-by-one bug in outside check (Michael Petlan) [RHEL-140205]
+- perf beauty: Update the linux/perf_event.h copy with the kernel sources (Michael Petlan) [RHEL-140205]
+- perf beauty: Update the arch/x86/include/asm/irq_vectors.h copy with the kernel sources (Michael Petlan) [RHEL-140205]
+- tools build: Fix rust cross compilation (Michael Petlan) [RHEL-140205]
+- perf build: Prevent "argument list too long" error (Michael Petlan) [RHEL-140205]
+- tools build: Make in-target rule robust against too long argument error (Michael Petlan) [RHEL-140205]
+- perf test script: Add python script testing support (Michael Petlan) [RHEL-140205]
+- perf test script: Add perl script testing support (Michael Petlan) [RHEL-140205]
+- perf script: Allow the generated script to be a path (Michael Petlan) [RHEL-140205]
+- perf test: perf data --to-ctf testing (Michael Petlan) [RHEL-140205]
+- perf test: Test pipe mode with data conversion --to-json (Michael Petlan) [RHEL-140205]
+- perf json: Pipe mode --to-ctf support (Michael Petlan) [RHEL-140205]
+- perf json: Pipe mode --to-json support (Michael Petlan) [RHEL-140205]
+- perf check: Add libbabeltrace to the listed features (Michael Petlan) [RHEL-140205]
+- perf build: Allow passing extra Clang flags via EXTRA_BPF_FLAGS (Michael Petlan) [RHEL-140205]
+- perf test data_type_profiling.sh: Skip just the Rust tests if code_with_type workload is missing (Michael Petlan) [RHEL-140205]
+- tools build: Fix feature test for rust compiler (Michael Petlan) [RHEL-140205]
+- perf libunwind: Fix calls to thread__e_machine() (Michael Petlan) [RHEL-140205]
+- perf stat: Add no-affinity flag (Michael Petlan) [RHEL-140205]
+- perf evlist: Reduce affinity use and move into iterator, fix no affinity (Michael Petlan) [RHEL-140205]
+- perf evlist: Missing TPEBS close in evlist__close() (Michael Petlan) [RHEL-140205]
+- perf evlist: Special map propagation for tool events that read on 1 CPU (Michael Petlan) [RHEL-140205]
+- tools build: Emit dependencies file for test-rust.bin (Michael Petlan) [RHEL-140205]
+- tools build: Make test-rust.bin be removed by the 'clean' target (Michael Petlan) [RHEL-140205]
+- perf test: Fix test case perftool-testsuite_report for s390 (Michael Petlan) [RHEL-140205]
+- perf test code_with_type.sh: Skip test if rust wasn't available at build time (Michael Petlan) [RHEL-140205]
+- perf tests workload: Formatting for code_with_type.rs (Michael Petlan) [RHEL-140205]
+- tools build: Fix rust feature detection (Michael Petlan) [RHEL-140205]
+- perf tests: Test annotate with data type profiling and C (Michael Petlan) [RHEL-140205]
+- perf tests: Test annotate with data type profiling and rust (Michael Petlan) [RHEL-140205]
+- perf test workload: Add code_with_type test workload (Michael Petlan) [RHEL-140205]
+- tools build: Add a feature test for rust compiler (Michael Petlan) [RHEL-140205]
+- perf test record.sh: Fix shellcheck warning (Michael Petlan) [RHEL-140205]
+- perf build: Reduce pmu-events related copying and mkdirs (Michael Petlan) [RHEL-140205]
+- perf lock contention: fix segfault in `lock contention -b/--use-bpf` (Michael Petlan) [RHEL-140205]
+- perf sort: Replace static cacheline size with sysconf cacheline size (Michael Petlan) [RHEL-140205]
+- perf test: Fix test case Leader sampling on s390 (Michael Petlan) [RHEL-140205]
+- perf annotate: Fix register usage in data type profiling (Michael Petlan) [RHEL-140205]
+- perf stat: Ensure metrics are displayed even with failed events (Michael Petlan) [RHEL-140205]
+- perf test addr2line_inlines: Ensure inline information shows on LBR leaves (Michael Petlan) [RHEL-140205]
+- perf callchain lbr: Make the leaf IP that of the sample (Michael Petlan) [RHEL-140205]
+- perf kvm stat: Fix build error (Michael Petlan) [RHEL-140205]
+- perf regs: Remove __weak attributive arch_sdt_arg_parse_op() function (Michael Petlan) [RHEL-140205]
+- perf regs: Remove __weak attributive arch__xxx_reg_mask() functions (Michael Petlan) [RHEL-140205]
+- perf arch: Update arch headers to use relative UAPI paths (Michael Petlan) [RHEL-140205]
+- perf regs: Fix abort for "-I" or "--user-regs" options (Michael Petlan) [RHEL-140205]
+- perf tests: build-test coverage for NO_JEVENTS=1 (Michael Petlan) [RHEL-140205]
+- perf tests: Additional 'perf stat' tests (Michael Petlan) [RHEL-140205]
+- perf thread: Don't require machine to compute the e_machine (Michael Petlan) [RHEL-140205]
+- perf header: Add e_machine/e_flags to the header (Michael Petlan) [RHEL-140205]
+- perf session: Add e_flags to the e_machine helper (Michael Petlan) [RHEL-140205]
+- perf kvm: Wire up e_machine (Michael Petlan) [RHEL-140205]
+- perf kvm stat: Remove use of the arch directory (Michael Petlan) [RHEL-140205]
+- perf test kvm: Add stat live testing (Michael Petlan) [RHEL-140205]
+- perf capstone: Support for dlopen-ing libcapstone.so (Michael Petlan) [RHEL-140205]
+- perf build: Remove NO_LIBCAP that controls nothing (Michael Petlan) [RHEL-140205]
+- perf jevents: Validate that all names given an Event (Michael Petlan) [RHEL-140205]
+- perf jevents: Add cycles breakdown metric for arm64/AMD/Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add mesh bandwidth saturation metric for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add upi_bw metric for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add local/remote miss latency metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add C-State metrics from the PCU PMU for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add dir breakdown metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add local/remote "mem" breakdown metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add mem_bw metric for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add Miss Level Parallelism (MLP) metric for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add FPU metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add context switch metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add ILP metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add load store breakdown metrics ldst for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add L2 metrics for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add ports metric group giving utilization on Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add software prefetch (swpf) metric group for Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add br metric group for branch statistics on Intel (Michael Petlan) [RHEL-140205]
+- perf jevents: Add tsx metric group for Intel models (Michael Petlan) [RHEL-140205]
+- perf jevents: Mark metrics with experimental events as experimental (Michael Petlan) [RHEL-140205]
+- perf jevents: Add smi metric group for Intel models (Michael Petlan) [RHEL-140205]
+- perf jevents: Add CheckPmu to see if a PMU is in loaded JSON events (Michael Petlan) [RHEL-140205]
+- perf jevents: Add idle metric for Intel models (Michael Petlan) [RHEL-140205]
+- perf jevents: Add RAPL metrics for all Intel models (Michael Petlan) [RHEL-140205]
+- perf jevents: Add context switch metrics for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add load store breakdown metrics ldst for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add uncore l3 metric group for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add dtlb metric group for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add itlb metric group for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add br metric group for branch statistics on AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add upc metric for uops per cycle for AMD (Michael Petlan) [RHEL-140205]
+- perf jevents: Add idle metric for AMD zen models (Michael Petlan) [RHEL-140205]
+- perf jevents: Add RAPL event metric for AMD zen models (Michael Petlan) [RHEL-140205]
+- perf jevents: Add load event JSON to verify and allow fallbacks (Michael Petlan) [RHEL-140205]
+- perf jevents: Build support for generating metrics from python (Michael Petlan) [RHEL-140205]
+- perf: Remove redundant kernel.h include (Michael Petlan) [RHEL-140205]
+- tools: Fix bitfield dependency failure (Michael Petlan) [RHEL-140205]
+- perf sched stats: Fixes in man page (Michael Petlan) [RHEL-140205]
+- perf sched stats: Define macro for SEP_LEN (Michael Petlan) [RHEL-140205]
+- perf sched stats: correct spelling of function name (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add NULL check for cd_map (Michael Petlan) [RHEL-140205]
+- perf util: Fix NULL check in cpumask_to_cpulist() (Michael Petlan) [RHEL-140205]
+- perf header: Replace hardcoded max cpus by MAX_NR_CPUS (Michael Petlan) [RHEL-140205]
+- perf strlist: Remove dont_dupstr logic, used only once (Michael Petlan) [RHEL-140205]
+- perf jitdump: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf bpf-event: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf demangle-java: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf time-utils: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf units: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf trace-event: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf tp_pmu: Address const-correctness errors in recent glibcs (Michael Petlan) [RHEL-140205]
+- perf hwmon_pmu: Constify the variables returning bsearch() on const tables (Michael Petlan) [RHEL-140205]
+- perf session: Don't write to memory pointed to a const pointer (Michael Petlan) [RHEL-140205]
+- perf strlist: Don't write to const memory (Michael Petlan) [RHEL-140205]
+- perf metricgroup: Constify variables storing the result of strchr() on const tables (Michael Petlan) [RHEL-140205]
+- perf disasm: Constify variables storing the result of bsearch() on const tables (Michael Petlan) [RHEL-140205]
+- perf thread-stack: Switch thread_stack__init() to use e_machine (Michael Petlan) [RHEL-140205]
+- perf callchain: Switch callchain_param_setup from an arch to an e_machine (Michael Petlan) [RHEL-140205]
+- perf script: Fix script_fetch_insn for more than just x86 (Michael Petlan) [RHEL-140205]
+- perf session: Print all machines in session dump (Michael Petlan) [RHEL-140205]
+- perf unwind-libdw: Wire up e_flags for CSKY (Michael Petlan) [RHEL-140205]
+- perf perf_regs: Accurately compute register names for CSKY (Michael Petlan) [RHEL-140205]
+- perf thread: Add optional e_flags output argument to thread__e_machine (Michael Petlan) [RHEL-140205]
+- perf dso: Factor out e_machine reading for use in thread (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Fix Zen 5 MAB allocation events (Michael Petlan) [RHEL-140205]
+- perf annotate: Fix BUILD_NONDISTRO=1 missing args->ms conversions to pointer (Michael Petlan) [RHEL-140205]
+- tools headers: Don't check arm64's unistd.h (Michael Petlan) [RHEL-140205]
+- Revert "perf tools: Fix arm64 build by generating unistd_64.h" (Michael Petlan) [RHEL-140205]
+- perf regs: Refactor use of arch__sample_reg_masks() to perf_reg_name() (Michael Petlan) [RHEL-140205]
+- perf annotate: Fix memcpy size in arch__grow_instructions() (Michael Petlan) [RHEL-140205]
+- perf tests sched: Avoid error in cleanup on loaded machines (Michael Petlan) [RHEL-140205]
+- perf inject: With --convert-callchain ignore the dummy event for dwarf stacks (Michael Petlan) [RHEL-140205]
+- perf disasm: Minor layout tweaks for 'struct arch' (Michael Petlan) [RHEL-140205]
+- perf disasm: Refactor arch__find and initialization of arch structs (Michael Petlan) [RHEL-140205]
+- perf map_symbol: Switch from holding maps to holding thread (Michael Petlan) [RHEL-140205]
+- perf disasm: Refactor ins__is_call/jump to avoid exposing arch ins_ops (Michael Petlan) [RHEL-140205]
+- perf disasm: Don't include C files from the arch directory (Michael Petlan) [RHEL-140205]
+- perf disasm: Rework the string arch__is to use the ELF machine (Michael Petlan) [RHEL-140205]
+- perf disasm: Constify use of 'struct ins' (Michael Petlan) [RHEL-140205]
+- perf disasm: Constify use of 'struct ins_op' (Michael Petlan) [RHEL-140205]
+- perf disasm: Constify use of 'struct arch' (Michael Petlan) [RHEL-140205]
+- perf maps: Fix reference count leak in maps__find_ams() (Michael Petlan) [RHEL-140205]
+- perf annotate: Fix args leak of map_symbol (Michael Petlan) [RHEL-140205]
+- perf header: Fix memory leaks in process_cpu_domain_info() (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add details in man page (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add basic 'perf sched stats' test (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add support for diff subcommand (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add support for live mode (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add support for report subcommand (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add schedstat v17 support (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add schedstat v16 support (Michael Petlan) [RHEL-140205]
+- perf sched stats: Add record and rawdump support (Michael Petlan) [RHEL-140205]
+- perf header: Support CPU DOMAIN relation info (Michael Petlan) [RHEL-140205]
+- tools/lib: Add list_is_first() (Michael Petlan) [RHEL-140205]
+- perf list: Don't write to const memory (Michael Petlan) [RHEL-140205]
+- perf list: Signal changing const memory is ok (Michael Petlan) [RHEL-140205]
+- perf trace: Deal with compiler const checks (Michael Petlan) [RHEL-140205]
+- perf tests sw-clock: Mark the volatile tmp variable as __maybe_unused (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Test sparse CPU maps (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Fix decoding for sparse CPU maps (Michael Petlan) [RHEL-140205]
+- perf test: Add missing newlines in debug messages (Michael Petlan) [RHEL-140205]
+- perf tools: Always uniquify event names (Michael Petlan) [RHEL-140205]
+- perf c2c: Update documentation for adding memory event table (Michael Petlan) [RHEL-140205]
+- perf mem: Simplify Arm SPE event config (Michael Petlan) [RHEL-140205]
+- perf tools: Get debug info of DSO properly (Michael Petlan) [RHEL-140205]
+- perf test: Add DWARF callchain conversion test (Michael Petlan) [RHEL-140205]
+- perf inject: Add --convert-callchain option (Michael Petlan) [RHEL-140205]
+- perf machine: Add inline information to frame pointer and LBR callchains (Michael Petlan) [RHEL-140205]
+- perf unwind-libdw: Don't discard loaded ELF/DWARF after every unwind (Michael Petlan) [RHEL-140205]
+- perf build: Remove NO_LIBDW_DWARF_UNWIND option (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add MIPS perf to DWARF register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add S390 perf to DWARF register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add RISC-V perf to DWARF register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add powerpc perf to DWARF register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add loongarch perf to DWARF register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add csky perf to dwarf register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add ARM perf to dwarf register number mapping functions (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add basic get_dwarf_regnum() for most architectures (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add get_dwarf_regnum_for_perf_regnum() and use for x86 unwinding (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Clean up x86 dwarf_regnum code (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Remove get_arch_regnum() (Michael Petlan) [RHEL-140205]
+- perf dwarf-regs: Add util/dwarf-regs-arch for consistency with perf-regs (Michael Petlan) [RHEL-140205]
+- perf perf_regs: Switch from arch string to int e_machine (Michael Petlan) [RHEL-140205]
+- perf powerpc: Unify the skip-callchain-idx libdw with that for addr2line (Michael Petlan) [RHEL-140205]
+- perf unwind-libdw: Correct argument to dwfl_attach_state() (Michael Petlan) [RHEL-140205]
+- perf libdw_addr2line: Fixes to srcline memory allocation (Michael Petlan) [RHEL-140205]
+- perf unwind-libdw: Fix a cross-arch unwinding bug (Michael Petlan) [RHEL-140205]
+- perf record: Disable inline frames when marking build IDs (Michael Petlan) [RHEL-140205]
+- perf dso: Extra validity checks that e_machine is valid (Michael Petlan) [RHEL-140205]
+- perf symbol-elf: Fix leak of ELF files with GNU debugdata (Michael Petlan) [RHEL-140205]
+- perf arm-spe: Don't hard code config attribute (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Don't hard code config attribute when configuring the event (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Don't use hard coded config bits when setting up TRCCONFIGR (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Don't use hard coded config bits when setting up ETMCR (Michael Petlan) [RHEL-140205]
+- perf cs-etm: Make a helper to find the Coresight evsel (Michael Petlan) [RHEL-140205]
+- perf tests: Test evsel__set_config_if_unset() and config change tracking (Michael Petlan) [RHEL-140205]
+- perf parse-events: Always track user config changes (Michael Petlan) [RHEL-140205]
+- perf evsel: Add a helper to get the value of a config field (Michael Petlan) [RHEL-140205]
+- perf evsel: apply evsel__set_config_if_unset() to all config fields (Michael Petlan) [RHEL-140205]
+- perf parse-events: Track all user changed config bits (Michael Petlan) [RHEL-140205]
+- perf evsel: Support sparse fields in evsel__set_config_if_unset() (Michael Petlan) [RHEL-140205]
+- perf evsel: Move evsel__* functions to evsel.c (Michael Petlan) [RHEL-140205]
+- perf evsel: Refactor evsel__set_config_if_unset() arguments (Michael Petlan) [RHEL-140205]
+- perf parse-events: Refactor get_config_terms() to remove macros (Michael Petlan) [RHEL-140205]
+- perf tools: Switch printf("...%%s", strerror(errno)) to printf("...%%m") (Michael Petlan) [RHEL-140205]
+- perf help: Move common_cmds into builtin-help (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Add Zen 6 metrics (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Add Zen 6 uncore events (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Add Zen 6 core events (Michael Petlan) [RHEL-140205]
+- perf vendor events amd: Add Zen 6 mapping (Michael Petlan) [RHEL-140205]
+- perf vendor events riscv: Add CVA6 JSON file (Michael Petlan) [RHEL-140205]
+- perf addr_location: Update outdated comment (Michael Petlan) [RHEL-140205]
+- perf tools: Dump callchain context marker names (Michael Petlan) [RHEL-140205]
+- perf vendor events arm64: Remove uncountable events (Michael Petlan) [RHEL-140205]
+- perf Documentation: Correct branch stack sampling call-stack option (Michael Petlan) [RHEL-140205]
+- perf test: Do not skip when some metric-group tests succeed (Michael Petlan) [RHEL-140205]
+- perf test: Do not skip when some metrics tests succeeded (Michael Petlan) [RHEL-140205]
+- perf test: Use shelldir to refer perf source location (Michael Petlan) [RHEL-140205]
+- perf test: Skip dlfilter test for build failures (Michael Petlan) [RHEL-140205]
+- perf inject: Keep build-ID data if no option is used (Michael Petlan) [RHEL-140205]
+- perf util: Remove SHA-1 code (Michael Petlan) [RHEL-140205]
+- perf genelf: Switch from SHA-1 to BLAKE2s for build ID generation (Michael Petlan) [RHEL-140205]
+- perf util: Add BLAKE2s support (Michael Petlan) [RHEL-140205]
+- libsubcmd: Fix null intersection case in exclude_cmds() (Michael Petlan) [RHEL-140205]
+- perf test: Test addr2line unwinding works with inline functions (Michael Petlan) [RHEL-140205]
+- perf callchain: Fix srcline printing with inlines (Michael Petlan) [RHEL-140205]
+- perf srcline: Add configuration support for the addr2line style (Michael Petlan) [RHEL-140205]
+- perf addr2line.c: Rename a2l_style to cmd_a2l_style (Michael Petlan) [RHEL-140205]
+- perf addr2line: Add a libdw implementation (Michael Petlan) [RHEL-140205]
+- perf test workload: Add inlineloop test workload (Michael Petlan) [RHEL-140205]
+- perf unwind-libdw: Fix invalid reference counts (Michael Petlan) [RHEL-140205]
+- perf test subcmd help: Add exclude disjoint subcmd names (Michael Petlan) [RHEL-140205]
+- perf stat display: Make %%f precision consistent (Michael Petlan) [RHEL-140205]
+- perf build: Raise minimum shellcheck version to 0.7.2 (Michael Petlan) [RHEL-140205]
+- perf test stat tests: Fix for virtualized machines (Michael Petlan) [RHEL-140205]
+- perf data: Fix coding style (Michael Petlan) [RHEL-140205]
+- perf data: Allow filtering conversion by time range (Michael Petlan) [RHEL-140205]
+- perf build: Skip nondistro build test if libbfd is old (Michael Petlan) [RHEL-140205]
+- perf build: Feature test for libbfd thread safety API (Michael Petlan) [RHEL-140205]
+- perf build: Remove unused libbfd-buildid feature test (Michael Petlan) [RHEL-140205]
+- perf build: Do all non-distro feature checks in one go (Michael Petlan) [RHEL-140205]
+- perf build: Remove FEATURE_CHECK_LDFLAGS-disassembler-{four-args,init-styled} setting (Michael Petlan) [RHEL-140205]
+- perf test java symbol: Additional libperf-jvmti.so path check (Michael Petlan) [RHEL-140205]
+- perf symbol: Remove Rust symbol workarounds (Michael Petlan) [RHEL-140205]
+- perf report: Update sort key state from -F option (Michael Petlan) [RHEL-140205]
+- perf report: Fix histogram entry collapsing for -F option (Michael Petlan) [RHEL-140205]
+- perf report: Enable data-type profiling with -F option too (Michael Petlan) [RHEL-140205]
+- perf record: Split --data-mmap option (Michael Petlan) [RHEL-140205]
+- perf vendor power9 nest metrics: Correct unit from MB to MiB (Michael Petlan) [RHEL-140205]
+- perf trace: Don't change const char strings (Michael Petlan) [RHEL-140205]
+- perf tools: Use const for variables receiving str{str,r?chr}() returns (Michael Petlan) [RHEL-140205]
+- perf diff: Constify strchr() return variables (Michael Petlan) [RHEL-140205]
+- perf list: Remove unused 'sep' variable (Michael Petlan) [RHEL-140205]
+- powerpc/hv-gpci: fix preempt count leak in sysfs show paths (Michael Petlan) [RHEL-140205]
+- powerpc/perf: Update check for PERF_SAMPLE_DATA_SRC marked events (Michael Petlan) [RHEL-140205]
+- perf/core: Fix deadlock in perf_mmap() failure path (Michael Petlan) [RHEL-140205]
+- perf/events: Replace READ_ONCE() with standard pgtable accessors (Michael Petlan) [RHEL-140205]
+- perf/x86/msr: Make SMI and PPERF on by default (Michael Petlan) [RHEL-140205]
+- perf/x86/intel/p4: Fix unused variable warning in p4_pmu_init() (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Advertise remote socket capability (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Enable streaming store filter (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Enable RIP bit63 hardware filtering (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Enable fetch latency filtering (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Support IBS_{FETCH|OP}_CTL2[Dis] to eliminate RMW race (Michael Petlan) [RHEL-140205]
+- x86/msr: Rename 'wrmsrl()' to 'wrmsrq()' [perf] (Michael Petlan) [RHEL-140205]
+- x86/msr: Rename 'rdmsrl()' to 'rdmsrq()' [perf] (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Add new MSRs and CPUID bits definitions (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Define macro for ldlat mask and shift (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Avoid race between event add and NMI (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Preserve PhyAddrVal bit when clearing PhyAddr MSR (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Limit ldlat->l3missonly dependency to Zen5 (Michael Petlan) [RHEL-140205]
+- perf/amd/ibs: Account interrupt for discarded samples (Michael Petlan) [RHEL-140205]
+- perf/core: Simplify __detach_global_ctx_data() (Michael Petlan) [RHEL-140205]
+- perf/core: Try to allocate task_ctx_data quickly (Michael Petlan) [RHEL-140205]
+- perf/core: Pass GFP flags to attach_task_ctx_data() (Michael Petlan) [RHEL-140205]
+- perf/x86: Fix potential bad container_of in intel_pmu_hw_config (Michael Petlan) [RHEL-140205]
+- perf/x86/intel: Only check GP counters for PEBS constraints validation (Michael Petlan) [RHEL-140205]
+- perf/x86/intel: Add missing branch counters constraint apply (Michael Petlan) [RHEL-140205]
+- perf: Make sure to use pmu_ctx->pmu for groups (Michael Petlan) [RHEL-140205]
+- x86/perf: Make sure to program the counter value for stopped events on migration (Michael Petlan) [RHEL-140205]
+- perf: Fix __perf_event_overflow() vs perf_remove_from_context() race (Michael Petlan) [RHEL-140205]
+- perf/core: Fix refcount bug and potential UAF in perf_mmap (Michael Petlan) [RHEL-140205]
+- perf/x86/intel/uncore: Add per-scheduler IMC CAS count events (Michael Petlan) [RHEL-140205]
+- perf/core: Fix invalid wait context in ctx_sched_in() (Michael Petlan) [RHEL-140205]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses [perf] (Michael Petlan) [RHEL-140205]
+- Convert more 'alloc_obj' cases to default GFP_KERNEL arguments [perf] (Michael Petlan) [RHEL-140205]
+- Convert 'alloc_flex' family to use the new default GFP_KERNEL argument [perf] (Michael Petlan) [RHEL-140205]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument [perf] (Michael Petlan) [RHEL-140205]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [perf] (Michael Petlan) [RHEL-140205]
+- perf/core: Fix slow perf_event_task_exit() with LBR callstacks (Michael Petlan) [RHEL-140205]
+- perf/core: Speed up kexec shutdown by avoiding unnecessary cross CPU calls (Michael Petlan) [RHEL-140205]
+- uprobes: use kmap_local_page() for temporary page mappings (Michael Petlan) [RHEL-140205]
+- perf/x86/uncore: clean up const mismatch (Michael Petlan) [RHEL-140205]
+- perf/x86/cstate: Add Airmont NP (Michael Petlan) [RHEL-140205]
+- perf/x86/intel: Add Airmont NP (Michael Petlan) [RHEL-140205]
+- perf/x86/msr: Add Airmont NP (Michael Petlan) [RHEL-140205]
+- perf tools: Flush remaining samples w/o deferred callchains (Michael Petlan) [RHEL-140205]
+- perf tools: Merge deferred user callchains (Michael Petlan) [RHEL-140205]
+- perf script: Display PERF_RECORD_CALLCHAIN_DEFERRED (Michael Petlan) [RHEL-140205]
+- perf record: Add --call-graph fp,defer option for deferred callchains (Michael Petlan) [RHEL-140205]
+- perf tools: Minimal DEFERRED_CALLCHAIN support (Michael Petlan) [RHEL-140205]
+- tools headers UAPI: Sync linux/perf_event.h for deferred callchains (Michael Petlan) [RHEL-140205]
+- scsi: fnic: Initialize the NVMe local port info before registering (Linmao Li) [RHEL-256796]
+- scsi: fnic: Fix built-in NVMe/FC build (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Fix invalid comparison for error (Roman Demidov) [RHEL-256796]
+- scsi: fnic: Use GFP_ATOMIC for VLAN alloc under spinlock (Linkai Gong) [RHEL-256796]
+- scsi: fnic: Bump up version number (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Expose NVMe transport state in debugfs (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Track NVMe transport statistics (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Abort timed-out NVMe LS requests (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Send NVMe LS requests through FDLS (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Handle NVMe LS frames in FDLS (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Route completions and resets by initiator role (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Add the NVMe/FC transport path (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Add FDLS role handling for NVMe initiators (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Advertise NVMe initiator service parameters (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Decode firmware role configuration (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Use fnic_num for non-SCSI identifiers (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Make debug logging protocol independent (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Make fnic_queuecommand() easier to analyze (Bart Van Assche) [RHEL-256796]
+- scsi: fnic: Bump up version number (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Refactor in_remove flag and call to fnic_fcpio_reset() (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Rename fnic_scsi_fcpio_reset() (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Do not use GFP_ZERO for mempools (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Use mempool for receive frames (Karan Tilak Kumar) [RHEL-256796]
+- scsi: fnic: Switch to use %%ptSp (Andy Shevchenko) [RHEL-256796]
+- scsi: fnic: Self-assignment of intr_time_type has no effect (Qiang Liu) [RHEL-256796]
+- scsi: fnic: Remove a useless struct mempool forward declaration (Christoph Hellwig) [RHEL-256796]
+- redhat: Remove unused CONFIG_CRYPTO_VMAC config switches (Thomas Huth) [RHEL-183988]
+- crypto: vmac - remove unused VMAC algorithm (Thomas Huth) [RHEL-183988]
+- redhat: Add an alias for the removed cifs_arc4.ko module (Thomas Huth) [RHEL-246913]
+- smb: Use arc4 library instead of duplicate arc4 code (Thomas Huth) [RHEL-246913]
+- redhat: Disable the CRYPTO_LIB_AESCFB config switch (Thomas Huth) [RHEL-220457]
+
+* Tue Oct 13 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-276.el10]
+- wifi: iwlwifi: mld: validate sta_mask before ffs() in BA session handlers (Izabela Bakollari) [RHEL-232017] {CVE-2026-64255}
+- wifi: mac80211: defer link RX stats percpu free to RCU (Izabela Bakollari) [RHEL-237708] {CVE-2026-68409}
+- net: qrtr: restrict socket creation to the initial network namespace (Izabela Bakollari) [RHEL-240247] {CVE-2026-68294}
+- wifi: ath9k: hif_usb: don't dereference hif_dev after re-arming firmware request (Izabela Bakollari) [RHEL-241000] {CVE-2026-68363}
+- kabi: enable kabi checks (Čestmír Kalina) [RHEL-245490]
+- Bluetooth: mgmt: hold reference for hci_conn in mgmt_pending_cmds (CKI Backport Bot) [RHEL-236848] {CVE-2026-68391}
+- Bluetooth: mgmt: fix locking in unpair_device/disconnect_sync (CKI Backport Bot) [RHEL-236848] {CVE-2026-68391}
+- Bluetooth: hci_sync: extend conn_hash lookup critical sections (CKI Backport Bot) [RHEL-236848] {CVE-2026-68391}
+- Bluetooth: hci_sync: hold hdev->lock for hci_conn_params lookups (CKI Backport Bot) [RHEL-236837] {CVE-2026-68390}
+- Bluetooth: RFCOMM: Fix session UAF in set_termios (CKI Backport Bot) [RHEL-241109] {CVE-2026-68188}
+- dm-integrity: don't increment hash_offset twice (CKI Backport Bot) [RHEL-257775] {CVE-2026-72099}
+- keys: Pin request_key_auth payload in instantiate paths (Bruno Meneguele) [RHEL-225492] {CVE-2026-63823}
+- crypto: af_alg - Cap AEAD AD length to 0x80000000 (Pablo Alessandro Santos Hugen) [RHEL-259059] {CVE-2026-52972}
+- perf: Reject exited events as group leaders (Anubhav Shelat) [RHEL-258805] {CVE-2026-74753}
+- perf/core: Detach event groups during remove_on_exec (Anubhav Shelat) [RHEL-250494] {CVE-2026-64556}
+- mm/hugetlb: fix list corruption in allocate_file_region_entries() (Rafael Aquini) [RHEL-254483] {CVE-2026-74518}
+- futex: Prevent rcuwait use-after-free during requeue PI (Waiman Long) [RHEL-263472] {CVE-2026-90003}
+- futex: Fix might_sleep() warning in futex_pivot_pending() (Waiman Long) [RHEL-263472]
+- futex: Fix race on the initial mm->futex.phash.ref allocation (Waiman Long) [RHEL-263472] {CVE-2026-80775}
+- futex/pi: Reject cross-mm private futex owners (Waiman Long) [RHEL-263472] {CVE-2026-80778}
+- futex: Avoid private hash use-after-free on final put (Waiman Long) [RHEL-263472] {CVE-2026-80758}
+- futex: Fix race in futex_pivot_pending() during private hash resize (Waiman Long) [RHEL-263472] {CVE-2026-80776}
+- futex: Prevent robust futex exit race some more (Waiman Long) [RHEL-263472] {CVE-2026-74658}
+- futex: Move futex related mm_struct data into a struct (Waiman Long) [RHEL-263472]
+- futex: Make futex_mm_init() void (Waiman Long) [RHEL-263472]
+- futex: Move futex task related data into a struct (Waiman Long) [RHEL-263472]
+- nvme-tcp: fix host memory disclosure on R2T for a read command (CKI Backport Bot) [RHEL-263408] {CVE-2026-89481}
+- nvme-tcp: reject a read that transferred too few bytes (CKI Backport Bot) [RHEL-263340] {CVE-2026-89480}
+- x86/microcode/intel: Disable loading of 0x1000423 microcode on Granite Rapids X (Waiman Long) [RHEL-261015]
+- ext4: fix e4b bitmap inconsistency reports (Lukas Herbolt) [RHEL-252191] {CVE-2026-45942}
+- drm/xe/pt: Reset current_op in xe_pt_update_ops_init() (CKI Backport Bot) [RHEL-236546] {CVE-2026-68264}
+- bonding: only set speed/duplex to unknown, if getting speed failed (CKI Backport Bot) [RHEL-179065]
+- fhandle: fix UAF due to unlocked ->mnt_ns read in may_decode_fh() (Abhi Das) [RHEL-231390] {CVE-2026-53341}
+- fs: kill MNT_ONRB (Abhi Das) [RHEL-231390] {CVE-2026-53341}
+- Reapply "mm/page_alloc: Fix try_alloc_pages" (Luiz Capitulino) [RHEL-257371]
+- net: mana: Fix TOCTOU double-fetch of hwc_msg_id from DMA buffer (Filippo Storniolo) [RHEL-230994] {CVE-2026-64034}
+- drm/amdgpu: reject mapping a reserved doorbell to a new queue (Karol Herbst) [RHEL-236612] {CVE-2026-68103}
+- drm/xe: Hold a dma-buf reference for imported BOs (CKI Backport Bot) [RHEL-236303] {CVE-2026-68266}
+- drm/amdkfd: fix 32-bit overflow in CWSR total size calculation (CKI Backport Bot) [RHEL-237834] {CVE-2026-68257}
+- drm/amdgpu: Fix context pstate override handling (CKI Backport Bot) [RHEL-236713] {CVE-2026-68273}
+- drm/xe/rtp: Add RING_FORCE_TO_NONPRIV_DENY to OA whitelists (CKI Backport Bot) [RHEL-237961] {CVE-2026-68267}
+- nvme-pci: fix dma_vecs leak on p2p memory (CKI Backport Bot) [RHEL-246427] {CVE-2026-64020}
+- crypto: ccp - Fix a crash due to incorrect cleanup usage of kfree (Thomas Huth) [RHEL-230407] {CVE-2026-45959}
+- vmxnet3: fix BUG_ON in vmxnet3_get_hdr_len() for Geneve packets (CKI Backport Bot) [RHEL-252815] {CVE-2026-68299}
+- cxl/mbox: Use proper endpoint validity check upon sanitize (Aristeu Rozanski) [RHEL-85050]
+- cxl/memdev: Pin parents for entire memdev lifetime (Aristeu Rozanski) [RHEL-85050]
+- dax/bus: Upgrade resource conflict message to dev_err() in alloc_dax_region() (Aristeu Rozanski) [RHEL-85050]
+- dax/hmem, cxl: Defer and resolve Soft Reserved ownership (Aristeu Rozanski) [RHEL-85050]
+- cxl/region: Add helper to check Soft Reserved containment by CXL regions (Aristeu Rozanski) [RHEL-85050]
+- dax: Track all dax_region allocations under a global resource tree (Aristeu Rozanski) [RHEL-85050]
+- dax/cxl, hmem: Initialize hmem early and defer dax_cxl binding (Aristeu Rozanski) [RHEL-85050]
+- dax/hmem: Gate Soft Reserved deferral on DEV_DAX_CXL (Aristeu Rozanski) [RHEL-85050]
+- dax/hmem: Request cxl_acpi and cxl_pci before walking Soft Reserved ranges (Aristeu Rozanski) [RHEL-85050]
+- dax/hmem: Factor HMEM registration into __hmem_register_device() (Aristeu Rozanski) [RHEL-85050]
+- dax/bus: Use dax_region_put() in alloc_dax_region() error path (Aristeu Rozanski) [RHEL-85050]
+- cxl/memdev: fix deadlock in cxl_memdev_autoremove() on attach failure (Aristeu Rozanski) [RHEL-85050]
+- dax/hmem, e820, resource: Defer Soft Reserved insertion until hmem is ready (Aristeu Rozanski) [RHEL-85050]
+- cxl/mem: Introduce cxl_memdev_attach for CXL-dependent operation (Aristeu Rozanski) [RHEL-85050]
+- cxl/mem: Drop @host argument to devm_cxl_add_memdev() (Aristeu Rozanski) [RHEL-85050]
+- cxl/mem: Convert devm_cxl_add_memdev() to scope-based-cleanup (Aristeu Rozanski) [RHEL-85050]
+- cxl/port: Arrange for always synchronous endpoint attach (Aristeu Rozanski) [RHEL-85050]
+- cxl/mem: Arrange for always-synchronous memdev attach (Aristeu Rozanski) [RHEL-85050]
+- cxl/mem: Fix devm_cxl_memdev_edac_release() confusion (Aristeu Rozanski) [RHEL-85050]
+- module: Add module specific symbol namespace support (Aristeu Rozanski) [RHEL-85050]
+- net: mana: validate rx_req_idx to prevent out-of-bounds array access (Vitaly Kuznetsov) [RHEL-229234] {CVE-2026-64018}
+- x86/apic: Drop AMD Extended Interrupt LVT macros (Dennis Chen) [RHEL-242436]
+- x86/mce: Fix hardware debug register corruption on task migration (Dennis Chen) [RHEL-242436]
+- x86/MCE/AMD: Fix inverted interrupt enablement during storm handling (Dennis Chen) [RHEL-242436]
+- x86/mce: Work around build warning after MSR-interface switch (Dennis Chen) [RHEL-242436]
+- x86/mce: Stop using 32-bit MSR interfaces (Dennis Chen) [RHEL-242436]
+- x86/msr: Switch wrmsr_on_cpu() users to wrmsrq_on_cpu() [partial] (Dennis Chen) [RHEL-242436]
+- x86/msr: Switch rdmsr_on_cpu() users to rdmsrq_on_cpu() [partial] (Dennis Chen) [RHEL-242436]
+- Convert 'alloc_flex' family to use the new default GFP_KERNEL argument [partial] (Dennis Chen) [RHEL-242436]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument [partial] (Dennis Chen) [RHEL-242436]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [partial] (Dennis Chen) [RHEL-242436]
+- md: RHEL-10 integration fix for the MD RAID backport series (Nigel Croxon) [RHEL-275090]
+- md/raid10: wire llbitmap reshape lifecycle (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: remap checkpointed bits as reshape progresses (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: add reshape range mapping helpers (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: track target reshape geometry fields (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: grow the page cache in place for reshape (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: allocate page controls independently (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: use GFP_NOIO for cache allocations (Nigel Croxon) [RHEL-275090]
+- md/raid10: remove unnecessary barrier around bio_submit_split_bioset() (Nigel Croxon) [RHEL-275090]
+- md/raid1: restrict atomic write limits and handle runtime constraints (Nigel Croxon) [RHEL-275090]
+- md: remove REQ_NOWAIT support from raid1/10/456 (Nigel Croxon) [RHEL-275090] {CVE-2026-90401}
+- md/raid1: simplify raid1_write_request() error handling (Nigel Croxon) [RHEL-275090]
+- md/raid1: fix writes_pending and barrier reference leaks on write failures (Nigel Croxon) [RHEL-275090] {CVE-2026-72440}
+- md/raid0: use kvzalloc/kvfree for strip_zone and devlist allocations (Nigel Croxon) [RHEL-275090]
+- md/raid1: don't set array_frozen in raid1_takeover() (Nigel Croxon) [RHEL-275090] {CVE-2026-90275}
+- md: skip discard on unsupported member devices (Nigel Croxon) [RHEL-275090]
+- md: add cond_resched() to md_do_sync()'s skip path (Nigel Croxon) [RHEL-275090]
+- md/raid10: fix still_degraded being inverted in raid10_sync_request() (Nigel Croxon) [RHEL-275090] {CVE-2026-89558}
+- md/raid5: split reshape bios before bitmap accounting (Nigel Croxon) [RHEL-275090]
+- md/raid5: wire llbitmap reshape lifecycle (Nigel Croxon) [RHEL-275090]
+- md/raid5: reject llbitmap reshape when md chunk shrinks (Nigel Croxon) [RHEL-275090]
+- md/raid5: add exact old and new llbitmap mapping helpers (Nigel Croxon) [RHEL-275090]
+- md/raid10: split reshape bios before bitmap accounting (Nigel Croxon) [RHEL-275090]
+- md/raid10: reject llbitmap reshape when md chunk shrinks (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: clamp state-machine walks to tracked bits (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: don't skip reshape ranges from bitmap state (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: refuse reshape while llbitmap still needs sync (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: finish reshape geometry (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: track bitmap sync_size explicitly (Nigel Croxon) [RHEL-275090]
+- md: add exact bitmap mapping and reshape hooks (Nigel Croxon) [RHEL-275090]
+- md: add helper to split bios at reshape offset (Nigel Croxon) [RHEL-275090]
+- md: skip bitmap accounting for empty write ranges (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: stop daemon timer rearm on destroy (Nigel Croxon) [RHEL-275090] {CVE-2026-90276}
+- md/md-llbitmap: prevent create failure bitmap UAF (Nigel Croxon) [RHEL-275090] {CVE-2026-90277}
+- md: avoid stale clone I/O accounting timestamps (Nigel Croxon) [RHEL-275090]
+- md: wait for behind writes before destroying bitmap (Nigel Croxon) [RHEL-275090] {CVE-2026-90278}
+- md/raid5: round bitmap stripes with sector division (Nigel Croxon) [RHEL-275090] {CVE-2026-90279}
+- md/raid5: reject zero-sector reshape chunks (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: only end fully synced chunks (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: clear flush state after daemon flush (Nigel Croxon) [RHEL-275090]
+- md/raid1: create serial pool adding rdev to array with serialize_policy=1 (Nigel Croxon) [RHEL-275090] {CVE-2026-90385}
+- md: do overflow check for sb->bblog_shift in super_1_load() (Nigel Croxon) [RHEL-275090] {CVE-2026-89557}
+- md: scope memalloc_noio to allocation critical sections (Nigel Croxon) [RHEL-275090] {CVE-2026-90389}
+- md/bitmap: resume array on backlog_store() error path (Nigel Croxon) [RHEL-275090] {CVE-2026-90390}
+- md/raid5: complete discard bios while reshape is active (Nigel Croxon) [RHEL-275090]
+- md/raid10: free r10bio before ending master_bio in raid_end_bio_io() and raid_end_discard_bio() (Nigel Croxon) [RHEL-275090]
+- md/raid10: resize r10bio_pool for reshape (Nigel Croxon) [RHEL-275090]
+- md: suspend array when sync_action=reshape (Nigel Croxon) [RHEL-275090]
+- md: widen badblock sectors param from int to sector_t (Nigel Croxon) [RHEL-275090]
+- md/raid10: consistently fail atomic writes that require splitting (Nigel Croxon) [RHEL-275090]
+- md: recheck spare changes before starting sync (Nigel Croxon) [RHEL-275090] {CVE-2026-90400}
+- md/raid5: protect lockless recovery_offset accesses during reshape (Nigel Croxon) [RHEL-275090]
+- md/raid5: fix reshape deadlock while failed devices more than max degraded (Nigel Croxon) [RHEL-275090]
+- md/raid5: fix lockless max_nr_stripes reads (Nigel Croxon) [RHEL-275090]
+- md/raid1: protect sequential read hints for read balance (Nigel Croxon) [RHEL-275090]
+- md/raid5-ppl: fix use-after-free in ppl_do_flush() (Nigel Croxon) [RHEL-275090] {CVE-2026-93262}
+- md/raid5: protect bitmap batch counters aka seq_flush/seq_write consistency (Nigel Croxon) [RHEL-275090]
+- md/raid5: avoid R5_Overlap races while breaking stripe batches (Nigel Croxon) [RHEL-275090] {CVE-2026-72420}
+- md/raid5: use stripe state snapshot in break_stripe_batch_list() (Nigel Croxon) [RHEL-275090]
+- md/raid5: let stripe batch bm_seq comparison wrap-safe (Nigel Croxon) [RHEL-275090]
+- md/raid1: protect head_position for read balance (Nigel Croxon) [RHEL-275090]
+- md/raid1: free r1_bio when REQ_NOWAIT is set and read would block on retry (Nigel Croxon) [RHEL-275090] {CVE-2026-72437}
+- md/raid1: honor REQ_NOWAIT when waiting for behind writes (Nigel Croxon) [RHEL-275090]
+- md/raid5: always convert llbitmap bits for discard (Nigel Croxon) [RHEL-275090]
+- md/raid5: validate discard support at request time (Nigel Croxon) [RHEL-275090]
+- md/raid5: account discard IO (Nigel Croxon) [RHEL-275090]
+- md/raid10: fix writes_pending and barrier reference leaks on discard failures (Nigel Croxon) [RHEL-275090] {CVE-2026-72438}
+- md/raid10: fix writes_pending leak on write request failures (Nigel Croxon) [RHEL-275090] {CVE-2026-72439}
+- md/raid0: use str_plural helper in dump_zones (Nigel Croxon) [RHEL-275090]
+- raid1: fix nr_pending leak in REQ_ATOMIC bad-block error path (Nigel Croxon) [RHEL-275090] {CVE-2026-74372}
+- md/raid1: move the exceed_read_errors condition out of fix_read_error (Nigel Croxon) [RHEL-275090]
+- md/raid1: cleanup handle_read_error (Nigel Croxon) [RHEL-275090]
+- md/raid1,raid10: fix bio accounting for split md cloned bios (Nigel Croxon) [RHEL-275090] {CVE-2026-74373}
+- md/raid1,raid10: fix error-path detection with md_cloned_bio() (Nigel Croxon) [RHEL-275090] {CVE-2026-74374}
+- md/raid1,raid10: fix deadlock in read error recovery path (Nigel Croxon) [RHEL-275090] {CVE-2026-74375}
+- md/raid10: reset read_slot when reusing r10bio for discard (Nigel Croxon) [RHEL-275090] {CVE-2026-74376}
+- md: skip redundant raid_disks update when value is unchanged (Nigel Croxon) [RHEL-275090]
+- md: propagate BLK_FEAT_PCI_P2PDMA from member devices to RAID device (Nigel Croxon) [RHEL-275090]
+- md: use ATTRIBUTE_GROUPS() for md default sysfs attributes (Nigel Croxon) [RHEL-275090]
+- md: use mddev_is_dm() instead of open-coding gendisk checks (Nigel Croxon) [RHEL-275090]
+- md/raid1: replace wait loop with wait_event_idle() in raid1_write_request() (Nigel Croxon) [RHEL-275090]
+- md/md-bitmap: add a none backend for bitmap grow (Nigel Croxon) [RHEL-275090]
+- md/md-bitmap: split bitmap sysfs groups (Nigel Croxon) [RHEL-275090]
+- md: factor bitmap creation away from sysfs handling (Nigel Croxon) [RHEL-275090]
+- md: use mddev_lock_nointr() in mddev_suspend_and_lock_nointr() (Nigel Croxon) [RHEL-275090]
+- md: replace wait loop with wait_event() in md_handle_request() (Nigel Croxon) [RHEL-275090]
+- md/raid10: fix divide-by-zero in setup_geo() with zero far_copies (Nigel Croxon) [RHEL-275090] {CVE-2026-46161}
+- md/raid1,raid10: don't fail devices for invalid IO errors (Nigel Croxon) [RHEL-275090]
+- md/raid5: fix soft lockup in retry_aligned_read() (Nigel Croxon) [RHEL-275090] {CVE-2026-46051}
+- md: wake raid456 reshape waiters before suspend (Nigel Croxon) [RHEL-275090] {CVE-2026-53123}
+- md/md-llbitmap: optimize initial sync with write_zeroes_unmap support (Nigel Croxon) [RHEL-275090]
+- md/md-llbitmap: add CleanUnwritten state for RAID-5 proactive parity building (Nigel Croxon) [RHEL-275090]
+- md: add fallback to correct bitmap_ops on version mismatch (Nigel Croxon) [RHEL-275090]
+- md/raid5: validate payload size before accessing journal metadata (Nigel Croxon) [RHEL-275090] {CVE-2026-46070}
+- md: remove unused static md_wq workqueue (Nigel Croxon) [RHEL-275090]
+- md: fix array_state=clear sysfs deadlock (Nigel Croxon) [RHEL-275090] {CVE-2026-53125}
+- md: remove unused mddev argument from export_rdev (Nigel Croxon) [RHEL-275090]
+- md/raid5: move handle_stripe() comment to correct location (Nigel Croxon) [RHEL-275090]
+- md/raid5: remove stale md_raid5_kick_device() declaration (Nigel Croxon) [RHEL-275090]
+- md/raid5: skip 2-failure compute when other disk is R5_LOCKED (Nigel Croxon) [RHEL-275090]
+- md/raid5: set chunk_sectors to enable full stripe I/O splitting (Nigel Croxon) [RHEL-275090]
+- md/raid10: fix deadlock with check operation and nowait requests (Nigel Croxon) [RHEL-275090] {CVE-2026-46050}
+- md: ignore discard return value (Nigel Croxon) [RHEL-275090]
+- dm: add WQ_PERCPU to alloc_workqueue users (Nigel Croxon) [RHEL-275090]
+- md: fix return value of mddev_trylock (Nigel Croxon) [RHEL-275090]
+- md/raid1: fix memory leak in raid1_run() (Nigel Croxon) [RHEL-275090] {CVE-2026-45888}
+- md raid: fix hang when stopping arrays with metadata through dm-raid (Nigel Croxon) [RHEL-275090] {CVE-2026-43309}
+- md-cluster: fix NULL pointer dereference in process_metadata_update (Nigel Croxon) [RHEL-275090] {CVE-2026-43271}
+- md: remove recovery_disabled (Nigel Croxon) [RHEL-275090]
+- md/raid10: cleanup skip handling in raid10_sync_request (Nigel Croxon) [RHEL-275090]
+- md/raid10: fix any_working flag handling in raid10_sync_request (Nigel Croxon) [RHEL-275090]
+- md: move finish_reshape to md_finish_sync() (Nigel Croxon) [RHEL-275090]
+- md: factor out sync completion update into helper (Nigel Croxon) [RHEL-275090]
+- md: remove MD_RECOVERY_ERROR handling and simplify resync_offset update (Nigel Croxon) [RHEL-275090]
+- md: update curr_resync_completed even when MD_RECOVERY_INTR is set (Nigel Croxon) [RHEL-275090]
+- md: mark rdev Faulty when badblocks setting fails (Nigel Croxon) [RHEL-275090]
+- md: break remaining operations on badblocks set failure in narrow_write_error (Nigel Croxon) [RHEL-275090]
+- md/raid1,raid10: support narrow_write_error when badblocks is disabled (Nigel Croxon) [RHEL-275090]
+- md: factor error handling out of md_done_sync into helper (Nigel Croxon) [RHEL-275090]
+- md/raid1: simplify uptodate handling in end_sync_write (Nigel Croxon) [RHEL-275090]
+- md/raid5: make sure max_sectors is not less than io_opt (Nigel Croxon) [RHEL-275090]
+- md/raid5: use mempool to allocate stripe_request_ctx (Nigel Croxon) [RHEL-275090]
+- md/raid5: fix raid5_run() to return error when log_init() fails (Nigel Croxon) [RHEL-275090]
+- net/iucv: filter frames in afiucv_hs_rcv() by ingress device (CKI Backport Bot) [RHEL-271072] {CVE-2026-81003}
+- af_unix: Unlink scc_entry in unix_del_edge(). (CKI Backport Bot) [RHEL-270652] {CVE-2026-80521}
+- media: cx231xx: reject geometry changes while the VBI queue is busy (CKI Backport Bot) [RHEL-262510] {CVE-2026-89894}
+- Documentation/rtla: Document unsetting options (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Fix pgrep filter in get_workload_pids.sh (Tomas Glozar) [RHEL-177406]
+- Documentation/rtla: Add -A/--aligned option (Tomas Glozar) [RHEL-150743]
+- rtla/cli: Unify and improve handling of invalid option arguments (Tomas Glozar) [RHEL-150743]
+- rtla/cli: Unify and improve range validation logic (Tomas Glozar) [RHEL-150743]
+- rtla: Add unit tests for CLI with unset (Tomas Glozar) [RHEL-150743]
+- rtla: Add unit tests for unset in opt callbacks (Tomas Glozar) [RHEL-150743]
+- rtla: Allow unsetting non-list custom-callback CLI options (Tomas Glozar) [RHEL-150743]
+- rtla: Also link in ctype.c (Tomas Glozar) [RHEL-150743]
+- rtla: Fix missing unistd include (Tomas Glozar) [RHEL-150743]
+- rtla: Fix and clean up .gitignore (Tomas Glozar) [RHEL-150743]
+- rtla/tests: Add unit tests for -A/--aligned option (Tomas Glozar) [RHEL-150743]
+- rtla/timerlat: Add -A/--aligned CLI option (Tomas Glozar) [RHEL-150743]
+- tracing/osnoise: Add option to align tlat threads (Tomas Glozar) [RHEL-150743]
+- rtla/tests: Add unit tests for CLI option callbacks (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add unit tests for _parse_args() functions (Tomas Glozar) [RHEL-177406]
+- rtla: Parse cmdline using libsubcmd (Tomas Glozar) [RHEL-177406]
+- tools subcmd: allow parsing distinct --opt and --no-opt (Tomas Glozar) [RHEL-177406]
+- tools subcmd: support optarg as separate argument (Tomas Glozar) [RHEL-177406]
+- rtla: Add libsubcmd dependency (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add unit tests for actions module (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Run runtime tests in temporary directory (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add runtime tests for -C/--cgroup (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add runtime test for -k and -u options (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add runtime test for -H/--house-keeping (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Cover all hist options in runtime tests (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Extend timerlat top --aa-only coverage (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Use negative match when testing --aa-only (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Check -c/--cpus thread affinity (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Add get_workload_pids() helper (Tomas Glozar) [RHEL-177406]
+- rtla/tests: Cover both top and hist tools where possible (Tomas Glozar) [RHEL-177406]
+- tools/rtla: Fix --dump-tasks usage in timerlat (Tomas Glozar) [RHEL-177406]
+- tools/include: Add linux/container_of.h (Tomas Glozar) [RHEL-177406]
+- selftests/bpf: Test per-cpu initialization of a BPF_F_CPU created element (Gregory Bell) [RHEL-139988]
+- bpf: Zero-fill other CPUs when BPF_F_CPU creates a per-cpu hash element (Gregory Bell) [RHEL-139988]
+- ftrace: Use rcu_assign_pointer() for tmp_ops filter hash (Gregory Bell) [RHEL-139988]
+- bpf: Fix tracing of kfuncs with implicit args (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Retry stat generation in cgroup_iter_memcg (Gregory Bell) [RHEL-139988]
+- bpf: Fix percpu map update indexing with sparse CPU IDs (Gregory Bell) [RHEL-139988]
+- selftests/bpf: NUL-terminate bpftool command output (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Resolve bpftool through bpftool_helpers in core_reloc (Gregory Bell) [RHEL-139988]
+- bpf: Fix BPF_F_CPU validation for sparse CPU IDs (Gregory Bell) [RHEL-139988]
+- ftrace: Protect direct_functions in update_ftrace_direct_mod (Gregory Bell) [RHEL-139988]
+- ftrace: Protect direct_functions in update_ftrace_direct_del (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix make install target (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Tolerate missing files during install (Gregory Bell) [RHEL-139988]
+- bpf: Fix BPF_PROG_ASSOC_STRUCT_OPS last field check (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix test for refinement of single-value tnum (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Override EXTRA_LDFLAGS for static builds (Gregory Bell) [RHEL-139988]
+- bpf: make bpf_session_is_return() reference optional (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix reg_bounds to match new tnum-based refinement (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add more precision tracking tests for atomics (Gregory Bell) [RHEL-139988]
+- bpf: Fix incorrect pruning due to atomic fetch precision tracking (Gregory Bell) [RHEL-139988]
+- bpf: Reject sleepable kprobe_multi programs at attach time (Gregory Bell) [RHEL-139988]
+- bpf: reject direct access to nullable PTR_TO_BUF pointers (Gregory Bell) [RHEL-139988]
+- bpf: Fix regsafe() for pointers to packet (Gregory Bell) [RHEL-139988]
+- bpf: Switch CONFIG_CFI_CLANG to CONFIG_CFI (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add a test cases for sync_linked_regs regarding zext propagation (Gregory Bell) [RHEL-139988]
+- bpf: Fix sync_linked_regs regarding BPF_ADD_CONST32 zext propagation (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for maybe_fork_scalars() OR vs AND handling (Gregory Bell) [RHEL-139988]
+- bpf: Fix unsound scalar forking in maybe_fork_scalars() for BPF_OR (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for sdiv32/smod32 with INT_MIN dividend (Gregory Bell) [RHEL-139988]
+- bpf: Fix undefined behavior in interpreter sdiv/smod for INT_MIN (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for bpf_throw lock leak from subprogs (Gregory Bell) [RHEL-139988]
+- bpf: Fix exception exit lock checking for subprogs (Gregory Bell) [RHEL-139988]
+- ftrace: Use hash argument for tmp_ops in update_ftrace_direct_mod (Gregory Bell) [RHEL-139988]
+- bpf: Release module BTF IDR before module unload (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix pkg-config call on static builds (Gregory Bell) [RHEL-139988]
+- bpf: Fix constant blinding for PROBE_MEM32 stores (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add test for BPF_END register ID reset (Gregory Bell) [RHEL-139988]
+- bpf: Reset register ID for BPF_END value tracking (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Fix linker flags detection (Gregory Bell) [RHEL-139988]
+- selftests/bpf: add reproducer for spurious precision propagation through calls (Gregory Bell) [RHEL-139988]
+- bpf: collect only live registers in linked regs (Gregory Bell) [RHEL-139988]
+- Revert "selftests/bpf: Update reg_bound range refinement logic" (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test refining u32/s32 bounds when ranges cross min/max boundary (Gregory Bell) [RHEL-139988]
+- bpf: Fix u32/s32 bounds when ranges cross min/max boundary (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: fix kfunc call support (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: fix handling of BPF stack in exception callback (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: remove BPF redzone protection in trampoline stack (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: use consistent tailcall offset in trampoline (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: fix the address returned by bpf_get_func_ip (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: do not increment tailcall count when prog is NULL (Gregory Bell) [RHEL-139988]
+- bpf: Fix a UAF issue in bpf_trampoline_link_cgroup_shim (Gregory Bell) [RHEL-139988]
+- ftrace: Add missing ftrace_lock to update_ftrace_direct_add/del (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Avoid simplification of crafted bounds test (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Test refinement of single-value tnum (Gregory Bell) [RHEL-139988]
+- bpf: Improve bounds when tnum has a single possible value (Gregory Bell) [RHEL-139988]
+- bpf: Introduce tnum_step to step through tnum's members (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix OOB read in dmabuf_collector (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix a memory leak in xdp_flowtable test (Gregory Bell) [RHEL-139988]
+- bpf: Fix stack-out-of-bounds write in devmap (Gregory Bell) [RHEL-139988]
+- bpf: Fix kprobe_multi cookies access in show_fdinfo callback (Gregory Bell) [RHEL-139988]
+- bpf, arm64: Force 8-byte alignment for JIT buffer to prevent atomic tearing (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Check BPFTOOL env var in detect_bpftool_path() (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix out-of-bounds array access bugs reported by ASAN (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix array bounds warning in jit_disasm_helpers (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Free bpf_object in test_sysctl (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix resource leaks caused by missing cleanups (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix double thread join in uprobe_multi_test (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix use-after-free in xdp_metadata test (Gregory Bell) [RHEL-139988]
+- veristat: Fix a memory leak for preset ENUMERATOR (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix cleanup in check_fd_array_cnt__fd_array_too_big() (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix memory leaks in tests (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Refactor bpf_get_ksyms() trace helper (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add DENYLIST.asan (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Fix memory leaks reported by ASAN (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Pass through build flags to bpftool and resolve_btfids (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Use memcpy() for bounded non-NULL-terminated copies (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Use strscpy in bpftool_helpers.c (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Replace strncpy() with strscpy() (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Replace strcpy() calls with strscpy() (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add simple strscpy() implementation (Gregory Bell) [RHEL-139988]
+- libbpf: Remove extern declaration of bpf_stream_vprintk() (Gregory Bell) [RHEL-139988]
+- bpftool: Fix truncated netlink dumps (Gregory Bell) [RHEL-139988]
+- libbpf: Delay feature gate check until object prepare time (Gregory Bell) [RHEL-139988]
+- libbpf: Do not use PROG_TYPE_TRACEPOINT program for feature gating (Gregory Bell) [RHEL-139988]
+- bpf: Add a map/btf from a fd array more consistently (Gregory Bell) [RHEL-139988]
+- libbpf: Add gating for arena globals relocation feature (Gregory Bell) [RHEL-139988]
+- libbpf: Fix invalid write loop logic in bpf_linker__add_buf() (Gregory Bell) [RHEL-139988]
+- bpf: Fix a potential use-after-free of BTF object (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for improved linked register tracking (Gregory Bell) [RHEL-139988]
+- bpf: Support negative offsets, BPF_SUB, and alu32 for linked register tracking (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for BPF_END bitwise tracking (Gregory Bell) [RHEL-139988]
+- bpf: Add bitwise tracking for BPF_END (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Refactor the sort_btf_by_name function (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add selftests for stream functions under lock (Gregory Bell) [RHEL-139988]
+- bpf: Allow BPF stream kfuncs while holding a lock (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add selftests for bpf_stream_print_stack (Gregory Bell) [RHEL-139988]
+- bpf: Add bpf_stream_print_stack stack dumping kfunc (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add a test for ids=0 to verifier_scalar_ids test (Gregory Bell) [RHEL-139988]
+- bpf: Relax scalar id equivalence for state pruning (Gregory Bell) [RHEL-139988]
+- bpf: Relax maybe_widen_reg() constraints (Gregory Bell) [RHEL-139988]
+- bpf: Clear singular ids for scalars in is_state_visited() (Gregory Bell) [RHEL-139988]
+- bpf: Let the verifier assign ids on stack fills (Gregory Bell) [RHEL-139988]
+- bpf: Replace snprintf("%%s") with strscpy (Gregory Bell) [RHEL-139988]
+- ftrace: Fix direct_functions leak in update_ftrace_direct_del (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Enable get_func_args and get_func_ip tests on arm64 (Gregory Bell) [RHEL-139988]
+- bpf, arm64: Add fsession support (Gregory Bell) [RHEL-139988]
+- bpf: Add bpf_jit_supports_fsession() (Gregory Bell) [RHEL-139988]
+- bpf: Consolidate special map field validation in verifier (Gregory Bell) [RHEL-139988]
+- bpf: Introduce struct bpf_map_desc in verifier (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Allow to benchmark trigger with stacktrace (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add test for sleepable program tailcalls (Gregory Bell) [RHEL-139988]
+- bpf: Allow sleepable programs to use tail calls (Gregory Bell) [RHEL-139988]
+- bpf: Test nospec after dead stack write in helper (Gregory Bell) [RHEL-139988]
+- bpf: Fix verifier_bug_if to account for BPF_CALL (Gregory Bell) [RHEL-139988]
+- bpftool: Fix dependencies for static build (Gregory Bell) [RHEL-139988]
+- bpf,x86: Use single ftrace_ops for direct calls (Gregory Bell) [RHEL-139988]
+- ftrace: Factor ftrace_ops ops_func interface (Gregory Bell) [RHEL-139988]
+- bpf: Add trampoline ip hash table (Gregory Bell) [RHEL-139988]
+- ftrace: Add update_ftrace_direct_mod function (Gregory Bell) [RHEL-139988]
+- ftrace: Add update_ftrace_direct_del function (Gregory Bell) [RHEL-139988]
+- ftrace: Add update_ftrace_direct_add function (Gregory Bell) [RHEL-139988]
+- ftrace: Export some of hash related functions (Gregory Bell) [RHEL-139988]
+- ftrace: Make alloc_and_copy_ftrace_hash direct friendly (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Additional NVR handling for bpf_throw (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Support exceptions (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Add arch_bpf_stack_walk() for BPF JIT (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Avoid tailcall restore from trampoline (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Support tailcalls with subprogs (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Moving tail_call_cnt to bottom of frame (Gregory Bell) [RHEL-139988]
+- selftests/bpf: cover BPF_CGROUP_ITER_CHILDREN control option (Gregory Bell) [RHEL-139988]
+- bpf: add new BPF_CGROUP_ITER_CHILDREN control option (Gregory Bell) [RHEL-139988]
+- bpf: explicitly align bpf_res_spin_lock (Gregory Bell) [RHEL-139988]
+- selftests/bpf: convert test_bpftool_map_access.sh into test_progs framework (Gregory Bell) [RHEL-139988]
+- selftests/bpf: convert test_bpftool_metadata.sh into test_progs framework (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add a few helpers for bpftool testing (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Harden cpu flags test for lru_percpu_hash map (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test fsession mixed with fentry and fexit (Gregory Bell) [RHEL-139988]
+- selftests/bpf: add testcases for fsession cookie (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test bpf_get_func_* for fsession (Gregory Bell) [RHEL-139988]
+- selftests/bpf: add testcases for fsession (Gregory Bell) [RHEL-139988]
+- bpftool: add fsession support (Gregory Bell) [RHEL-139988]
+- libbpf: add fsession support (Gregory Bell) [RHEL-139988]
+- bpf,x86: add fsession support for x86_64 (Gregory Bell) [RHEL-139988]
+- bpf,x86: introduce emit_store_stack_imm64() for trampoline (Gregory Bell) [RHEL-139988]
+- bpf: support fsession for bpf_session_cookie (Gregory Bell) [RHEL-139988]
+- bpf: support fsession for bpf_session_is_return (Gregory Bell) [RHEL-139988]
+- bpf: change prototype of bpf_session_{cookie,is_return} (Gregory Bell) [RHEL-139988]
+- bpf: use the least significant byte for the nr_args in trampoline (Gregory Bell) [RHEL-139988]
+- bpf: add fsession support (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix task_local_data failure with 64K page (Gregory Bell) [RHEL-139988]
+- rqspinlock: Fix TAS fallback lock entry creation (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix resource leak in serial_test_wq on attach failure (Gregory Bell) [RHEL-139988]
+- scripts/gen-btf.sh: Use CONFIG_SHELL for execution (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Test kfunc bpf_strncasecmp (Gregory Bell) [RHEL-139988]
+- bpf: add bpf_strncasecmp kfunc (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test bpf_get_func_arg() for tp_btf (Gregory Bell) [RHEL-139988]
+- bpf: support bpf_get_func_arg() for BPF_TRACE_RAW_TP (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test the jited inline of bpf_get_current_task (Gregory Bell) [RHEL-139988]
+- bpf, x86: inline bpf_get_current_task() for x86_64 (Gregory Bell) [RHEL-139988]
+- bpf: Simplify bpf_timer_cancel() (Gregory Bell) [RHEL-139988]
+- bpf: Introduce lock-free bpf_async_update_prog_callback() (Gregory Bell) [RHEL-139988]
+- bpf: Remove unnecessary arguments from bpf_async_set_callback() (Gregory Bell) [RHEL-139988]
+- bpf: Factor out timer deletion helper (Gregory Bell) [RHEL-139988]
+- selftests/bpf: update verifier test for default trusted pointer semantics (Gregory Bell) [RHEL-139988]
+- bpf: Require ARG_PTR_TO_MEM with memory flag (Gregory Bell) [RHEL-139988]
+- bpf: Fix memory access flags in helper prototypes (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for BPF_DIV and BPF_MOD range tracking (Gregory Bell) [RHEL-139988]
+- bpf: Add range tracking for BPF_DIV and BPF_MOD (Gregory Bell) [RHEL-139988]
+- bpf,docs: Document KF_IMPLICIT_ARGS flag (Gregory Bell) [RHEL-139988]
+- bpf: Remove __prog kfunc arg annotation (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Migrate struct_ops_assoc test to KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- bpf: Migrate bpf_stream_vprintk() to KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- HID: Use bpf_wq_set_callback kernel function (Gregory Bell) [RHEL-139988]
+- bpf: Migrate bpf_wq_set_callback_impl() to KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- bpf: Migrate bpf_task_work_schedule_* kfuncs to KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Support for KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Introduce finalize_btf() step (Gregory Bell) [RHEL-139988]
+- bpf: Verifier support for KF_IMPLICIT_ARGS (Gregory Bell) [RHEL-139988]
+- bpf: Introduce struct bpf_kfunc_meta (Gregory Bell) [RHEL-139988]
+- bpf: Refactor btf_kfunc_id_set_contains (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add perfbuf multi-producer benchmark (Gregory Bell) [RHEL-139988]
+- bpf/verifier: Optimize ID mapping reset in states_equal (Gregory Bell) [RHEL-139988]
+- bpf: Remove leftover accounting in htab_map_mem_usage after rqspinlock (Gregory Bell) [RHEL-139988]
+- bpf: verifier: Make sync_linked_regs() scratch registers (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix map_kptr test failure (Gregory Bell) [RHEL-139988]
+- bpf: Add SPDX license identifiers to a few files (Gregory Bell) [RHEL-139988]
+- bpf: Add __force annotations to silence sparse warnings (Gregory Bell) [RHEL-139988]
+- selftests: bpf: Add test for multiple syncs from linked register (Gregory Bell) [RHEL-139988]
+- bpf: Preserve id of register in sync_linked_regs() (Gregory Bell) [RHEL-139988]
+- selftests/bpf: assert BPF kfunc default trusted pointer semantics (Gregory Bell) [RHEL-139988]
+- bpf: return PTR_TO_BTF_ID | PTR_TRUSTED from BPF kfuncs by default (Gregory Bell) [RHEL-139988]
+- btf: Refactor the code by calling str_is_empty (Gregory Bell) [RHEL-139988]
+- bpf: Optimize the performance of find_bpffs_btf_enums (Gregory Bell) [RHEL-139988]
+- bpf: Skip anonymous types in type lookup for performance (Gregory Bell) [RHEL-139988]
+- btf: Verify BTF sorting (Gregory Bell) [RHEL-139988]
+- btf: Optimize type lookup with binary search (Gregory Bell) [RHEL-139988]
+- libbpf: Verify BTF sorting (Gregory Bell) [RHEL-139988]
+- libbpf: Optimize type lookup with binary search for sorted BTF (Gregory Bell) [RHEL-139988]
+- tools/resolve_btfids: Support BTF sorting feature (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add test cases for btf__permute functionality (Gregory Bell) [RHEL-139988]
+- libbpf: Add BTF permutation support for type reordering (Gregory Bell) [RHEL-139988]
+- bpf: Remove an unused parameter in check_func_proto (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for s>>=31 and s>>=63 (Gregory Bell) [RHEL-139988]
+- bpf: Recognize special arithmetic shift in the verifier (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix verifier_arena_globals1 failure with 64K page (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Fix dmabuf_iter/lots_of_buffers failure with 64K page (Gregory Bell) [RHEL-139988]
+- bpf: Consistently use reg_state() for register access in the verifier (Gregory Bell) [RHEL-139988]
+- bpf, btf: Enforce destructor kfunc type with CFI (Gregory Bell) [RHEL-139988]
+- libbpf: Fix OOB read in btf_dump_get_bitfield_value (Gregory Bell) [RHEL-139988]
+- bpftool: Make skeleton C++ compatible with explicit casts (Gregory Bell) [RHEL-139988]
+- bpf: GCC requires function attributes before the declarator (Gregory Bell) [RHEL-139988]
+- bpf: adapt selftests to GCC 16 -Wunused-but-set-variable (Gregory Bell) [RHEL-139988]
+- scripts/gen-btf.sh: Ensure initial object in gen_btf_o is ELF with correct endianness (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add cases to test BPF_F_CPU and BPF_F_ALL_CPUS flags (Gregory Bell) [RHEL-139988]
+- libbpf: Add BPF_F_CPU and BPF_F_ALL_CPUS flags support for percpu maps (Gregory Bell) [RHEL-139988]
+- bpf: Add BPF_F_CPU and BPF_F_ALL_CPUS flags support for percpu_cgroup_storage maps (Gregory Bell) [RHEL-139988]
+- bpf: Copy map value using copy_map_value_long for percpu_cgroup_storage maps (Gregory Bell) [RHEL-139988]
+- bpf: Add BPF_F_CPU and BPF_F_ALL_CPUS flags support for percpu_hash and lru_percpu_hash maps (Gregory Bell) [RHEL-139988]
+- bpf: Add BPF_F_CPU and BPF_F_ALL_CPUS flags support for percpu_array maps (Gregory Bell) [RHEL-139988]
+- bpf: Introduce BPF_F_CPU and BPF_F_ALL_CPUS flags (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Inline bpf_get_smp_processor_id() and bpf_get_current_task/_btf() (Gregory Bell) [RHEL-139988]
+- powerpc64/bpf: Support internal-only MOV instruction to resolve per-CPU addrs (Gregory Bell) [RHEL-139988]
+- bpf: Replace __opt annotation with __nullable for kfuncs (Gregory Bell) [RHEL-139988]
+- selftests: bpf: Fix test_bpf_nf for trusted args becoming default (Gregory Bell) [RHEL-139988]
+- selftests: bpf: fix cgroup_hierarchical_stats (Gregory Bell) [RHEL-139988]
+- selftests: bpf: fix test_kfunc_dynptr_param (Gregory Bell) [RHEL-139988]
+- selftests: bpf: Update failure message for rbtree_fail (Gregory Bell) [RHEL-139988]
+- selftests: bpf: Update kfunc_param_nullable test for new error message (Gregory Bell) [RHEL-139988]
+- bpf: xfrm: drop dead NULL check in bpf_xdp_get_xfrm_state() (Gregory Bell) [RHEL-139988]
+- bpf: net: netfilter: drop dead NULL checks (Gregory Bell) [RHEL-139988]
+- bpf: Remove redundant KF_TRUSTED_ARGS flag from all kfuncs (Gregory Bell) [RHEL-139988]
+- bpf: Make KF_TRUSTED_ARGS the default for all kfuncs (Gregory Bell) [RHEL-139988]
+- selftests/bpf: veristat: fix printing order in output_stats() (Gregory Bell) [RHEL-139988]
+- bpf: Update BPF_PROG_RUN documentation (Gregory Bell) [RHEL-139988]
+- scripts/gen-btf.sh: Reduce log verbosity (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Implement --patch_btfids (Gregory Bell) [RHEL-139988]
+- selftests/bpf: iterator based loop and STACK_MISC states pruning (Gregory Bell) [RHEL-139988]
+- bpf: allow states pruning for misc/invalid slots in iterator loops (Gregory Bell) [RHEL-139988]
+- selftests/bpf: test cases for bpf_loop SCC and state graph backedges (Gregory Bell) [RHEL-139988]
+- bpf: bpf_scc_visit instance and backedges accumulation for bpf_loop() (Gregory Bell) [RHEL-139988]
+- scripts/gen-btf.sh: Fix .btf.o generation when compiling for RISCV (Gregory Bell) [RHEL-139988]
+- bpf: crypto: replace -EEXIST with -EBUSY (Gregory Bell) [RHEL-139988]
+- selftests: bpf: fix tests with raw_tp calling kfuncs (Gregory Bell) [RHEL-139988]
+- bpf: allow calling kfuncs from raw_tp programs (Gregory Bell) [RHEL-139988]
+- MAINTAINERS: add an entry for MM BPF extensions (Gregory Bell) [RHEL-139988]
+- bpf: selftests: selftests for memcg stat kfuncs (Gregory Bell) [RHEL-139988]
+- mm: introduce BPF kfuncs to access memcg statistics and events (Gregory Bell) [RHEL-139988]
+- mm: introduce bpf_get_root_mem_cgroup() BPF kfunc (Gregory Bell) [RHEL-139988]
+- mm: introduce BPF kfuncs to deal with memcg pointers (Gregory Bell) [RHEL-139988]
+- mm: declare memcg_page_state_output() in memcontrol.h (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Change in-place update with raw binary output (Gregory Bell) [RHEL-139988]
+- kbuild: add dependency from vmlinux to resolve_btfids (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Run resolve_btfids only for relevant .test.o objects (Gregory Bell) [RHEL-139988]
+- selftests/bpf: add test case for BPF LSM hook bpf_lsm_mmap_file (Gregory Bell) [RHEL-139988]
+- bpf: annotate file argument as __nullable in bpf_lsm_mmap_file (Gregory Bell) [RHEL-139988]
+- x86/bpf: Avoid emitting LOCK prefix for XCHG atomic ops (Gregory Bell) [RHEL-139988]
+- bpf: arm64: Optimize recursion detection by not using atomics (Gregory Bell) [RHEL-139988]
+- bpf: move recursion detection logic to helpers (Gregory Bell) [RHEL-139988]
+- lib/Kconfig.debug: Set the minimum required pahole version to v1.22 (Gregory Bell) [RHEL-139988]
+- kbuild: Sync kconfig when PAHOLE_VERSION changes (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Always build with -Wall -Werror (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Introduce enum btf_id_kind (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Factor out load_btf() (Gregory Bell) [RHEL-139988]
+- resolve_btfids: Rename object btf field to btf_path (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Add tests for the arena offset of globals (Gregory Bell) [RHEL-139988]
+- libbpf: Move arena globals to the end of the arena (Gregory Bell) [RHEL-139988]
+- libbpf: Turn relo_core->sym_off unsigned (Gregory Bell) [RHEL-139988]
+- bpf/verifier: Do not limit maximum direct offset into arena map (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Explicitly account for globals in verifier_arena_large (Gregory Bell) [RHEL-139988]
+- bpf: Fix bpf_seq_read docs for increased buffer size (Gregory Bell) [RHEL-139988]
+- selftests/bpf: add verifier sign extension bound computation tests. (Gregory Bell) [RHEL-139988]
+- bpf: verifier improvement in 32bit shift sign extension pattern (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Test getting associated struct_ops in timer callback (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Test ambiguous associated struct_ops (Gregory Bell) [RHEL-139988]
+- selftests/bpf: Test BPF_PROG_ASSOC_STRUCT_OPS command (Gregory Bell) [RHEL-139988]
+- libbpf: Add support for associating BPF program with struct_ops (Gregory Bell) [RHEL-139988]
+- bpf: Support associating BPF program with struct_ops (Gregory Bell) [RHEL-139988]
+- bpf: Allow verifier to fixup kernel module kfuncs (Gregory Bell) [RHEL-139988]
+- libbpf: Add debug messaging in dedup equivalence/identity matching (Gregory Bell) [RHEL-139988]
+- workqueue: reject watchdog thresholds that overflow jiffies (Waiman Long) [RHEL-170518]
+- workqueue: Fix unbound pool lifetime for pending pwqs (Waiman Long) [RHEL-170518]
+- workqueue: Use raise_softirq() to trigger softirq in irq_work handler (Waiman Long) [RHEL-170518]
+- workqueue: Annotate cb_lock nesting when draining a dead BH pool (Waiman Long) [RHEL-170518]
+- workqueue: release pwq pools by pool type (Waiman Long) [RHEL-170518]
+- workqueue: only show running workers in stall diagnostics (Waiman Long) [RHEL-170518]
+- workqueue: drop spurious '*' from print_worker_info() fn declaration (Waiman Long) [RHEL-170518]
+- workqueue: forbid TEST_WORKQUEUE from being built-in (Waiman Long) [RHEL-170518]
+- workqueue: Fix wq->cpu_pwq leak in alloc_and_link_pwqs() WQ_UNBOUND path (Waiman Long) [RHEL-170518]
+- workqueue: Release PENDING in __queue_work() drain/destroy reject path (Waiman Long) [RHEL-170518]
+- workqueue: Annotate alloc_workqueue_va() with __printf(1, 0) (Waiman Long) [RHEL-170518]
+- workqueue: fix devm_alloc_workqueue() va_list misuse (Waiman Long) [RHEL-170518]
+- workqueue: validate cpumask_first() result in llc_populate_cpu_shard_id() (Waiman Long) [RHEL-170518]
+- workqueue: use NR_STD_WORKER_POOLS instead of hardcoded value (Waiman Long) [RHEL-170518]
+- workqueue: avoid unguarded 64-bit division (Waiman Long) [RHEL-170518]
+- docs: workqueue: document WQ_AFFN_CACHE_SHARD affinity scope (Waiman Long) [RHEL-170518]
+- workqueue: add test_workqueue benchmark module (Waiman Long) [RHEL-170518]
+- tools/workqueue: add CACHE_SHARD support to wq_dump.py (Waiman Long) [RHEL-170518]
+- workqueue: set WQ_AFFN_CACHE_SHARD as the default affinity scope (Waiman Long) [RHEL-170518]
+- workqueue: add WQ_AFFN_CACHE_SHARD affinity scope (Waiman Long) [RHEL-170518]
+- workqueue: fix typo in WQ_AFFN_SMT comment (Waiman Long) [RHEL-170518]
+- workqueue: unlink pwqs from wq->pwqs list in alloc_and_link_pwqs() error path (Waiman Long) [RHEL-170518]
+- workqueue: Remove NULL wq WARN in __queue_delayed_work() (Waiman Long) [RHEL-170518]
+- workqueue: fix parse_affn_scope() prefix matching bug (Waiman Long) [RHEL-170518]
+- workqueue: devres: Add device-managed allocate workqueue (Waiman Long) [RHEL-170518]
+- workqueue: Add system_dfl_long_wq for long unbound works (Waiman Long) [RHEL-170518]
+- tools/workqueue/wq_dump.py: add NODE prefix to all node columns (Waiman Long) [RHEL-170518]
+- tools/workqueue/wq_dump.py: fix column alignment in node_nr/max_active section (Waiman Long) [RHEL-170518]
+- tools/workqueue/wq_dump.py: remove backslash separator from node_nr/max_active header (Waiman Long) [RHEL-170518]
+- workqueue: Update documentation as per system_percpu_wq naming (Waiman Long) [RHEL-170518]
+- workqueue: Add pool_workqueue to pending_pwqs list when unplugging multiple inactive works (Waiman Long) [RHEL-170518]
+- workqueue: Better describe stall check (Waiman Long) [RHEL-170518]
+- workqueue: Fix false positive stall reports (Waiman Long) [RHEL-170518]
+- workqueue: Rename show_cpu_pool{s,}_hog{s,}() to reflect broadened scope (Waiman Long) [RHEL-170518]
+- workqueue: Add stall detector sample module (Waiman Long) [RHEL-170518]
+- workqueue: Show all busy workers in stall diagnostics (Waiman Long) [RHEL-170518]
+- workqueue: Show in-flight work item duration in stall diagnostics (Waiman Long) [RHEL-170518]
+- workqueue: Rename pool->watchdog_ts to pool->last_progress_ts (Waiman Long) [RHEL-170518]
+- workqueue: Use POOL_BH instead of WQ_BH when checking pool flags (Waiman Long) [RHEL-170518]
+- workqueue: replace BUG_ON with panic in panic_on_wq_watchdog (Waiman Long) [RHEL-170518]
+- workqueue: add time-based panic for stalls (Waiman Long) [RHEL-170518]
+- workqueue: add CONFIG_BOOTPARAM_WQ_STALL_PANIC option (Waiman Long) [RHEL-170518]
+- workqueue: Process extra works in rescuer on memory pressure (Waiman Long) [RHEL-170518]
+- workqueue: Process rescuer work items one-by-one using a cursor (Waiman Long) [RHEL-170518]
+- workqueue: Make send_mayday() take a PWQ argument directly (Waiman Long) [RHEL-170518]
+- workqueue: Don't rely on wq->rescuer to stop rescuer (Waiman Long) [RHEL-170518]
+- workqueue: Only assign rescuer work when really needed (Waiman Long) [RHEL-170518]
+- workqueue: Factor out assign_rescuer_work() (Waiman Long) [RHEL-170518]
+- workqueue: Init rescuer's affinities as wq_unbound_cpumask (Waiman Long) [RHEL-170518]
+- workqueue: Let DISASSOCIATED workers follow unbound wq cpumask changes (Waiman Long) [RHEL-170518]
+- workqueue: Update the rescuer's affinity only when it is detached (Waiman Long) [RHEL-170518]
+- workqueue: Remove unused assert_rcu_or_wq_mutex_or_pool_mutex (Waiman Long) [RHEL-170518]
+- selftests: bpf: set mptcp.enabled=1 in each newly created namespace (Davide Caratti) [RHEL-101808]
+
+* Thu Oct 08 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-275.el10]
+- nvmet-auth: Synchronize timeout work during SQ teardown (CKI Backport Bot) [RHEL-276368] {CVE-2026-89970}
+- net: mana: Fix TOCTOU double-fetch of hwc_msg_id from DMA buffer (CKI Backport Bot) [RHEL-272013] {CVE-2026-64034}
+- net: mana: validate rx_req_idx to prevent out-of-bounds array access (Filippo Storniolo) [RHEL-261863] {CVE-2026-64018}
+- udp: fix potential use-after-free in tunnel segmentation (Antoine Tenart) [RHEL-268139] {CVE-2026-74705}
+- hwmon: (k10temp) Fix model id range of Zen5 Turin (Steve Best) [RHEL-222492]
+- Enable CONFIG_DEVFREQ_GOV_PERFORMANCE on aarch64 (Nirmala Dalvi) [RHEL-261689]
+- net/sched: serialize qdisc_rtab_list against concurrent get/put (Ivan Vecera) [RHEL-266398] {CVE-2026-68138}
+- net/sched: Use TC_RTAB_SIZE instead of magic number (CKI Backport Bot) [RHEL-266398] {CVE-2026-68138}
+- KVM: s390: vsie: zero stale crypto bits (CKI Backport Bot) [RHEL-258160] {CVE-2026-80921}
+- rtc: spacemit: handle regmap_test_bits() error return (Jennifer Berringer) [RHEL-247836]
+- thermal/drivers/spacemit: Validate clamped trip thresholds (Jennifer Berringer) [RHEL-247836]
+- thermal/drivers/spacemit/k1: Add shutdown action and reorder registration order (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: fix missing /2 factor in i2s sysclk dividers (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: fix i2s clock topology (Jennifer Berringer) [RHEL-247836]
+- dt-bindings: soc: spacemit: k3: add i2s_sysclk, i2s_bclk_factor and i2s1_sysclk_src IDs (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: Add UFS refclk clock (Jennifer Berringer) [RHEL-247836]
+- dt-bindings: soc: spacemit: k3: Add clock ID for UFS refclk (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: fix parent clock of UFS aclk (Jennifer Berringer) [RHEL-247836]
+- hwmon: (lm63) expose PWM frequency and LUT hysteresis as writable (Jennifer Berringer) [RHEL-247836]
+- hwmon: (lm63) Use named initializers for arrays of i2c_device_data (Jennifer Berringer) [RHEL-247836]
+- mfd: simple-mfd-i2c: Add a reboot cell for the SpacemiT P1 chip (Jennifer Berringer) [RHEL-247836]
+- cpufreq: dt-platdev: Add SpacemiT K1 SoC to the allowlist (Jennifer Berringer) [RHEL-247836]
+- dmaengine: mmp_pdma: add SpacemiT K3 support (Jennifer Berringer) [RHEL-247836]
+- dmaengine: mmp_pdma: refactor DRCMR access with helper function (Jennifer Berringer) [RHEL-247836]
+- pwm: pxa: Depend on OF and simplify accordingly (Jennifer Berringer) [RHEL-247836]
+- pwm: pxa: Add optional bus clock (Jennifer Berringer) [RHEL-247836]
+- phy: spacemit: Add USB3/PCIe comb PHY driver for Spacemit K3 (Jennifer Berringer) [RHEL-247836]
+- pinctrl: spacemit: validate pins in pinconf callbacks (Jennifer Berringer) [RHEL-247836]
+- PCI: spacemit: Add missing MODULE_DEVICE_TABLE() (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: drop redundant dev_err_probe() around irq helpers (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: fix dangling TX DMA descriptor on RX prep failure (Jennifer Berringer) [RHEL-247836]
+- i2c: k1: Use generic definitions for bus frequencies (Jennifer Berringer) [RHEL-247836]
+- i2c: spacemit: drop warning when clock-frequency property is absent (Jennifer Berringer) [RHEL-247836]
+- i2c: spacemit: configure ILCR/IWCR for accurate SCL frequency (Jennifer Berringer) [RHEL-247836]
+- i2c: busses: make K1 driver default for SpacemiT platforms (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Add cpu scaling for Milk-V Jupiter (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-bananapi-cm6: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-orangepi-r2s: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-musepi-pro: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-orangepi-rv2: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-milkv-jupiter: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1-bananapi-f3: fix maximum CPU core voltage (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Make dtschema recognize the etherent PHY correctly on K3 com260 board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Make dtschema recognize the etherent PHY correctly on K3 pico-itx board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k3: add USB controller and USB phy support (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: enable PCIe on OrangePi R2S (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k3-com260-ifx: add eeprom on i2c1 (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k3-com260: add eeprom on i2c2 (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: add SPI controllers for K3 (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: add K3 PDMA request numbers (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Fix phy id check for the phy on com260 board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Fix phy id check for the phy on pico-itx board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Add enough deassert time for the PHY on com260 board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Add enough deassert time for the PHY on PICO ITX (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1: Add Banana Pi BPI-CM6 IO board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k1: Split gmac_clk_ref into independent pinctrl groups (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Add cpu scaling for K1 SoC (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k3: Add QSPI support for Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: improve RTL8211F PHY configuration on K3 Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: add i2c aliases on K3 Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: add 24c02 eeprom on K3 Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: enable the i2c2 adapter on K3 Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: set console baud rate on K3 Pico-ITX board (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: k3: Enable SD card support (Jennifer Berringer) [RHEL-247836]
+- riscv: dts: spacemit: Use symbolic PDMA request numbers on K1 (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: set hdma clock as critical (Jennifer Berringer) [RHEL-247836] {CVE-2026-80523}
+- clk: spacemit: k3: fix USB2 bus clock (Jennifer Berringer) [RHEL-247836]
+- i2c: spacemit: request IRQ after controller initialization (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: prepare both DMA descriptors before submitting (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: Correct TX FIFO slot calculation (Jennifer Berringer) [RHEL-247836]
+- i2c: spacemit: fix spurious IRQ handling returning IRQ_HANDLED (Jennifer Berringer) [RHEL-247836]
+- reset: spacemit: k3: fix USB2 ahb reset (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: Add PCIe DBI clock (Jennifer Berringer) [RHEL-247836]
+- dt-bindings: soc: spacemit: k3: Add PCIe DBI clock IDs (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: Fix PCIe clock register offset (Jennifer Berringer) [RHEL-247836]
+- clk: spacemit: k3: Switch to pll2_d6 as parent for PCIe clock (Jennifer Berringer) [RHEL-247836]
+- pinctrl: spacemit: Use FIELD_MODIFY() (Jennifer Berringer) [RHEL-247836]
+- pinctrl: spacemit: delete spacemit_pctrl_check_power() (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: add u64 cast to NSEC_PER_SEC to avoid 32-bit overflow (Jennifer Berringer) [RHEL-247836]
+- spi: spacemit: introduce SpacemiT K1 SPI controller driver (Jennifer Berringer) [RHEL-247836]
+- thermal/drivers/spacemit/k1: Add thermal sensor support (Jennifer Berringer) [RHEL-247836]
+- redhat/configs: Enable new SpacemiT drivers (Jennifer Berringer) [RHEL-247836]
+- ionic: Get "link_down_count" ext link stat from firmware (Jakub Ramaseuski) [RHEL-171997]
+- ionic: Report "rx_bits_phy" stat to ethtool (Jakub Ramaseuski) [RHEL-171997]
+- ionic: Update ionic_if.h with new extra port stats (Jakub Ramaseuski) [RHEL-171997]
+- ionic: Fix check in ionic_get_link_ext_stats (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: Validate rate limit attribute in modify QP (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: Fix typo in format string (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: bound node_desc sysfs read with %%.64s (Jakub Ramaseuski) [RHEL-171997]
+- ionic: fix persistent MAC address override on PF (Jakub Ramaseuski) [RHEL-171997]
+- ionic: Report additional media types from firmware (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: Preserve and set Ethernet source MAC after ib_ud_header_init() (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: Fix kernel stack leak in ionic_create_cq() (Jakub Ramaseuski) [RHEL-171997]
+- RDMA/ionic: Fix potential NULL pointer dereference in ionic_query_port (Jakub Ramaseuski) [RHEL-171997]
+- ionic: Rate limit unknown xcvr type messages (Jakub Ramaseuski) [RHEL-171997]
+- net: ionic: convert to use .get_rx_ring_count (Jakub Ramaseuski) [RHEL-171997]
+- ionic: convert to ndo_hwtstamp API (Jakub Ramaseuski) [RHEL-171997]
+- userfaultfd: reset err to be 0 when move_pages_ptes succeeded (Rafael Aquini) [RHEL-145696]
+- arm64: tlb: Flush walk cache when unsharing PMD tables (Rafael Aquini) [RHEL-145696] {CVE-2026-63875}
+- mm/slub: fix lost local objects when bulk remote free batch fills (Rafael Aquini) [RHEL-145696]
+- mm/slub: prevent pfmemalloc objects from entering the barn (Rafael Aquini) [RHEL-145696]
+- mm/slub: hold cpus_read_lock around flush_rcu_sheaves_on_cache() (Rafael Aquini) [RHEL-145696]
+- mm/slab: add rcu_barrier() to kvfree_rcu_barrier_on_cache() (Rafael Aquini) [RHEL-145696]
+- mm/slub: preserve original size in _kmalloc_nolock_noprof retry path (Rafael Aquini) [RHEL-145696]
+- mm/slab: pass __GFP_NOWARN to refill_sheaf() if fallback is available (Rafael Aquini) [RHEL-145696]
+- mm/slab: return NULL early from kmalloc_nolock() in NMI on UP (Rafael Aquini) [RHEL-145696] {CVE-2026-46029}
+- mm/slab: use prandom if !allow_spin (Rafael Aquini) [RHEL-145696]
+- slab: prevent recursive kmalloc() in alloc_empty_sheaf() (Rafael Aquini) [RHEL-145696]
+- slub: remove CONFIG_SLUB_TINY specific code paths (Rafael Aquini) [RHEL-145696]
+- slab: handle pfmemalloc slabs properly with sheaves (Rafael Aquini) [RHEL-145696]
+- slab: move kfence_alloc() out of internal bulk alloc (Rafael Aquini) [RHEL-145696]
+- slab: fix kmalloc_nolock() context check for PREEMPT_RT (Rafael Aquini) [RHEL-145696] {CVE-2026-23134}
+- mm/slub: reset KASAN tag in defer_free() before accessing freed memory (Rafael Aquini) [RHEL-145696] {CVE-2025-71110}
+- mm/slab: fix false lockdep warning in __kfree_rcu_sheaf() (Rafael Aquini) [RHEL-145696]
+- mm/slab: introduce kvfree_rcu_barrier_on_cache() for cache destruction (Rafael Aquini) [RHEL-145696]
+- slab: distinguish lock and trylock for sheaf_flush_main() (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: return NULL early from alloc_frozen_pages_nolock() in NMI on UP (Rafael Aquini) [RHEL-145696] {CVE-2026-46035}
+- mm/damon/sysfs: read ops_id only once in damon_sysfs_apply_inputs() (Rafael Aquini) [RHEL-145696]
+- mm/damon/sysfs: read addr_unit only once in damon_sysfs_apply_inputs() (Rafael Aquini) [RHEL-145696]
+- fuse: remove page alignment check for writeback len (Rafael Aquini) [RHEL-145696]
+- fuse: fix fuseblk i_blkbits for iomap partial writes (Rafael Aquini) [RHEL-145696]
+- fuse: reflect cached blocksize if blocksize was changed (Rafael Aquini) [RHEL-145696]
+- fuse: keep inode->i_blkbits constant (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: deferred_grow_zone(): fix out-of-range first_deferred_pfn (Rafael Aquini) [RHEL-145696]
+- mm: page_alloc: fix non-movable reclaim storm in defrag_mode (Rafael Aquini) [RHEL-145696]
+- mm: page_alloc: move capture_control to the page allocator (Rafael Aquini) [RHEL-145696]
+- mm: compaction: support non-movable compaction for pageblock requests (Rafael Aquini) [RHEL-145696]
+- mm: page_alloc: __GFP_FS lockdep annotation for direct compaction (Rafael Aquini) [RHEL-145696]
+- mm/mglru: fix anon-only reclaim evicting file pages when swappiness=max (Rafael Aquini) [RHEL-145696]
+- mm: vmscan: propagate real error code from per-node proactive reclaim (Rafael Aquini) [RHEL-145696]
+- mm/vmscan: fix anon-only reclaim evicting file pages when swappiness=max (Rafael Aquini) [RHEL-145696]
+- mm/damon/ops-common: putback folios on invalid migrate nid (Rafael Aquini) [RHEL-145696] {CVE-2026-74644}
+- mm/filemap: __filemap_add_folio() restore index before retrying (Rafael Aquini) [RHEL-145696] {CVE-2026-74591}
+- mm: memcontrol: update state_local when flushing NMI stats (Rafael Aquini) [RHEL-145696]
+- futex: Avoid private hash use-after-free on final put (Rafael Aquini) [RHEL-145696] {CVE-2026-80758}
+- mm/damon/sysfs-schemes: kobject_del() scheme action destination dirs (Rafael Aquini) [RHEL-145696]
+- arm64: make huge_ptep_get handled unaligned addresses (Rafael Aquini) [RHEL-145696] {CVE-2026-68172}
+- arm64/mm: Check the requested PFN range during memory removal (Rafael Aquini) [RHEL-145696]
+- x86/mm/pat: Take cpa_lock around large-page collapse (Rafael Aquini) [RHEL-145696] {CVE-2026-93066}
+- mm/huge_memory: set PG_has_hwpoisoned only after new folio head is established (Rafael Aquini) [RHEL-145696]
+- mm: page_ext: add count limit to page_ext_iter_next to prevent invalid PFN access (Rafael Aquini) [RHEL-145696] {CVE-2026-64295}
+- selftests/mm: skip uffd-stress test when nr_pages_per_cpu is zero (Rafael Aquini) [RHEL-145696]
+- slab: recognize @GFP parameter as optional in kernel-doc (Rafael Aquini) [RHEL-145696]
+- KVM: guest_memfd: fix NUMA interleave index double-counting (Rafael Aquini) [RHEL-145696]
+- KVM: arm64: Omit tag sync on stage-2 mappings of the zero page (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: fix defrag_mode for non-reclaimable allocations (Rafael Aquini) [RHEL-145696]
+- mm/mincore: handle non-swap entries before !CONFIG_SWAP guard (Rafael Aquini) [RHEL-145696] {CVE-2026-53333}
+- mm/damon/lru_sort: handle ctx allocation failure (Rafael Aquini) [RHEL-145696] {CVE-2026-53335}
+- mm/damon/reclaim: handle ctx allocation failure (Rafael Aquini) [RHEL-145696] {CVE-2026-53334}
+- mm/damon/sysfs-schemes: fix double increment of nr_regions (Rafael Aquini) [RHEL-145696]
+- mm/madvise: reject invalid process_madvise() advice for zero-length vectors (Rafael Aquini) [RHEL-145696]
+- mm: fix minor spelling mistakes in comments (Rafael Aquini) [RHEL-145696]
+- mm/page_owner: fix %%pGp format specifier argument type (Rafael Aquini) [RHEL-145696]
+- Revert "tmpfs: don't enable large folios if not supported" (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: avoid false positive lockdep assertion (Rafael Aquini) [RHEL-145696]
+- x86/mm: Fix freeing of PMD-sized vmemmap pages (Rafael Aquini) [RHEL-145696] {CVE-2026-64302}
+- mm: fix __vm_normal_page() to handle missing support for pmd_special()/pud_special() (Rafael Aquini) [RHEL-145696] {CVE-2026-64181}
+- mm/page_alloc: fix initialization of tags of the huge zero folio with init_on_free (Rafael Aquini) [RHEL-145696] {CVE-2026-64130}
+- cgroup/dmem: Return -ENOMEM on failed pool preallocation (Rafael Aquini) [RHEL-145696]
+- arm64: Reserve an extra page for early kernel mapping (Rafael Aquini) [RHEL-145696] {CVE-2026-53288}
+- mm/damon/stat: detect and use fresh enabled value (Rafael Aquini) [RHEL-145696]
+- vmalloc: fix buffer overflow in vrealloc_node_align() (Rafael Aquini) [RHEL-145696] {CVE-2026-46281}
+- x86/mm: Revert INVLPGB optimization for set_memory code (Rafael Aquini) [RHEL-145696]
+- writeback: Fix use after free in inode_switch_wbs_work_fn() (Rafael Aquini) [RHEL-145696] {CVE-2026-31703}
+- mm/damon/core: disallow non-power of two min_region_sz on damon_start() (Rafael Aquini) [RHEL-145696] {CVE-2026-52905}
+- tools/testing/selftests: add merge test for partial msealed range (Rafael Aquini) [RHEL-145696]
+- mm/damon/stat: fix memory leak on damon_start() failure in damon_stat_start() (Rafael Aquini) [RHEL-145696] {CVE-2026-46087}
+- mm/damon/core: fix damos_walk() vs kdamond_fn() exit race (Rafael Aquini) [RHEL-145696] {CVE-2026-46008}
+- mm/damon/core: fix damon_call() vs kdamond_fn() exit race (Rafael Aquini) [RHEL-145696] {CVE-2026-46025}
+- slub: fix data loss and overflow in krealloc() (Rafael Aquini) [RHEL-145696] {CVE-2026-45990}
+- mm/damon/stat: deallocate damon_call() failure leaking damon_ctx (Rafael Aquini) [RHEL-145696] {CVE-2026-31652}
+- mm/damon/sysfs: fix param_ctx leak on damon_sysfs_new_test_ctx() failure (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Handle invalid large leaf mappings correctly (Rafael Aquini) [RHEL-145696] {CVE-2026-31600}
+- arm64: mm: Fix rodata=full block mapping support for realm guests (Rafael Aquini) [RHEL-145696]
+- writeback: don't block sync for filesystems with no data integrity guarantees (Rafael Aquini) [RHEL-145696] {CVE-2026-31465}
+- mm/huge_memory: fix early failure try_to_migrate() when split huge pmd for shared THP (Rafael Aquini) [RHEL-145696]
+- mm/rmap: fix incorrect pte restoration for lazyfree folios (Rafael Aquini) [RHEL-145696] {CVE-2026-31398}
+- mm/huge_memory: fix a folio_split() race condition with folio_try_get() (Rafael Aquini) [RHEL-145696]
+- Revert "ptdesc: remove references to folios from __pagetable_ctor() and pagetable_dtor()" (Rafael Aquini) [RHEL-145696]
+- tee: shm: Remove refcounting of kernel pages (Rafael Aquini) [RHEL-145696]
+- arm64: gcs: Honour mprotect(PROT_NONE) on shadow stack mappings (Rafael Aquini) [RHEL-145696]
+- arm64: gcs: Do not set PTE_SHARED on GCS mappings if FEAT_LPA2 is enabled (Rafael Aquini) [RHEL-145696] {CVE-2026-23345}
+- arm64/gcs: Fix error handling in arch_set_shadow_stack_status() (Rafael Aquini) [RHEL-145696] {CVE-2026-45876}
+- mm/damon/core: disallow non-power of two min_region_sz (Rafael Aquini) [RHEL-145696]
+- mm/vmscan: select the closest preferred node in demote_folio_list() (Rafael Aquini) [RHEL-145696]
+- mm/vmscan: fix demotion targets checks in reclaim/demotion (Rafael Aquini) [RHEL-145696]
+- mm/slab: do not access current->mems_allowed_seq if !allow_spin (Rafael Aquini) [RHEL-145696] {CVE-2026-43285}
+- memcg-v1: remove folio_memcg_lock() doc reference (Rafael Aquini) [RHEL-145696]
+- Revert "mm/hugetlb: deal with multiple calls to hugetlb_bootmem_alloc" (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: don't cond_resched() in deferred_init_memmap_chunk() if called from deferred_grow_zone() (Rafael Aquini) [RHEL-145696]
+- mm, swap: restore swap_space attr aviod kernel panic (Rafael Aquini) [RHEL-145696] {CVE-2026-23211}
+- mm: do not copy page tables unnecessarily for VM_UFFD_WP (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: fix excessive IPI broadcasts when unsharing PMD tables using mmu_gather (Rafael Aquini) [RHEL-145696]
+- mm/rmap: fix two comments related to huge_pmd_unshare() (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: fix two comments related to huge_pmd_unshare() (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: fix hugetlb_pmd_shared() (Rafael Aquini) [RHEL-145696] {CVE-2026-23100}
+- tools/testing/selftests: add forked (un)/faulted VMA merge tests (Rafael Aquini) [RHEL-145696]
+- mm/vma: enforce VMA fork limit on unfaulted,faulted mremap merge too (Rafael Aquini) [RHEL-145696]
+- tools/testing/selftests: add tests for !tgt, src mremap() merges (Rafael Aquini) [RHEL-145696]
+- mm/vma: fix anon_vma UAF on mremap() faulted, unfaulted merge (Rafael Aquini) [RHEL-145696] {CVE-2026-23077}
+- mm/zswap: fix error pointer free in zswap_cpu_comp_prepare() (Rafael Aquini) [RHEL-145696]
+- mm: vmalloc: fix up vrealloc_node_align() kernel-doc macro name (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Simplify check in arch_kfence_init_pool() (Rafael Aquini) [RHEL-145696]
+- KVM: s390: Fix gmap_helper_zap_one_page() again (Rafael Aquini) [RHEL-145696] {CVE-2025-71155}
+- arm64/mm: Document why linear map split failure upon vm_reset_perms is not problematic (Rafael Aquini) [RHEL-145696]
+- arm64/pageattr: Propagate return value from __change_memory_common (Rafael Aquini) [RHEL-145696] {CVE-2025-68737}
+- mm: swap: remove scan_swap_map_slots() references from comments (Rafael Aquini) [RHEL-145696]
+- mm: swap: change swap_alloc_slow() to void (Rafael Aquini) [RHEL-145696]
+- mm, swap: remove redundant comment for read_swap_cache_async (Rafael Aquini) [RHEL-145696]
+- mm, swap: use SWP_SOLIDSTATE to determine if swap is rotational (Rafael Aquini) [RHEL-145696]
+- mm, swap: fix memory leak in setup_clusters() error path (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: add pmd folio to ds_queue in do_huge_zero_wp_pmd() (Rafael Aquini) [RHEL-145696]
+- mm/filemap: fix logic around SIGBUS in filemap_map_pages() (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: fix NULL pointer deference when splitting folio (Rafael Aquini) [RHEL-145696] {CVE-2025-68293}
+- selftests/mm: fix division-by-zero in uffd-unit-tests (Rafael Aquini) [RHEL-145696]
+- mm/mmap_lock: reset maple state on lock_vma_under_rcu() retry (Rafael Aquini) [RHEL-145696]
+- mm/memfd: fix information leak in hugetlb folios (Rafael Aquini) [RHEL-145696] {CVE-2025-68292}
+- tools/testing/selftests/mm: add smaps visibility guard region test (Rafael Aquini) [RHEL-145696]
+- tools/testing/selftests/mm: add MADV_COLLAPSE test case (Rafael Aquini) [RHEL-145696]
+- tools/testing/vma: add VMA sticky userland tests (Rafael Aquini) [RHEL-145696]
+- mm: set the VM_MAYBE_GUARD flag on guard region install (Rafael Aquini) [RHEL-145696]
+- mm: introduce copy-on-fork VMAs and make VM_MAYBE_GUARD one (Rafael Aquini) [RHEL-145696]
+- mm: implement sticky VMA flags (Rafael Aquini) [RHEL-145696]
+- mm: update vma_modify_flags() to handle residual flags, document (Rafael Aquini) [RHEL-145696]
+- mm: add atomic VMA flags and set VM_MAYBE_GUARD as such (Rafael Aquini) [RHEL-145696]
+- mm: introduce VM_MAYBE_GUARD and make visible in /proc/$pid/smaps (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: Fix initialization of huge zero folio (Rafael Aquini) [RHEL-145696]
+- mm/damon/tests/core-kunit: handle alloc failure on damos_test_commit_filter() (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon/design: fix wrong link to intervals goal section (Rafael Aquini) [RHEL-145696]
+- mm: introduce deferred freeing for kernel page tables (Rafael Aquini) [RHEL-145696]
+- x86/mm: use pagetable_free() (Rafael Aquini) [RHEL-145696]
+- mm: introduce pure page table freeing function (Rafael Aquini) [RHEL-145696]
+- x86/mm: use 'ptdesc' when freeing PMD pages (Rafael Aquini) [RHEL-145696]
+- mm: actually mark kernel page table pages (Rafael Aquini) [RHEL-145696]
+- mm: add a ptdesc flag to mark kernel page tables (Rafael Aquini) [RHEL-145696]
+- mm: add remap_pfn_range_prepare(), remap_pfn_range_complete() (Rafael Aquini) [RHEL-145696]
+- mm/damon/reclaim: use min_sz_region for core address alignment when setting regions (Rafael Aquini) [RHEL-145696]
+- mm/damon: add a min_sz_region parameter to damon_set_region_biggest_system_ram_default() (Rafael Aquini) [RHEL-145696]
+- mm: fix MAX_FOLIO_ORDER on powerpc configs with hugetlb (Rafael Aquini) [RHEL-145696]
+- mm/mempool: fix poisoning order>0 pages with HIGHMEM (Rafael Aquini) [RHEL-145696] {CVE-2025-68231}
+- mm/slub: fix memory leak in free_to_pcs_bulk() (Rafael Aquini) [RHEL-145696]
+- shmem: fix tmpfs reconfiguration (remount) when noswap is set (Rafael Aquini) [RHEL-145696]
+- memblock: fix memblock_estimated_nr_free_pages() for soft-reserved memory (Rafael Aquini) [RHEL-145696]
+- mm/secretmem: fix use-after-free race in fault handler (Rafael Aquini) [RHEL-145696] {CVE-2025-40272}
+- mm/huge_memory: initialise the tags of the huge zero folio (Rafael Aquini) [RHEL-145696]
+- mm/damon/stat: change last_refresh_jiffies to a global variable (Rafael Aquini) [RHEL-145696]
+- codetag: debug: handle existing CODETAG_EMPTY in mark_objexts_empty for slabobj_ext (Rafael Aquini) [RHEL-145696] {CVE-2025-68199}
+- mm/mm_init: fix hash table order logging in alloc_large_system_hash() (Rafael Aquini) [RHEL-145696]
+- mm/truncate: unmap large folio on split failure (Rafael Aquini) [RHEL-145696]
+- mm/memory: do not populate page table entries beyond i_size (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: preserve PG_has_hwpoisoned if a folio is split to >0 order (Rafael Aquini) [RHEL-145696]
+- mm/kmsan: fix kmsan kmalloc hook when no stack depots are allocated yet (Rafael Aquini) [RHEL-145696]
+- mm/shmem: fix THP allocation and fallback loop (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: do not change split_huge_page*() target order silently (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Tidy up force_pte_mapping() (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Optimize range_split_to_ptes() (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Don't sleep in split_kernel_leaf_mapping() when in atomic context (Rafael Aquini) [RHEL-145696]
+- slab: make __slab_free() more clear (Rafael Aquini) [RHEL-145696]
+- slab: prevent infinite loop in kmalloc_nolock() with debugging (Rafael Aquini) [RHEL-145696]
+- s390/mm: Fix memory leak in add_marker() when kvrealloc() fails (Rafael Aquini) [RHEL-145696]
+- slab: Fix obj_ext mistakenly considered NULL due to race condition (Rafael Aquini) [RHEL-145696]
+- slab: fix slab accounting imbalance due to defer_deactivate_slab() (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: fix potential memory leak by cleaning ops_filter in damon_destroy_scheme (Rafael Aquini) [RHEL-145696] {CVE-2025-40229}
+- hugetlbfs: move lock assertions after early returns in huge_pmd_unshare() (Rafael Aquini) [RHEL-145696]
+- vmw_balloon: indicate success when effectively deflating during migration (Rafael Aquini) [RHEL-145696] {CVE-2025-68248}
+- slab: Avoid race on slab->obj_exts in alloc_slab_obj_exts (Rafael Aquini) [RHEL-145696] {CVE-2025-40348}
+- slab: reset slab->obj_ext when freeing and it is OBJEXTS_ALLOC_FAIL (Rafael Aquini) [RHEL-145696]
+- mm: prevent poison consumption when splitting THP (Rafael Aquini) [RHEL-145696] {CVE-2025-40230}
+- mm: don't spin in add_stack_record when gfp flags don't allow (Rafael Aquini) [RHEL-145696] {CVE-2025-68253}
+- mm/damon/sysfs: dealloc commit test ctx always (Rafael Aquini) [RHEL-145696] {CVE-2025-40227}
+- slab: fix clearing freelist in free_deferred_objects() (Rafael Aquini) [RHEL-145696]
+- x86/mm: Fix overflow in __cpa_addr() (Rafael Aquini) [RHEL-145696]
+- slab: fix barn NULL pointer dereference on memoryless nodes (Rafael Aquini) [RHEL-145696]
+- mm/damon/vaddr: do not repeat pte_offset_map_lock() until success (Rafael Aquini) [RHEL-145696] {CVE-2025-40218}
+- slub: Don't call lockdep_unregister_key() for immature kmem_cache. (Rafael Aquini) [RHEL-145696]
+- page_pool: Fix PP_MAGIC_MASK to avoid crashing on some 32-bit arches (Rafael Aquini) [RHEL-145696] {CVE-2025-40199}
+- slab: Fix using this_cpu_ptr() in preemptible context (Rafael Aquini) [RHEL-145696]
+- mm/khugepaged: use KMEM_CACHE() (Rafael Aquini) [RHEL-145696]
+- mm/ksm: cleanup mm_slot_entry() invocation (Rafael Aquini) [RHEL-145696]
+- Documentation/mm: drop pxx_mkdevmap() descriptions from page table helpers (Rafael Aquini) [RHEL-145696]
+- mm: clean up is_guard_pte_marker() (Rafael Aquini) [RHEL-145696]
+- drivers/base: move memory_block_add_nid() into the caller (Rafael Aquini) [RHEL-145696]
+- mm/memory_hotplug: activate node before adding new memory blocks (Rafael Aquini) [RHEL-145696]
+- arm64: mte: Do not flag the zero page as PG_mte_tagged (Rafael Aquini) [RHEL-145696]
+- slab: Add allow_spin check to eliminate kmemleak warnings (Rafael Aquini) [RHEL-145696]
+- slab: Introduce kmalloc_nolock() and kfree_nolock(). (Rafael Aquini) [RHEL-145696]
+- slab: Reuse first bit for OBJEXTS_ALLOC_FAIL (Rafael Aquini) [RHEL-145696]
+- slab: Make slub local_(try)lock more precise for LOCKDEP (Rafael Aquini) [RHEL-145696]
+- mm: Introduce alloc_frozen_pages_nolock() (Rafael Aquini) [RHEL-145696]
+- mm: Allow GFP_ACCOUNT to be used in alloc_pages_nolock(). (Rafael Aquini) [RHEL-145696]
+- locking/local_lock: Expose dep_map in local_trylock_t. (Rafael Aquini) [RHEL-145696]
+- locking/local_lock: Introduce local_lock_is_locked(). (Rafael Aquini) [RHEL-145696]
+- tools/testing: include maple-shim.c in maple.c (Rafael Aquini) [RHEL-145696]
+- maple_tree: use percpu sheaves for maple_node_cache (Rafael Aquini) [RHEL-145696]
+- mm, vma: use percpu sheaves for vm_area_struct cache (Rafael Aquini) [RHEL-145696]
+- slab: allow NUMA restricted allocations to use percpu sheaves (Rafael Aquini) [RHEL-145696]
+- slab: skip percpu sheaves for remote object freeing (Rafael Aquini) [RHEL-145696]
+- slab: determine barn status racily outside of lock (Rafael Aquini) [RHEL-145696]
+- slab: sheaf prefilling for guaranteed allocations (Rafael Aquini) [RHEL-145696]
+- slab: add sheaf support for batching kfree_rcu() operations (Rafael Aquini) [RHEL-145696]
+- mm: swap: check for stable address space before operating on the VMA (Rafael Aquini) [RHEL-145696] {CVE-2025-39992}
+- mm: convert folio_page() back to a macro (Rafael Aquini) [RHEL-145696]
+- mm/khugepaged: use start_addr/addr for improved readability (Rafael Aquini) [RHEL-145696]
+- hugetlbfs: skip VMAs without shareable locks in hugetlb_vmdelete_list (Rafael Aquini) [RHEL-145696]
+- alloc_tag: fix boot failure due to NULL pointer dereference (Rafael Aquini) [RHEL-145696]
+- mm: silence data-race in update_hiwater_rss (Rafael Aquini) [RHEL-145696]
+- mm/memory-failure: don't select MEMORY_ISOLATION (Rafael Aquini) [RHEL-145696]
+- mm/khugepaged: remove definition of struct khugepaged_mm_slot (Rafael Aquini) [RHEL-145696]
+- mm/ksm: get mm_slot by mm_slot_entry() when slot is !NULL (Rafael Aquini) [RHEL-145696]
+- selftests/mm: add fork inheritance test for ksm_merging_pages counter (Rafael Aquini) [RHEL-145696]
+- mm/ksm: fix incorrect KSM counter handling in mm_struct during fork (Rafael Aquini) [RHEL-145696]
+- mm: remove PMD alignment constraint in execmem_vmalloc() (Rafael Aquini) [RHEL-145696]
+- mm/memory_hotplug: fix typo 'esecially' -> 'especially' (Rafael Aquini) [RHEL-145696]
+- mm/rmap: improve mlock tracking for large folios (Rafael Aquini) [RHEL-145696]
+- mm/filemap: map entire large folio faultaround (Rafael Aquini) [RHEL-145696]
+- mm/fault: try to map the entire file folio in finish_fault() (Rafael Aquini) [RHEL-145696]
+- mm/rmap: mlock large folios in try_to_unmap_one() (Rafael Aquini) [RHEL-145696]
+- mm/rmap: fix a mlock race condition in folio_referenced_one() (Rafael Aquini) [RHEL-145696]
+- mm/page_vma_mapped: track if the page is mapped across page table boundary (Rafael Aquini) [RHEL-145696]
+- mm/compaction: fix low_pfn advance on isolating hugetlb (Rafael Aquini) [RHEL-145696]
+- slab: add opt-in caching layer of percpu sheaves (Rafael Aquini) [RHEL-145696]
+- slab: simplify init_kmem_cache_nodes() error handling (Rafael Aquini) [RHEL-145696]
+- include/linux/pgtable.h: convert arch_enter_lazy_mmu_mode() and friends to static inlines (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Move KPTI helpers to mmu.c (Rafael Aquini) [RHEL-145696]
+- s390/mm: Add memory allocation profiling hooks (Rafael Aquini) [RHEL-145696]
+- s390/mm: Use __GFP_ACCOUNT for user page table allocations (Rafael Aquini) [RHEL-145696]
+- selftests/mm: skip soft-dirty tests when CONFIG_MEM_SOFT_DIRTY is disabled (Rafael Aquini) [RHEL-145696]
+- mm/damon/sysfs: set damon_ctx->min_sz_region only for paddr use case (Rafael Aquini) [RHEL-145696]
+- mm/vmalloc: move resched point into alloc_vmap_area() (Rafael Aquini) [RHEL-145696]
+- ksm: use a folio inside cmp_and_merge_page() (Rafael Aquini) [RHEL-145696]
+- mm: page_alloc: avoid kswapd thrashing due to NUMA restrictions (Rafael Aquini) [RHEL-145696]
+- mm/oom_kill.c: fix inverted check (Rafael Aquini) [RHEL-145696]
+- mm/khugepaged: do not fail collapse_pte_mapped_thp() on SCAN_PMD_NULL (Rafael Aquini) [RHEL-145696]
+- NFS: Enable use of the RWF_DONTCACHE flag on the NFS client (Rafael Aquini) [RHEL-145696]
+- filemap: Add a version of folio_end_writeback that ignores dropbehind (Rafael Aquini) [RHEL-145696]
+- filemap: Add a helper for filesystems implementing dropbehind (Rafael Aquini) [RHEL-145696]
+- mm: do not assume file == vma->vm_file in compat_vma_mmap_prepare() (Rafael Aquini) [RHEL-145696]
+- mm: specify separate file and vm_file params in vm_area_desc (Rafael Aquini) [RHEL-145696]
+- arm64: map [_text, _stext) virtual address range non-executable+read-only (Rafael Aquini) [RHEL-145696]
+- mm: drop all references of writable and SCAN_PAGE_RO (Rafael Aquini) [RHEL-145696]
+- mm: enable khugepaged anonymous collapse on non-writable regions (Rafael Aquini) [RHEL-145696]
+- mm/damon/stat: expose negative idle time (Rafael Aquini) [RHEL-145696]
+- mm/damon/stat: expose the current tuned aggregation interval (Rafael Aquini) [RHEL-145696]
+- samples/damon/mtier: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- samples/damon/prcl: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- samples/damon/wsse: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- mm/damon/lru_sort: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- mm/damon/reclaim: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- mm/damon/stat: use damon_initialized() (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: implement damon_initialized() function (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: rename DAMON section (Rafael Aquini) [RHEL-145696]
+- Docs/admin-guide/mm/damon/start: add --target_pid to DAMOS example command (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon/maintainer-profile: update community meetup for reservation requirements (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: set effective quota on first charge window (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: reset age if nr_accesses changes between non-zero and zero (Rafael Aquini) [RHEL-145696]
+- alloc_tag: mark inaccurate allocation counters in /proc/allocinfo output (Rafael Aquini) [RHEL-145696]
+- mm/oom_kill: the OOM reaper traverses the VMA maple tree in reverse order (Rafael Aquini) [RHEL-145696]
+- mm/oom_kill: thaw the entire OOM victim process (Rafael Aquini) [RHEL-145696]
+- mm/damon/lru_sort: use param_ctx for damon_attrs staging (Rafael Aquini) [RHEL-145696]
+- selftests/mm: protection_keys: fix dead code (Rafael Aquini) [RHEL-145696]
+- selftests/mm: add -Wunreachable-code and fix warnings (Rafael Aquini) [RHEL-145696]
+- mm/damon/reclaim: support addr_unit for DAMON_RECLAIM (Rafael Aquini) [RHEL-145696]
+- mm/damon/lru_sort: support addr_unit for DAMON_LRU_SORT (Rafael Aquini) [RHEL-145696]
+- selftests/mm: gup_tests: option to GUP all pages in a single call (Rafael Aquini) [RHEL-145696]
+- mm: remove page->order (Rafael Aquini) [RHEL-145696]
+- mm: constify compound_order() and page_size() (Rafael Aquini) [RHEL-145696]
+- mm: lru_add_drain_all() do local lru_add_drain() first (Rafael Aquini) [RHEL-145696]
+- selftests/mm: remove PROT_EXEC req from file-collapse tests (Rafael Aquini) [RHEL-145696]
+- mm: vm_event_item: explicit #include for THREAD_SIZE (Rafael Aquini) [RHEL-145696]
+- alloc_tag: avoid warnings when freeing non-compound "tail" pages (Rafael Aquini) [RHEL-145696]
+- alloc_tag: prevent enabling memory profiling if it was shut down (Rafael Aquini) [RHEL-145696]
+- alloc_tag: use release_pages() in the cleanup path (Rafael Aquini) [RHEL-145696]
+- mm: skip mlocked THPs that are underused early in deferred_split_scan() (Rafael Aquini) [RHEL-145696]
+- mm/hmm: populate PFNs from PMD swap entry (Rafael Aquini) [RHEL-145696]
+- mm/gup: fix handling of errors from arch_make_folio_accessible() in follow_page_pte() (Rafael Aquini) [RHEL-145696]
+- mm: re-enable kswapd when memory pressure subsides or demotion is toggled (Rafael Aquini) [RHEL-145696]
+- selftests/mm: fix hugepages cleanup too early (Rafael Aquini) [RHEL-145696]
+- readahead: add trace points (Rafael Aquini) [RHEL-145696]
+- ptdesc: remove ptdesc_to_virt() (Rafael Aquini) [RHEL-145696]
+- ptdesc: remove references to folios from __pagetable_ctor() and pagetable_dtor() (Rafael Aquini) [RHEL-145696]
+- ptdesc: convert __page_flags to pt_flags (Rafael Aquini) [RHEL-145696]
+- mm/memcg: v1: account event registrations and drop world-writable cgroup.event_control (Rafael Aquini) [RHEL-145696]
+- mm, swap: use a single page for swap table when the size fits (Rafael Aquini) [RHEL-145696]
+- mm, swap: implement dynamic allocation of swap table (Rafael Aquini) [RHEL-145696]
+- mm, swap: remove contention workaround for swap cache (Rafael Aquini) [RHEL-145696]
+- mm, swap: mark swap address space ro and add context debug check (Rafael Aquini) [RHEL-145696]
+- mm, swap: use the swap table for the swap cache and switch API (Rafael Aquini) [RHEL-145696]
+- mm, swap: wrap swap cache replacement with a helper (Rafael Aquini) [RHEL-145696]
+- mm/shmem, swap: remove redundant error handling for replacing folio (Rafael Aquini) [RHEL-145696]
+- mm, swap: cleanup swap cache API and add kerneldoc (Rafael Aquini) [RHEL-145696]
+- mm, swap: tidy up swap device and cluster info helpers (Rafael Aquini) [RHEL-145696]
+- mm, swap: rename and move some swap cluster definition and helpers (Rafael Aquini) [RHEL-145696]
+- mm, swap: always lock and check the swap cache folio before use (Rafael Aquini) [RHEL-145696]
+- mm, swap: check page poison flag after locking it (Rafael Aquini) [RHEL-145696]
+- mm, swap: use unified helper for swap cache look up (Rafael Aquini) [RHEL-145696]
+- docs/mm: add document for swap table (Rafael Aquini) [RHEL-145696]
+- mm/memremap: remove unused get_dev_pagemap() parameter (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: check the correct buddy if it is a starting block (Rafael Aquini) [RHEL-145696]
+- mm/hwpoison: decouple hwpoison_filter from mm/memory-failure.c (Rafael Aquini) [RHEL-145696]
+- huge_memory: return -EINVAL in folio split functions when THP is disabled (Rafael Aquini) [RHEL-145696]
+- filemap: optimize folio refount update in filemap_map_pages (Rafael Aquini) [RHEL-145696]
+- selftests/mm: split_huge_page_test: cleanups for split_pte_mapped_thp test (Rafael Aquini) [RHEL-145696]
+- selftests/mm: split_huge_page_test: fix occasional is_backed_by_folio() wrong results (Rafael Aquini) [RHEL-145696]
+- mm/show_mem: add trylock while printing alloc info (Rafael Aquini) [RHEL-145696]
+- mm/show_mem: dump the status of the mem alloc profiling before printing (Rafael Aquini) [RHEL-145696]
+- virtio_balloon: stop calling page_address() in free_pages() (Rafael Aquini) [RHEL-145696]
+- arm64: stop calling page_address() in free_pages() (Rafael Aquini) [RHEL-145696]
+- powerpc: stop calling page_address() in free_pages() (Rafael Aquini) [RHEL-145696]
+- riscv: stop calling page_address() in free_pages() (Rafael Aquini) [RHEL-145696]
+- x86: stop calling page_address() in free_pages() (Rafael Aquini) [RHEL-145696]
+- aoe: stop calling page_address() in free_page() (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: add kernel-docs for free_pages() (Rafael Aquini) [RHEL-145696]
+- mm: remove mlock_count from struct page (Rafael Aquini) [RHEL-145696]
+- mm/filemap: align last_index to folio size (Rafael Aquini) [RHEL-145696]
+- mm: constify highmem related functions for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- mm: constify assert/test functions in mm.h (Rafael Aquini) [RHEL-145696]
+- mm: constify various inline functions for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- mm: constify ptdesc_pmd_pts_count() and folio_get_private() (Rafael Aquini) [RHEL-145696]
+- mm: constify arch_pick_mmap_layout() for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- mm, s390: constify mapping related test/getter functions (Rafael Aquini) [RHEL-145696]
+- mm: constify process_shares_mm() for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- fs: constify mapping related test functions for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- mm: constify zone related test/getter functions (Rafael Aquini) [RHEL-145696]
+- mm: constify pagemap related test/getter functions (Rafael Aquini) [RHEL-145696]
+- mm: constify shmem related test functions for improved const-correctness (Rafael Aquini) [RHEL-145696]
+- mm: hugeltb: check NUMA_NO_NODE in only_alloc_fresh_hugetlb_folio() (Rafael Aquini) [RHEL-145696]
+- mm: hugetlb: remove struct hstate from init_new_hugetlb_folio() (Rafael Aquini) [RHEL-145696]
+- mm: hugetlb: directly pass order when allocate a hugetlb folio (Rafael Aquini) [RHEL-145696]
+- mm: hugetlb: convert to account_new_hugetlb_folio() (Rafael Aquini) [RHEL-145696]
+- mm: hugetlb: convert to use more alloc_fresh_hugetlb_folio() (Rafael Aquini) [RHEL-145696]
+- mm: show_mem: show number of zspages in show_free_areas (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: retry to allocate for early boot hugepage allocation (Rafael Aquini) [RHEL-145696]
+- kasan: apply write-only mode in kasan kunit testcases (Rafael Aquini) [RHEL-145696]
+- kasan/hw-tags: introduce kasan.write_only option (Rafael Aquini) [RHEL-145696]
+- mm: remove nth_page() (Rafael Aquini) [RHEL-145696]
+- block: update comment of "struct bio_vec" regarding nth_page() (Rafael Aquini) [RHEL-145696]
+- kfence: drop nth_page() usage (Rafael Aquini) [RHEL-145696]
+- mm/gup: drop nth_page() usage in unpin_user_page_range_dirty_lock() (Rafael Aquini) [RHEL-145696]
+- vfio/pci: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- scsi: sg: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- scsi: scsi_lib: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- mmc: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- memstick: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- mspro_block: drop nth_page() usage within SG entry (Rafael Aquini) [RHEL-145696]
+- scatterlist: disallow non-contigous page ranges in a single SG entry (Rafael Aquini) [RHEL-145696]
+- mm/cma: refuse handing out non-contiguous page ranges (Rafael Aquini) [RHEL-145696]
+- mm/gup: remove record_subpages() (Rafael Aquini) [RHEL-145696]
+- mm/gup: drop nth_page() usage within folio when recording subpages (Rafael Aquini) [RHEL-145696]
+- mm/pagewalk: drop nth_page() usage within folio in folio_walk_start() (Rafael Aquini) [RHEL-145696]
+- fs: hugetlbfs: cleanup folio in adjust_range_hwpoison() (Rafael Aquini) [RHEL-145696]
+- fs: hugetlbfs: remove nth_page() usage within folio in adjust_range_hwpoison() (Rafael Aquini) [RHEL-145696]
+- mm/mm/percpu-km: drop nth_page() usage within single allocation (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: cleanup hugetlb_folio_init_tail_vmemmap() (Rafael Aquini) [RHEL-145696]
+- mm: simplify folio_page() and folio_page_idx() (Rafael Aquini) [RHEL-145696]
+- mm: limit folio/compound page sizes in problematic kernel configs (Rafael Aquini) [RHEL-145696]
+- mm: sanity-check maximum folio size in folio_set_order() (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: make memmap_init_compound() look more like prep_compound_page() (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: check for unreasonable folio sizes when registering hstate (Rafael Aquini) [RHEL-145696]
+- mm/memremap: reject unreasonable folio/compound page sizes in memremap_pages() (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: reject unreasonable folio/compound page sizes in alloc_contig_range_noprof() (Rafael Aquini) [RHEL-145696]
+- wireguard: selftests: remove CONFIG_SPARSEMEM_VMEMMAP=y from qemu kernel config (Rafael Aquini) [RHEL-145696]
+- x86/Kconfig: drop superfluous "select SPARSEMEM_VMEMMAP" (Rafael Aquini) [RHEL-145696]
+- s390/Kconfig: drop superfluous "select SPARSEMEM_VMEMMAP" (Rafael Aquini) [RHEL-145696]
+- arm64: Kconfig: drop superfluous "select SPARSEMEM_VMEMMAP" (Rafael Aquini) [RHEL-145696]
+- mm: stop making SPARSEMEM_VMEMMAP user-selectable (Rafael Aquini) [RHEL-145696]
+- mm/memfd: remove redundant casts (Rafael Aquini) [RHEL-145696]
+- selftests/mm/uffd: refactor non-composite global vars into struct (Rafael Aquini) [RHEL-145696]
+- mm: zpdesc: minor naming and comment corrections (Rafael Aquini) [RHEL-145696]
+- mm: remove unused zpool layer (Rafael Aquini) [RHEL-145696]
+- mm: zswap: interact directly with zsmalloc (Rafael Aquini) [RHEL-145696]
+- kasan: call kasan_init_generic in kasan_init (Rafael Aquini) [RHEL-145696]
+- kasan: introduce ARCH_DEFER_KASAN and unify static key across modes (Rafael Aquini) [RHEL-145696]
+- s390: Use pr_info for "KernelAddressSanitizer initialized" message (Rafael Aquini) [RHEL-145696]
+- arm64: mm: split linear mapping if BBML2 unsupported on secondary CPUs (Rafael Aquini) [RHEL-145696]
+- arm64: mm: support large block mapping when rodata=full (Rafael Aquini) [RHEL-145696]
+- arm64: Enable permission change on arm64 kernel block mappings (Rafael Aquini) [RHEL-145696]
+- arm64/Kconfig: Remove CONFIG_RODATA_FULL_DEFAULT_ENABLED (Rafael Aquini) [RHEL-145696]
+- arm64: mm: Rework the 'rodata=' options (Rafael Aquini) [RHEL-145696]
+- powerpc/32: Remove PAGE_KERNEL_TEXT to fix startup failure (Rafael Aquini) [RHEL-145696]
+- writeback: Avoid contention on wb->list_lock when switching inodes (Rafael Aquini) [RHEL-145696]
+- slab: mark slab->obj_exts allocation failures unconditionally (Rafael Aquini) [RHEL-145696]
+- slab: prevent warnings when slab obj_exts vector allocation fails (Rafael Aquini) [RHEL-145696]
+- slab: don't validate slab pointer in free_debug_processing() (Rafael Aquini) [RHEL-145696]
+- slab: validate slab before using it in alloc_single_from_partial() (Rafael Aquini) [RHEL-145696]
+- slab: move validate_slab_ptr() from alloc_consistency_checks() to its caller (Rafael Aquini) [RHEL-145696]
+- slab: move validate_slab_ptr() from check_slab() to its callers (Rafael Aquini) [RHEL-145696]
+- slab: wrap debug slab validation in validate_slab_ptr() (Rafael Aquini) [RHEL-145696]
+- slab: Remove dead code in free_consistency_checks() (Rafael Aquini) [RHEL-145696]
+- memblock: drop for_each_free_mem_pfn_range_in_zone_from() (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: drop deferred_init_maxorder() (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: deferred_init_memmap: use a job per zone (Rafael Aquini) [RHEL-145696]
+- mm/mm_init: use deferred_init_memmap_chunk() in deferred_grow_zone() (Rafael Aquini) [RHEL-145696]
+- huge_mm.h: disallow is_huge_zero_folio(NULL) (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: find_large_buddy() from start_pfn aligned order (Rafael Aquini) [RHEL-145696]
+- pagevec.h: add `const` to pointer parameters of getter functions (Rafael Aquini) [RHEL-145696]
+- mm/damon: add damon_ctx->min_sz_region (Rafael Aquini) [RHEL-145696]
+- Docs/ABI/damon: document addr_unit file (Rafael Aquini) [RHEL-145696]
+- Docs/admin-guide/mm/damon/usage: document addr_unit file (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon/design: document 'address unit' parameter (Rafael Aquini) [RHEL-145696]
+- mm/damon/sysfs: implement addr_unit file under context dir (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: support addr_unit for DAMOS_STAT (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: support addr_unit for MIGRATE_{HOT,COLD} (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: support addr_unit for DAMOS_LRU_[DE]PRIO (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: support addr_unit for DAMOS_PAGEOUT (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: support addr_unit for access monitoring (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: add damon_ctx->addr_unit (Rafael Aquini) [RHEL-145696]
+- mm/pageblock-flags: remove PB_migratetype_bits/PB_migrate_end (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: use xxx_pageblock_isolate() for better reading (Rafael Aquini) [RHEL-145696]
+- btrfs: set AS_KERNEL_FILE on the btree_inode (Rafael Aquini) [RHEL-145696]
+- mm: add vmstat for kernel_file pages (Rafael Aquini) [RHEL-145696]
+- mm/filemap: add AS_KERNEL_FILE (Rafael Aquini) [RHEL-145696]
+- selftests/mm/uffd-stress: stricten constraint on free hugepages needed before the test (Rafael Aquini) [RHEL-145696]
+- selftests/mm/uffd-stress: make test operate on less hugetlb memory (Rafael Aquini) [RHEL-145696]
+- mm: shmem: drop the unnecessary folio_nr_pages() (Rafael Aquini) [RHEL-145696]
+- mm: shmem: use 'folio' for shmem_partial_swap_usage() (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: harmonize should_compact_retry() type (Rafael Aquini) [RHEL-145696]
+- mm/page-writeback: drop usage of folio_index (Rafael Aquini) [RHEL-145696]
+- selftests/mm: use calloc instead of malloc in pagemap_ioctl.c (Rafael Aquini) [RHEL-145696]
+- mm/khugepaged: use list_xxx() helper to improve readability (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: remove enforce_sysfs from __thp_vma_allowable_orders (Rafael Aquini) [RHEL-145696]
+- mm: remove is_migrate_highatomic() (Rafael Aquini) [RHEL-145696]
+- mm/zswap: reduce the size of the compression buffer to a single page (Rafael Aquini) [RHEL-145696]
+- mm/cma: add 'available count' and 'total count' to trace_cma_alloc_start (Rafael Aquini) [RHEL-145696]
+- mm/rmap: use folio_large_nr_pages() when we are sure it is a large folio (Rafael Aquini) [RHEL-145696]
+- mm/rmap: not necessary to mask off FOLIO_PAGES_MAPPED (Rafael Aquini) [RHEL-145696]
+- mm, x86/mm: move creating the tlb_flush event back to x86 code (Rafael Aquini) [RHEL-145696]
+- mm: fix lockdep issues in writeback handling (Rafael Aquini) [RHEL-145696]
+- mm: remove BDI_CAP_WRITEBACK_ACCT (Rafael Aquini) [RHEL-145696]
+- mm: remove write_cache_pages (Rafael Aquini) [RHEL-145696]
+- bcachefs: stop using write_cache_pages (Rafael Aquini) [RHEL-145696]
+- ntfs3: stop using write_cache_pages (Rafael Aquini) [RHEL-145696]
+- ubifs: stop using write_cache_pages (Rafael Aquini) [RHEL-145696]
+- jfs: stop using write_cache_pages (Rafael Aquini) [RHEL-145696]
+- udf: stop using write_cache_pages (Rafael Aquini) [RHEL-145696]
+- fuse: use default writeback accounting (Rafael Aquini) [RHEL-145696]
+- fuse: refactor writeback to use iomap_writepage_ctx inode (Rafael Aquini) [RHEL-145696]
+- fuse: hook into iomap for invalidating and checking partial uptodateness (Rafael Aquini) [RHEL-145696]
+- fuse: use iomap for folio laundering (Rafael Aquini) [RHEL-145696]
+- fuse: use iomap for writeback (Rafael Aquini) [RHEL-145696]
+- fuse: use iomap for buffered writes (Rafael Aquini) [RHEL-145696]
+- mpage: Provide variant of mpage_writepages() with own optional folio handler (Rafael Aquini) [RHEL-145696]
+- mpage: convert do_mpage_readpage() to return void type (Rafael Aquini) [RHEL-145696]
+- mpage: terminate read-ahead on read error (Rafael Aquini) [RHEL-145696]
+- fs: use writeback_iter directly in mpage_writepages (Rafael Aquini) [RHEL-145696]
+- selftests/mm: test that rmap behaves as expected (Rafael Aquini) [RHEL-145696]
+- selftests/mm: put general ksm operation into vm_util (Rafael Aquini) [RHEL-145696]
+- tmpfs: preserve SB_I_VERSION on remount (Rafael Aquini) [RHEL-145696]
+- selftests/mm: check after-split folio orders in split_huge_page_test (Rafael Aquini) [RHEL-145696]
+- selftests/mm: add check_after_split_folio_orders() helper (Rafael Aquini) [RHEL-145696]
+- selftests/mm: reimplement is_backed_by_thp() with more precise check (Rafael Aquini) [RHEL-145696]
+- selftests/mm: mark all functions static in split_huge_page_test.c (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: add new_order and offset to split_huge_pages*() pr_debug (Rafael Aquini) [RHEL-145696]
+- mm/hugetlb: early exit from hugetlb_pages_alloc_boot() when max_huge_pages=0 (Rafael Aquini) [RHEL-145696]
+- mm/filemap: skip non-uptodate folio if there are available folios (Rafael Aquini) [RHEL-145696]
+- mm/filemap: do not use is_partially_uptodate for entire folio (Rafael Aquini) [RHEL-145696]
+- mm/damon/tests/core-kunit: add damos_commit_filter test (Rafael Aquini) [RHEL-145696]
+- mm: fix duplicate accounting of free pages in should_reclaim_retry() (Rafael Aquini) [RHEL-145696]
+- mm: add folio_is_pci_p2pdma() (Rafael Aquini) [RHEL-145696]
+- mm: reimplement folio_is_fsdax() (Rafael Aquini) [RHEL-145696]
+- mm: reimplement folio_is_device_coherent() (Rafael Aquini) [RHEL-145696]
+- mm: reimplement folio_is_device_private() (Rafael Aquini) [RHEL-145696]
+- mm: introduce memdesc_is_zone_device() (Rafael Aquini) [RHEL-145696]
+- slab: use memdesc_nid() (Rafael Aquini) [RHEL-145696]
+- slab: use memdesc_flags_t (Rafael Aquini) [RHEL-145696]
+- mm: introduce memdesc_zonenum() (Rafael Aquini) [RHEL-145696]
+- mm: introduce memdesc_nid() (Rafael Aquini) [RHEL-145696]
+- mm: convert page_to_section() to memdesc_section() (Rafael Aquini) [RHEL-145696]
+- mm: introduce memdesc_flags_t (Rafael Aquini) [RHEL-145696]
+- selftests: prctl: introduce tests for disabling THPs except for madvise (Rafael Aquini) [RHEL-145696]
+- selftests: prctl: introduce tests for disabling THPs completely (Rafael Aquini) [RHEL-145696]
+- selftest/mm: extract sz2ord function into vm_util.h (Rafael Aquini) [RHEL-145696]
+- docs: transhuge: document process level THP controls (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: respect MADV_COLLAPSE with PR_THP_DISABLE_EXCEPT_ADVISED (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: convert "tva_flags" to "enum tva_type" (Rafael Aquini) [RHEL-145696]
+- prctl: extend PR_SET_THP_DISABLE to optionally exclude VM_HUGEPAGE (Rafael Aquini) [RHEL-145696]
+- mm: readahead: improve mmap_miss heuristic for concurrent faults (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: remove redundant pcp->free_count initialization in per_cpu_pages_init() (Rafael Aquini) [RHEL-145696]
+- mm: fix typos in VMA comments (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: simplify lowmem_reserve max calculation (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: only set ALLOC_HIGHATOMIC for __GPF_HIGH allocations (Rafael Aquini) [RHEL-145696]
+- memcg: optimize exit to user space (Rafael Aquini) [RHEL-145696]
+- userfaultfd: opportunistic TLB-flush batching for present pages in MOVE (Rafael Aquini) [RHEL-145696]
+- mm: swap.h: Remove deleted field from comments (Rafael Aquini) [RHEL-145696]
+- mm/swapfile.c: introduce function alloc_swap_scan_list() (Rafael Aquini) [RHEL-145696]
+- mempool: rename struct mempool_s to struct mempool (Rafael Aquini) [RHEL-145696]
+- mm/zswap: store <PAGE_SIZE compression failed page as-is (Rafael Aquini) [RHEL-145696]
+- selftests/mm: fix spelling mistake "mrmeap" -> "mremap" (Rafael Aquini) [RHEL-145696]
+- mm: remove redundant __GFP_NOWARN (Rafael Aquini) [RHEL-145696]
+- mm: replace mm->flags with bitmap entirely and set to 64 bits (Rafael Aquini) [RHEL-145696]
+- mm: convert remaining users to mm_flags_*() accessors (Rafael Aquini) [RHEL-145696]
+- mm: update fork mm->flags initialisation to use bitmap (Rafael Aquini) [RHEL-145696]
+- mm: correct sign-extension issue in MMF_* flag masks (Rafael Aquini) [RHEL-145696]
+- mm: update coredump logic to correctly use bitmap mm flags (Rafael Aquini) [RHEL-145696]
+- mm: convert uprobes to mm_flags_*() accessors (Rafael Aquini) [RHEL-145696]
+- mm: convert arch-specific code to mm_flags_*() accessors (Rafael Aquini) [RHEL-145696]
+- mm: convert prctl to mm_flags_*() accessors (Rafael Aquini) [RHEL-145696]
+- mm: convert core mm to mm_flags_*() accessors (Rafael Aquini) [RHEL-145696]
+- mm: add bitmap mm->flags field (Rafael Aquini) [RHEL-145696]
+- block: use largest_zero_folio in __blkdev_issue_zero_pages() (Rafael Aquini) [RHEL-145696]
+- mm: add largest_zero_folio() routine (Rafael Aquini) [RHEL-145696]
+- mm: add persistent huge zero folio (Rafael Aquini) [RHEL-145696]
+- mm: rename MMF_HUGE_ZERO_PAGE to MMF_HUGE_ZERO_FOLIO (Rafael Aquini) [RHEL-145696]
+- mm: rename huge_zero_page to huge_zero_folio (Rafael Aquini) [RHEL-145696]
+- mm: rename vm_ops->find_special_page() to vm_ops->find_normal_page() (Rafael Aquini) [RHEL-145696]
+- mm: introduce and use vm_normal_page_pud() (Rafael Aquini) [RHEL-145696]
+- mm/memory: factor out common code from vm_normal_page_*() (Rafael Aquini) [RHEL-145696]
+- mm/memory: convert print_bad_pte() to print_bad_page_map() (Rafael Aquini) [RHEL-145696]
+- mm/rmap: convert "enum rmap_level" to "enum pgtable_level" (Rafael Aquini) [RHEL-145696]
+- powerpc/ptdump: rename "struct pgtable_level" to "struct ptdump_pg_level" (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: mark PMD mappings of the huge zero folio special (Rafael Aquini) [RHEL-145696]
+- fs/dax: use vmf_insert_folio_pmd() to insert the huge zero folio (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: support huge zero folio in vmf_insert_folio_pmd() (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: move more common code into insert_pud() (Rafael Aquini) [RHEL-145696]
+- mm/huge_memory: move more common code into insert_pmd() (Rafael Aquini) [RHEL-145696]
+- treewide: remove MIGRATEPAGE_SUCCESS (Rafael Aquini) [RHEL-145696]
+- mm/migrate: remove MIGRATEPAGE_UNMAP (Rafael Aquini) [RHEL-145696]
+- mm/mincore: use a helper for checking the swap cache (Rafael Aquini) [RHEL-145696]
+- mm/mincore, swap: consolidate swap cache checking for mincore (Rafael Aquini) [RHEL-145696]
+- docs/mm/damon/design: fix typo: s/sz_trtied/sz_tried/ (Rafael Aquini) [RHEL-145696]
+- mm/kasan/init.c: remove unnecessary pointer variables (Rafael Aquini) [RHEL-145696]
+- mm/damon/vaddr: support stat-purpose DAMOS filters (Rafael Aquini) [RHEL-145696]
+- mm/damon/paddr: move filters existence check function to ops-common (Rafael Aquini) [RHEL-145696]
+- mm/damon/core: skip needless update of damon_attrs in damon_commit_ctx() (Rafael Aquini) [RHEL-145696]
+- mm/rmap: do __folio_mod_stat() in __folio_add_rmap() (Rafael Aquini) [RHEL-145696]
+- mm/nommu: convert kobjsize() to folios (Rafael Aquini) [RHEL-145696]
+- mm/slub: allow to set node and align in k[v]realloc (Rafael Aquini) [RHEL-145696]
+- mm/vmalloc: allow to set node and align in vrealloc (Rafael Aquini) [RHEL-145696]
+- mm: correct misleading comment on mmap_lock field in mm_struct (Rafael Aquini) [RHEL-145696]
+- selftests/mm: use __auto_type in swap() macro (Rafael Aquini) [RHEL-145696]
+- mm, swap: prefer nonfull over free clusters (Rafael Aquini) [RHEL-145696]
+- mm, swap: remove fragment clusters counter (Rafael Aquini) [RHEL-145696]
+- mm, swap: only scan one cluster in fragment list (Rafael Aquini) [RHEL-145696]
+- mm: change vma_start_read() to drop RCU lock on failure (Rafael Aquini) [RHEL-145696]
+- mm: limit the scope of vma_start_read() (Rafael Aquini) [RHEL-145696]
+- selftests/mm: pass filename as input param to VM_PFNMAP tests (Rafael Aquini) [RHEL-145696]
+- mm: replace (20 - PAGE_SHIFT) with common macros for pages<->MB conversion (Rafael Aquini) [RHEL-145696]
+- mm/mglru: update MG-LRU proactive reclaim statistics only to memcg (Rafael Aquini) [RHEL-145696]
+- kasan: add test for SLAB_TYPESAFE_BY_RCU quarantine skipping (Rafael Aquini) [RHEL-145696]
+- samples/damon/mtier: avoid starting DAMON before initialization (Rafael Aquini) [RHEL-145696]
+- samples/damon/prcl: avoid starting DAMON before initialization (Rafael Aquini) [RHEL-145696]
+- samples/damon/wsse: avoid starting DAMON before initialization (Rafael Aquini) [RHEL-145696]
+- mm/slub: Refactor note_cmpxchg_failure for better readability (Rafael Aquini) [RHEL-145696]
+- mm/slub: Replace sort_r() with sort() for debugfs stack trace sorting (Rafael Aquini) [RHEL-145696]
+- mm/slub: Fix cmp_loc_by_count() to return 0 when counts are equal (Rafael Aquini) [RHEL-145696]
+- powerpc/vdso: Include asm/syscalls.h for sys_ni_syscall() (Rafael Aquini) [RHEL-145696]
+- powerpc/8xx: Remove offset in SPRN_M_TWB (Rafael Aquini) [RHEL-145696]
+- acpi/hmat: Remove now unused hmat_update_target_coordinates() (Rafael Aquini) [RHEL-145696]
+- cxl, acpi/hmat: Update CXL access coordinates directly instead of through HMAT (Rafael Aquini) [RHEL-145696]
+- drivers/base/node: Add a helper function node_update_perf_attrs() (Rafael Aquini) [RHEL-145696]
+- mm/memory_hotplug: Update comment for hotplug memory callback priorities (Rafael Aquini) [RHEL-145696]
+- x86/mm: Change cpa_flush() to call flush_kernel_range() directly (Rafael Aquini) [RHEL-145696]
+- net: Define sk_memcg under CONFIG_MEMCG. (Rafael Aquini) [RHEL-145696]
+- net-memcg: Pass struct sock to mem_cgroup_sk_under_memory_pressure(). (Rafael Aquini) [RHEL-145696]
+- net-memcg: Pass struct sock to mem_cgroup_sk_(un)?charge(). (Rafael Aquini) [RHEL-145696]
+- net-memcg: Introduce mem_cgroup_sk_enabled(). (Rafael Aquini) [RHEL-145696]
+- net-memcg: Introduce mem_cgroup_from_sk(). (Rafael Aquini) [RHEL-145696]
+- net: Clean up __sk_mem_raise_allocated(). (Rafael Aquini) [RHEL-145696]
+- net: Call trace_sock_exceed_buf_limit() for memcg failure with SK_MEM_RECV. (Rafael Aquini) [RHEL-145696]
+- tcp: Simplify error path in inet_csk_accept(). (Rafael Aquini) [RHEL-145696]
+- mptcp: Use tcp_under_memory_pressure() in mptcp_epollin_ready(). (Rafael Aquini) [RHEL-145696]
+- mptcp: Fix up subflow's memcg when CONFIG_SOCK_CGROUP_DATA=n. (Rafael Aquini) [RHEL-145696]
+- signal: Fix memory leak for PIDFD_SELF* sentinels (Rafael Aquini) [RHEL-145696]
+- selftests/mm: add process_madvise() tests (Rafael Aquini) [RHEL-145696]
+- samples/damon: change enable parameters to enabled (Rafael Aquini) [RHEL-145696]
+- secretmem: move setting O_LARGEFILE and bumping users' count to the place where we create the file (Rafael Aquini) [RHEL-145696]
+- mm: rename call_mmap/mmap_prepare to vfs_mmap/mmap_prepare (Rafael Aquini) [RHEL-145696]
+- alloc_tag: handle incomplete bulk allocations in vm_module_tags_populate (Rafael Aquini) [RHEL-145696]
+- mm/page_alloc: Fix try_alloc_pages (Rafael Aquini) [RHEL-145696]
+- hugetlb: convert adjust_range_hwpoison() to take a folio (Rafael Aquini) [RHEL-145696]
+- hugetlb: convert hugetlb_vma_maps_page() to hugetlb_vma_maps_pfn() (Rafael Aquini) [RHEL-145696]
+- fs/pipe: add simpler helpers for common cases (Rafael Aquini) [RHEL-145696]
+- selftests/pidfd: add new PIDFD_SELF* defines (Rafael Aquini) [RHEL-145696]
+- pidfd: add PIDFD_SELF* sentinels to refer to own thread/process (Rafael Aquini) [RHEL-145696]
+- mm: pgtable: Fix grammar error (Rafael Aquini) [RHEL-145696]
+- fdget(), more trivial conversions (Rafael Aquini) [RHEL-145696]
+- regularize emptiness checks in fini_module(2) and vfs_dedupe_file_range() (Rafael Aquini) [RHEL-145696]
+- slab: Update MAINTAINERS entry (Rafael Aquini) [RHEL-145696]
+- Documentation: Fix core-api typos (Rafael Aquini) [RHEL-145696]
+- Documentation: Fix admin-guide typos (Rafael Aquini) [RHEL-145696]
+- docs: update physical memory documentation by adding N_GENERIC_INITIATOR to enum node_states (Rafael Aquini) [RHEL-145696]
+- docs: update THP documentation to clarify sysfs "never" setting (Rafael Aquini) [RHEL-145696]
+- docs: Remove colon from ctltable title in vm.rst (Rafael Aquini) [RHEL-145696]
+- docs: Add awk section for ucount sysctl entries (Rafael Aquini) [RHEL-145696]
+- docs/mm: expand vma doc to highlight pte freeing, non-vma traversal (Rafael Aquini) [RHEL-145696]
+- vmcoreinfo: Remove documentation of PG_slab and PG_hugetlb (Rafael Aquini) [RHEL-145696]
+- doc: Add slab internal kernel-doc (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add missing files to mm page alloc section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add stray rmap file to mm rmap section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add missing test files to mm gup section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add missing mm/workingset.c file to mm reclaim section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm swap section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add tlb trace events to MMU GATHER AND TLB INVALIDATION (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add Alistair as reviewer of mm memory policy (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm memory policy section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm ksm section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm reclaim section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: update page allocator section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm GUP section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add mm THP section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add core mm section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add reverse mapping section (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: mailmap: update Hyeonggon's name and email address (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: update SLAB ALLOCATOR maintainers (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add MM subsection for the page allocator (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: mm: add entry for secretmem (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: mm: add entry for numa memblocks and numa emulation (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: mm: add entry for execmem (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: fixup USERFAULTFD entry (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: add peterx as userfaultfd reviewer (Rafael Aquini) [RHEL-145696]
+- MAINTAINERS: update MEMORY MAPPING section (Rafael Aquini) [RHEL-145696]
+- docs/mm/damon/design: fix spelling mistake (Rafael Aquini) [RHEL-145696]
+- docs/mm/damon/design: document active DAMOS filter type (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon/design: update for changed filter-default behavior (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon/design: document unmapped DAMOS filter type (Rafael Aquini) [RHEL-145696]
+- Documentation/mm: fix spelling mistake (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon: fix spelling and grammar in monitoring_intervals_tuning_example.rst (Rafael Aquini) [RHEL-145696]
+- docs/mm: Physical memory: Remove zone_t (Rafael Aquini) [RHEL-145696]
+- docs: tmpfs: drop 'fadvise()' from the documentation (Rafael Aquini) [RHEL-145696]
+- docs: tmpfs: update the large folios policy for tmpfs and shmem (Rafael Aquini) [RHEL-145696]
+- docs: mm: fix the incorrect 'FileHugeMapped' field (Rafael Aquini) [RHEL-145696]
+- Docs/mm/damon: recommend academic papers to read and/or cite (Rafael Aquini) [RHEL-145696]
+- Docs/mm: Fix a mistake for pfn in page_tables.rst (Rafael Aquini) [RHEL-145696]
+
+* Mon Oct 05 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-274.el10]
+- smb: client: reject a tree connect response whose byte count is too small (CKI Backport Bot) [RHEL-271295] {CVE-2026-89631}
+- cpufreq: intel_pstate: Avoid using DESIRED_PERF when DEC is enabled (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Consolidate HWP P-states initialization (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Adjust policy->cur in active mode to policy (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Move two functions closer to callers (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Consolidate frequency values computation (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Introduce intel_pstate_update_freq_limits() (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Fix setting minimum P-state at init time (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Rename INTEL_PSTATE_HWP_BROADWELL (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Simplify HWP handling on Broadwell (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Rearrange checks in hybrid_get_cost() (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Improve warning message on HWP-disabled hybrid CPUs (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Use HYBRID_SCALING_FACTOR_ADL for Bartlett Lake (Dennis Chen) [RHEL-242438]
+- cpufreq: intel_pstate: Allow repeated intel_pstate disable (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'wrmsrl_on_cpu()' to 'wrmsrq_on_cpu()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'rdmsrl_on_cpu()' to 'rdmsrq_on_cpu()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'rdmsrl_safe_on_cpu()' to 'rdmsrq_safe_on_cpu()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'wrmsrl_safe()' to 'wrmsrq_safe()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'rdmsrl_safe()' to 'rdmsrq_safe()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'wrmsrl()' to 'wrmsrq()' [partial] (Dennis Chen) [RHEL-242438]
+- x86/msr: Rename 'rdmsrl()' to 'rdmsrq()' [partial] (Dennis Chen) [RHEL-242438]
+- net: tun: bound receive headroom (CKI Backport Bot) [RHEL-264379] {CVE-2026-81000}
+- redhat/configs: automotive: disable CONFIG_CRYPTO_DEV_TEGRA (Erico Nunes) [RHEL-256830]
+- redhat/configs: automotive: disable CONFIG_CRYPTO_DEV_VIRTIO (Erico Nunes) [RHEL-256830]
+- dmaengine: idxd: fix fdev setup failure cleanup in idxd_cdev_open() (CKI Backport Bot) [RHEL-254626] {CVE-2026-74574}
+- KVM: SVM: Update x2APIC MSR intercepts if AVIC is inhibited while L2 is active (CKI Backport Bot) [RHEL-254536] {CVE-2026-74516}
+- ipvs: clear IPv4 options after rebasing tunnel ICMP errors (CKI Backport Bot) [RHEL-254423] {CVE-2026-74669}
+- eth: bnxt: improve the timing of stats (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix NULL pointer dereference (Anirudh Virdi) [RHEL-135356]
+- Reapply "bnxt_en: bring back rtnl_lock() in the bnxt_open() path" (Anirudh Virdi) [RHEL-135356]
+- eth: bnxt: disable rx-copybreak by default (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Drop pci_save_state() after pci_restore_state() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Use absolute target ns from ptp_clock_request (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Check return value of bnxt_hwrm_vnic_cfg (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Set bp->max_tpa according to what the FW supports (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Delay for 5 seconds after AER DPC for all chips (Anirudh Virdi) [RHEL-135356]
+- net: bnxt: Add TX inline buffer infrastructure (Anirudh Virdi) [RHEL-135356]
+- net: bnxt: Use dma_unmap_len for TX completion unmapping (Anirudh Virdi) [RHEL-135356]
+- net: bnxt: Add a helper for tx_bd_ext (Anirudh Virdi) [RHEL-135356]
+- net: bnxt: Export bnxt_xmit_get_cfa_action (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Restore default stat ctxs for ULP when resource is available (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Don't assume XDP is never enabled in bnxt_init_dflt_ring_mode() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Refactor some basic ring setup and adjustment logic (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: set backing store type from query type (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Implement XDP RSS hash metadata extraction for V3_CMP (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Move bnxt_rss_ext_op into header (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Implement XDP RSS hash metadata extraction (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: use bnxt_xdp_buff for xdp context (Anirudh Virdi) [RHEL-135356]
+- fwctl/bnxt_en: Create an aux device for fwctl (Anirudh Virdi) [RHEL-135356]
+- fwctl/bnxt_en: Refactor aux bus functions to be more generic (Anirudh Virdi) [RHEL-135356]
+- fwctl/bnxt_en: Move common definitions to include/linux/bnxt/ (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Resize RSS contexts on channel count change (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: fix OOB access in DBG_BUF_PRODUCER async event handler (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix RSS table size check when changing ethtool channels (Anirudh Virdi) [RHEL-135356]
+- eth: bnxt: rename ring_err_stats -> ring_drv_stats (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix deleting of Ntuple filters (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Check RSS contexts in bnxt_need_reserve_rings() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Refactor bnxt_need_reserve_rings() (Anirudh Virdi) [RHEL-135356]
+- eth: bnxt: gather and report HW-GRO stats (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Allow ntuple filters for drops (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix build break on non-x86 platforms (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Implement ethtool_ops -> get_link_ext_state() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Use a larger RSS indirection table on P5_PLUS chips (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Add PTP .getcrosststamp() interface to get device/host times (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix NULL pointer crash in bnxt_ptp_enable during error cleanup (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix potential data corruption with HW GRO/LRO (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix XDP_TX path (Anirudh Virdi) [RHEL-135356]
+- net: bnxt: extract GRXRINGS from .get_rxnfc (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Add Virtual Admin Link State Support for VFs (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Do not set EOP on RX AGG BDs on 5760X chips (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Add CQ ring dump to bnxt_dump_cp_sw_state() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Remove the redundant BNXT_EN_FLAG_MSIX_REQUESTED flag (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Enhance log message in bnxt_get_module_status() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Enhance TX pri counters (Anirudh Virdi) [RHEL-135356]
+- eth: bnxt: make use of napi_consume_skb() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix warning in bnxt_dl_reload_down() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Always provide max entry and entry size in coredump segments (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix null pointer dereference in bnxt_bs_trace_check_wrap() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Fix a possible memory leak in bnxt_ptp_init (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Shutdown FW DMA in bnxt_shutdown() (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: support PPS in/out on all pins (Anirudh Virdi) [RHEL-135356]
+- bnxt_en: Enhance stats context reservation logic (Anirudh Virdi) [RHEL-135356]
+- eth: bnxt: support RSS on IPv6 Flow Label (Anirudh Virdi) [RHEL-135356]
+- redhat/configs: automotive: enable USB_CHIPIDEA_IMX (Jared Kangas) [RHEL-154111]
+
+* Thu Oct 01 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-273.el10]
+- redhat: configs: rhel: Enable AMD XDNA config (Marco Pagani) [RHEL-259222]
+- crypto: af_alg - Fix incorrect boolean values in af_alg_ctx (Ricardo Robaina) [RHEL-264233] {CVE-2025-39964}
+- crypto: af_alg - Disallow concurrent writes in af_alg_sendmsg (Ricardo Robaina) [RHEL-264233] {CVE-2025-39964}
+- xfrm: ah6: validate routing header segments_left (CKI Backport Bot) [RHEL-264307] {CVE-2026-80844}
+- scsi: qla2xxx: Bound rsp_info_len to avoid OOB sense-data read (CKI Backport Bot) [RHEL-262561] {CVE-2026-89846}
+- mac802154: llsec: add skb_cow_data() before in-place crypto (CKI Backport Bot) [RHEL-231031] {CVE-2026-63831}
+- proc: protect ptrace_may_access() with exec_update_lock (FD links) (CKI Backport Bot) [RHEL-259924] {CVE-2026-64375}
+- proc: rename proc_setattr to proc_nochmod_setattr (CKI Backport Bot) [RHEL-259924] {CVE-2026-64375}
+- io_uring/poll: fix signed comparison in io_poll_get_ownership() (Jeff Moyer) [RHEL-227114] {CVE-2026-52933}
+- arm64: tlb: Optimize ARM64_WORKAROUND_REPEAT_TLBI (Mark Salter) [RHEL-239373]
+- arm64: tlb: Allow XZR argument to TLBI ops (Mark Salter) [RHEL-239373]
+- block: Fix start and length check added to iov_iter_extract_bvecs() (David Jeffery) [RHEL-246814]
+- block: validate user space vectors during extraction (David Jeffery) [RHEL-246814]
+- loop, zloop: fix dma_alignment for large or unreported limits (David Jeffery) [RHEL-246814]
+- loop: Fix recently introduced lock inversion (David Jeffery) [RHEL-246814]
+- zloop: set dma_alignment from the backing files for direct I/O (David Jeffery) [RHEL-246814]
+- loop: set dma_alignment from the backing file for direct I/O (David Jeffery) [RHEL-246814]
+- block: fix dio leak on metadata mapping error (David Jeffery) [RHEL-246814]
+- block: use blkdev_iov_iter_get_pages status for errors (David Jeffery) [RHEL-246814]
+- block: add a bio_endio_status helper (David Jeffery) [RHEL-246814]
+- block: don't set BIO_QUIET for BLK_STS_AGAIN (David Jeffery) [RHEL-246814]
+- bnxt_en: Gate TPH enablement behind BNXT_SUPPORTS_QUEUE_API check (CKI Backport Bot) [RHEL-235458]
+- hwrng: virtio: clamp device-reported used.len at copy_data() (CKI Backport Bot) [RHEL-225745] {CVE-2026-64456}
+- KVM: s390: Remove user triggerable WARN_ON (Cornelia Huck) [RHEL-136456]
+- KVM: s390: Fall back to short-term pinning in MAP ioctl (Cornelia Huck) [RHEL-136456]
+- KVM: s390: Introducing kvm_arch_set_irq_inatomic fast inject (Cornelia Huck) [RHEL-136456]
+- KVM: s390: Enable adapter_indicators_set to use mapped pages (Cornelia Huck) [RHEL-136456]
+- KVM: s390: Add map/unmap ioctl and clean mappings post-guest (Cornelia Huck) [RHEL-136456]
+- KVM: s390: Use guest address to mark guest page dirty (Cornelia Huck) [RHEL-136456]
+- ALSA: timer: don't re-enter an instance callback that is still running (CKI Backport Bot) [RHEL-237202] {CVE-2026-68200}
+- ALSA: timer: drain a slave's callback before its master detaches it (CKI Backport Bot) [RHEL-236079] {CVE-2026-68201}
+- KEYS: fix overflow in keyctl_pkey_params_get_2() (Bruno Meneguele) [RHEL-229617] {CVE-2026-63824}
+- net: hsr: fix potential OOB access in supervision frame handling (Toke Høiland-Jørgensen) [RHEL-227932] {CVE-2026-64000}
+- ipvlan: Make the addrs_lock be per port (Toke Høiland-Jørgensen) [RHEL-246119] {CVE-2026-23103}
+- packet: use consistent hard_header_len in TX_RING send path (Toke Høiland-Jørgensen) [RHEL-244534]
+- packet: use consistent hard_header_len in non-ring send paths (Toke Høiland-Jørgensen) [RHEL-244534] {CVE-2026-74582}
+- net/packet: fix TOCTOU race on mmap'd vnet_hdr in tpacket_snd() (Toke Høiland-Jørgensen) [RHEL-244534] {CVE-2026-31700}
+- net: remove CAP_SYS_RAWIO zero-padding in dev_validate_header (Toke Høiland-Jørgensen) [RHEL-244534]
+- Revert "wireguard: device: enable threaded NAPI" (Toke Høiland-Jørgensen) [RHEL-226530] {CVE-2026-52945}
+- ipv6: sit: reload inner IPv6 header after GSO offloads (Toke Høiland-Jørgensen) [RHEL-225919] {CVE-2026-53228}
+- ip6: vti: Use ip6_tnl.net in vti6_siocdevprivate(). (Toke Høiland-Jørgensen) [RHEL-228945] {CVE-2026-63921}
+- ip6: vti: Use ip6_tnl.net in vti6_changelink(). (Toke Høiland-Jørgensen) [RHEL-231747] {CVE-2026-63917}
+- pppoe: reload header pointer after dev_hard_header() (Toke Høiland-Jørgensen) [RHEL-242510] {CVE-2026-68121}
+- ppp: defer channel free to an RCU grace period to fix pppol2tp RX UAF (Toke Høiland-Jørgensen) [RHEL-248848] {CVE-2026-68398}
+- ppp: require CAP_NET_ADMIN in target netns for unattached ioctls (Toke Høiland-Jørgensen) [RHEL-228007] {CVE-2026-53075}
+- vxlan: do not reuse cached ip_hdr() value after skb_tunnel_check_pmtu() (Toke Høiland-Jørgensen) [RHEL-231710] {CVE-2026-63993}
+- vxlan: require CAP_NET_ADMIN in the device netns for changelink (Toke Høiland-Jørgensen) [RHEL-239730] {CVE-2026-68432}
+- net: ip6_gre: require CAP_NET_ADMIN in the device netns for changelink (Toke Høiland-Jørgensen) [RHEL-247006] {CVE-2026-72052}
+- net: ip_gre: require CAP_NET_ADMIN in the device netns for changelink (Toke Høiland-Jørgensen) [RHEL-247057] {CVE-2026-63829}
+- tunnels: do not assume transport header in iptunnel_pmtud_check_icmp() (Toke Høiland-Jørgensen) [RHEL-230773] {CVE-2026-63992}
+- macsec: fix replay protection at XPN lower-PN wrap (Toke Høiland-Jørgensen) [RHEL-226667] {CVE-2026-63925}
+- l2tp: use refcount_inc_not_zero in l2tp_session_get_by_ifname (Toke Høiland-Jørgensen) [RHEL-227468] {CVE-2026-63918}
+- xfrm: fix stale skb->prev after async crypto steals a GSO segment (Toke Høiland-Jørgensen) [RHEL-236118] {CVE-2026-68426}
+- xfrm: propagate -EINPROGRESS from validate_xmit_xfrm() (Toke Høiland-Jørgensen) [RHEL-236118]
+- xfrm: Fix dev use-after-free in xfrm async resumption (Toke Høiland-Jørgensen) [RHEL-233036] {CVE-2026-72463}
+- xfrm: hold dev ref until after transport_finish NF_HOOK (Toke Høiland-Jørgensen) [RHEL-233036] {CVE-2026-31663}
+- xfrm: hold device only for the asynchronous decryption (Toke Høiland-Jørgensen) [RHEL-233036]
+- xfrm: policy: fix use-after-free on inexact bin in xfrm_policy_bysel_ctx() (Toke Høiland-Jørgensen) [RHEL-228011] {CVE-2026-53239}
+- xfrm: input: hold netns during deferred transport reinjection (Toke Høiland-Jørgensen) [RHEL-227503] {CVE-2026-63919}
+- xfrm: route MIGRATE notifications to caller's netns (Toke Høiland-Jørgensen) [RHEL-225768] {CVE-2026-63914}
+- xfrm: espintcp: do not reuse an in-progress partial send (Toke Høiland-Jørgensen) [RHEL-222977] {CVE-2026-52935}
+- net/handshake: Drain pending requests at net namespace exit (Toke Høiland-Jørgensen) [RHEL-232141] {CVE-2026-63978}
+- net/handshake: Verify file-reference balance in submit paths (Toke Høiland-Jørgensen) [RHEL-230366]
+- net/handshake: Close the submit-side sock_hold race (Toke Høiland-Jørgensen) [RHEL-230366]
+- net/handshake: hand off the pinned file reference to accept_doit (Toke Høiland-Jørgensen) [RHEL-230366] {CVE-2026-63979}
+- net/handshake: Take a long-lived file reference at submit (Toke Høiland-Jørgensen) [RHEL-234163] {CVE-2026-64523}
+- net/handshake: Pass negative errno through handshake_complete() (Toke Høiland-Jørgensen) [RHEL-230366]
+- nvme-tcp: store negative errno in queue->tls_err (Toke Høiland-Jørgensen) [RHEL-230366]
+- net/handshake: Use spin_lock_bh for hn_lock (Toke Høiland-Jørgensen) [RHEL-230366] {CVE-2026-63980}
+- net/handshake: Fix null-ptr-deref in handshake_complete() (Toke Høiland-Jørgensen) [RHEL-230366]
+- net/handshake: convert handshake_nl_accept_doit() to FD_PREPARE() (Toke Høiland-Jørgensen) [RHEL-230366]
+- file: ensure cleanup (Toke Høiland-Jørgensen) [RHEL-230366]
+- file: add FD_{ADD,PREPARE}() (Toke Høiland-Jørgensen) [RHEL-230366]
+- remove pointless includes of <linux/fdtable.h> (Toke Høiland-Jørgensen) [RHEL-230366]
+- tools: ynl: add scope qualifier for definitions (Toke Høiland-Jørgensen) [RHEL-230366]
+- redhat/genlog: exclude only the merged branch of an excluded merge (Oleksii Baranov)
+- powerpc/pseries/htmdump: Add memory configuration dump support to htmdump module (Mamatha Inamdar) [RHEL-191925]
+- powerpc/pseries/htmdump: Fix the offset value used in htm status dump (Mamatha Inamdar) [RHEL-191925]
+- powerpc/pseries/htmdump: Fix the offset value used in processor configuration dump (Mamatha Inamdar) [RHEL-191925]
+- powerpc/pseries/htmdump: Free the global buffers in htmdump module exit (Mamatha Inamdar) [RHEL-191925]
+- scsi: devinfo: Add BLIST_SKIP_IO_HINTS for EMC Symmetrix (Ewan D. Milne) [RHEL-272827]
+- redhat/configs: Enable CONFIG_TRUSTED_KEYS_PKWM (Mamatha Inamdar) [RHEL-191904]
+- powerpc/pseries: plpks: export plpks_wrapping_is_supported (Mamatha Inamdar) [RHEL-191904]
+- docs: trusted-encryped: add PKWM as a new trust source (Mamatha Inamdar) [RHEL-191904]
+- keys/trusted_keys: establish PKWM as a trusted source (Mamatha Inamdar) [RHEL-191904]
+- pseries/plpks: add HCALLs for PowerVM Key Wrapping Module (Mamatha Inamdar) [RHEL-191904]
+- pseries/plpks: expose PowerVM wrapping features via the sysfs (Mamatha Inamdar) [RHEL-191904]
+- powerpc/pseries: move the PLPKS config inside its own sysfs directory (Mamatha Inamdar) [RHEL-191904]
+- pseries/plpks: fix kernel-doc comment inconsistencies (Mamatha Inamdar) [RHEL-191904]
+- powerpc/crash: stop watchdogs before booting kdump kernel (Mamatha Inamdar) [RHEL-251771]
+- powerpc/pseries: Handle and log pseries-wdt registration failures (Mamatha Inamdar) [RHEL-251771]
+- powerpc/pseries: Move H_WATCHDOG definitions to a common header (Mamatha Inamdar) [RHEL-251771]
+- KVM: arm64: Remove extra ISBs when using msr_hcr_el2 (Gustavo Romero) [RHEL-216299]
+- dm-integrity: don't increment hash_offset twice (CKI Backport Bot) [RHEL-257778] {CVE-2026-72099}
+- add man-page for rv-mon-stall (Gabriele Monaco) [RHEL-151924]
+- redhat/configs: rv: Explicitly set hybrid automata (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Fix ltl2k writing True as a literal (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Fix options shared among commands (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Fix suffix strip in dot2k (Gabriele Monaco) [RHEL-151924]
+- tools/rv: Fix cleanup after failed trace setup (Gabriele Monaco) [RHEL-151924]
+- tools/rv: Fix substring match when listing container monitors (Gabriele Monaco) [RHEL-151924]
+- tools/rv: Fix substring match bug in monitor name search (Gabriele Monaco) [RHEL-151924]
+- tools/rv: Ensure monitor name and desc are NUL-terminated (Gabriele Monaco) [RHEL-151924]
+- rv: Use 0 to check preemption enabled in opid (Gabriele Monaco) [RHEL-151924]
+- rv: Prevent task migration while handling per-CPU events (Gabriele Monaco) [RHEL-151924]
+- rv: Ensure synchronous cleanup for HA monitors (Gabriele Monaco) [RHEL-151924]
+- rv: Add automatic cleanup handlers for per-task HA monitors (Gabriele Monaco) [RHEL-151924]
+- rv: Do not rely on clean monitor when initialising HA (Gabriele Monaco) [RHEL-151924]
+- rv: Fix monitor start ordering and memory ordering for monitoring flag (Gabriele Monaco) [RHEL-151924]
+- rv: Ensure all pending probes terminate on per-obj monitor destroy (Gabriele Monaco) [RHEL-151924]
+- rv: Prevent in-flight per-task handlers from using invalid slots (Gabriele Monaco) [RHEL-151924]
+- rv: Reset per-task DA monitors before releasing the slot (Gabriele Monaco) [RHEL-151924]
+- rv: Fix __user specifier usage in extract_params() (Gabriele Monaco) [RHEL-151924]
+- Documentation/rv: Replace stale website link (Gabriele Monaco) [RHEL-151924]
+- rv: Allow epoll in rtapp-sleep monitor (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix _fill_states() return type annotation (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix unbound loop variable warning (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: enforce presence of initial state (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: extract node marker string to class constant (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix isinstance check in Variable.expand() (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: make monitor arguments required in rvgen (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: remove unused __get_main_name method (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: remove unused sys import from dot2c (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: refactor automata.py to use iterator-based parsing (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: use class constant for init marker (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix DOT file validation logic error (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix PEP 8 whitespace violations (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: fix typos in automata and generator docstring and comments (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: use context managers for file operations (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: remove unnecessary semicolons (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: replace __len__() calls with len() (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: replace %% string formatting with f-strings (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: remove bare except clauses in generator (Gabriele Monaco) [RHEL-151924]
+- rv/rvgen: introduce AutomataError exception class (Gabriele Monaco) [RHEL-151924]
+- rv: Add nomiss deadline monitor (Gabriele Monaco) [RHEL-151924]
+- sched/deadline: Move some utility functions to deadline.h (Gabriele Monaco) [RHEL-151924]
+- sched: Add deadline tracepoints (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Add support for per-obj monitors (Gabriele Monaco) [RHEL-151924]
+- rv: Add support for per-object monitors in DA/HA (Gabriele Monaco) [RHEL-151924]
+- rv: Convert the opid monitor to a hybrid automaton (Gabriele Monaco) [RHEL-151924]
+- rv: Add sample hybrid monitor stall (Gabriele Monaco) [RHEL-151924]
+- Documentation/rv: Add documentation about hybrid automata (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Add support for Hybrid Automata (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Allow spaces in and events strings (Gabriele Monaco) [RHEL-151924]
+- rv: Add Hybrid Automata monitor type (Gabriele Monaco) [RHEL-151924]
+- rv: Unify DA event handling functions across monitor types (Gabriele Monaco) [RHEL-151924]
+- rv: Fix multiple definition of __pcpu_unique_da_mon_this (Gabriele Monaco) [RHEL-151924]
+- rv: Fix documentation reference in da_monitor.h (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Remove unused variable declaration from containers (Gabriele Monaco) [RHEL-151924]
+- verification/dot2c: Remove superfluous enum assignment and add last comma (Gabriele Monaco) [RHEL-151924]
+- verification/dot2c: Remove __buff_to_string() and cleanup (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Annotate DA functions with types (Gabriele Monaco) [RHEL-151924]
+- verification/rvgen: Adapt dot2k and templates after refactoring da_monitor.h (Gabriele Monaco) [RHEL-151924]
+- Documentation/rv: Adapt documentation after da_monitor refactoring (Gabriele Monaco) [RHEL-151924]
+- rv: Cleanup da_monitor after refactor (Gabriele Monaco) [RHEL-151924]
+- rv: Refactor da_monitor to minimise macros (Gabriele Monaco) [RHEL-151924]
+- Documentation/rv: Fix dead link to monitor_synthesis.rst (Gabriele Monaco) [RHEL-151924]
+- rv: Fix compilation if !CONFIG_RV_REACTORS (Gabriele Monaco) [RHEL-151924]
+- rv: Convert to use __free (Gabriele Monaco) [RHEL-151924]
+- rv: Convert to use lock guard (Gabriele Monaco) [RHEL-151924]
+- rv: Add explicit lockdep context for reactors (Gabriele Monaco) [RHEL-151924]
+- rv: Make rv_reacting_on() static (Gabriele Monaco) [RHEL-151924]
+- rv: Pass va_list to reactors (Gabriele Monaco) [RHEL-151924]
+- selftests/tracing: Fix to make --logdir option work again (Gabriele Monaco) [RHEL-151924]
+- selftests/verification: Add initial RV tests (Gabriele Monaco) [RHEL-151924]
+- selftest/ftrace: Generalise ftracetest to use with RV (Gabriele Monaco) [RHEL-151924]
+- iommu/vt-d: Simplify calculate_psi_aligned_address() (Jerry Snitselaar) [RHEL-214191]
+- iommufd: Take dma_resv lock before dma_buf_unpin() in release path (Jerry Snitselaar) [RHEL-214191]
+- dma-direct: fix use of max_pfn (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: introduce DMA_ATTR_CC_SHARED for shared memory (Jerry Snitselaar) [RHEL-214191]
+- dma: contiguous: Export dev_get_cma_area() (Jerry Snitselaar) [RHEL-214191]
+- dma: contiguous: Make dma_contiguous_default_area static (Jerry Snitselaar) [RHEL-214191]
+- dma: contiguous: Make dev_get_cma_area() a proper function (Jerry Snitselaar) [RHEL-214191]
+- dma: contiguous: Turn heap registration logic around (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: rework fdt_init_reserved_mem_node() (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: clarify fdt_scan_reserved_mem*() functions (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: rearrange code a bit (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: replace CMA quirks by generic methods (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: switch to ops based OF_DECLARE() (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: use -ENODEV instead of -ENOENT (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: remove fdt node from the structure (Jerry Snitselaar) [RHEL-214191]
+- of/reserved_mem: Simplify the logic of __reserved_mem_alloc_size() (Jerry Snitselaar) [RHEL-214191]
+- of/reserved_mem: Simplify the logic of fdt_scan_reserved_mem_reg_nodes() (Jerry Snitselaar) [RHEL-214191]
+- of/reserved_mem: Simplify the logic of __reserved_mem_reserve_reg() (Jerry Snitselaar) [RHEL-214191]
+- of/fdt: Fix the len check in early_init_dt_check_for_usable_mem_range() (Jerry Snitselaar) [RHEL-214191]
+- of/fdt: Fix the len check in early_init_dt_check_for_elfcorehdr() (Jerry Snitselaar) [RHEL-214191]
+- of/fdt: Consolidate duplicate code into helper functions (Jerry Snitselaar) [RHEL-214191]
+- of: reserved_mem: Fix placement of __free() annotation (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: fix false kernel-doc comment marker (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: Support batch mode for dma_direct_{map,unmap}_sg (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: Separate DMA sync issuing and completion waiting (Jerry Snitselaar) [RHEL-214191]
+- arm64: Provide dcache_inval_poc_nosync helper (Jerry Snitselaar) [RHEL-214191]
+- arm64: Provide dcache_clean_poc_nosync helper (Jerry Snitselaar) [RHEL-214191]
+- arm64: Provide dcache_by_myline_op_nosync helper (Jerry Snitselaar) [RHEL-214191]
+- iommufd: update outdated comment for renamed iommufd_hw_pagetable_alloc() (Jerry Snitselaar) [RHEL-214191]
+- iommufd: Constify struct dma_buf_attach_ops (Jerry Snitselaar) [RHEL-214191]
+- iommu/amd: Invalidate IRT cache for DMA aliases (Jerry Snitselaar) [RHEL-214191]
+- iommu/amd: Add NUMA node affinity for IOMMU log buffers (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Remove the remaining pages along the invalidation path (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Pass size_order to qi_desc_piotlb() not npages (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Split piotlb invalidation into range and all (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Remove dmar_writel() and dmar_writeq() (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Remove dmar_readl() and dmar_readq() (Jerry Snitselaar) [RHEL-214191]
+- iommufd/selftest: Test dirty tracking on PASID (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Support dirty tracking on PASID (Jerry Snitselaar) [RHEL-214191]
+- iommu/vt-d: Rename device_set_dirty_tracking() and pass dmar_domain pointer (Jerry Snitselaar) [RHEL-214191]
+- iommu/arm-smmu-v3: Update Arm errata (Jerry Snitselaar) [RHEL-214191]
+- iommufd: Add dma_buf_pin() (Jerry Snitselaar) [RHEL-214191]
+- iommu/dma: add support for DMA_ATTR_REQUIRE_COHERENT attribute (Jerry Snitselaar) [RHEL-214191]
+- dma-direct: prevent SWIOTLB path when DMA_ATTR_REQUIRE_COHERENT is set (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: Introduce DMA require coherency attribute (Jerry Snitselaar) [RHEL-214191]
+- dma-mapping: Clarify valid conditions for CPU cache line overlap (Jerry Snitselaar) [RHEL-214191]
+- iommu/io-pgtable: fix all kernel-doc warnings in io-pgtable.h (Jerry Snitselaar) [RHEL-214191]
+- rust: iommu: fix `srctree` link warning (Jerry Snitselaar) [RHEL-214191]
+- rust: iommu: add io_pgtable abstraction (Jerry Snitselaar) [RHEL-214191]
+- PCI: Suspend iommu function prior to resetting a device (Jerry Snitselaar) [RHEL-214191]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types (Jerry Snitselaar) [RHEL-214191]
+- virtio: add missing kernel-doc for map and vmap members (Koushik Dutta) [RHEL-94833]
+- vduse: avoid adding implicit padding (Koushik Dutta) [RHEL-94833]
+- Documentation: Add documentation for VDUSE Address Space IDs (Koushik Dutta) [RHEL-94833]
+- vduse: bump version number (Koushik Dutta) [RHEL-94833]
+- vduse: add vq group asid support (Koushik Dutta) [RHEL-94833]
+- vduse: merge tree search logic of IOTLB_GET_FD and IOTLB_GET_INFO ioctls (Koushik Dutta) [RHEL-94833]
+- vduse: take out allocations from vduse_dev_alloc_coherent (Koushik Dutta) [RHEL-94833]
+- vduse: remove unused vaddr parameter of vduse_domain_free_coherent (Koushik Dutta) [RHEL-94833]
+- vduse: refactor vdpa_dev_add for goto err handling (Koushik Dutta) [RHEL-94833]
+- vhost: forbid change vq groups ASID if DRIVER_OK is set (Koushik Dutta) [RHEL-94833]
+- vdpa: document set_group_asid thread safety (Koushik Dutta) [RHEL-94833]
+- vduse: return internal vq group struct as map token (Koushik Dutta) [RHEL-94833]
+- vduse: add vq group support (Koushik Dutta) [RHEL-94833]
+- vduse: add v1 API definition (Koushik Dutta) [RHEL-94833]
+- vhost: move vdpa group bound check to vhost_vdpa (Koushik Dutta) [RHEL-94833]
+- virtio: fix map ops comment (Koushik Dutta) [RHEL-94833]
+- virtio: standardize Returns documentation style (Koushik Dutta) [RHEL-94833]
+- virtio: fix grammar in virtio_map_ops docs (Koushik Dutta) [RHEL-94833]
+- virtio: fix kernel-doc for mapping/free_coherent functions (Koushik Dutta) [RHEL-94833]
+- vduse: switch to use virtio map API instead of DMA API (Koushik Dutta) [RHEL-94833]
+- tools/virtio: Add DMA_MAPPING_ERROR and sg_dma_len api define for virtio test (Koushik Dutta) [RHEL-94833]
+- vdpa: introduce map ops (Koushik Dutta) [RHEL-94833]
+- vdpa: support virtio_map (Koushik Dutta) [RHEL-94833]
+- virtio: introduce map ops in virtio core (Koushik Dutta) [RHEL-94833]
+- virtio_ring: rename dma_handle to map_handle (Koushik Dutta) [RHEL-94833]
+- virtio: introduce virtio_map container union (Koushik Dutta) [RHEL-94833]
+- virtio: rename dma helpers (Koushik Dutta) [RHEL-94833]
+- virtio_ring: switch to use dma_{map|unmap}_page() (Koushik Dutta) [RHEL-94833]
+- virtio_ring: constify virtqueue pointer for DMA helpers (Koushik Dutta) [RHEL-94833]
+- virtio_ring: remove API virtqueue_set_dma_premapped (Koushik Dutta) [RHEL-94833]
+- virtio_ring: perform premapped operations based on per-buffer (Koushik Dutta) [RHEL-94833]
+- virtio_ring: packed: record extras for indirect buffers (Koushik Dutta) [RHEL-94833]
+- virtio_ring: split: record extras for indirect buffers (Koushik Dutta) [RHEL-94833]
+- virtio_ring: introduce vring_need_unmap_buffer (Koushik Dutta) [RHEL-94833]
+- virtio: Make vring_new_virtqueue support packed vring (Koushik Dutta) [RHEL-94833]
+- x86: uaccess: don't use runtime-const rewriting in modules (Waiman Long) [RHEL-213145]
+- x86/runtime-const: Add the RUNTIME_CONST_PTR assembly macro (Waiman Long) [RHEL-213145]
+- x86: use cmov for user address masking (Waiman Long) [RHEL-213145]
+- net: xdp: handle frags with unreadable memory (Jamie Bainbridge) [RHEL-185446]
+- net: xdp: pass full flags to xdp_update_skb_shared_info() (Jamie Bainbridge) [RHEL-185446]
+- xdp: produce a warning when calculated tailroom is negative (Michal Schmidt) [RHEL-177815]
+- libeth, idpf: use truesize as XDP RxQ info frag_size (Michal Schmidt) [RHEL-177815]
+- i40e: use xdp.frame_sz as XDP RxQ info frag_size (Michal Schmidt) [RHEL-177815]
+- i40e: fix registering XDP RxQ info (Michal Schmidt) [RHEL-177815]
+- ice: change XDP RxQ frag_size from DMA write length to xdp.frame_sz (Michal Schmidt) [RHEL-177815]
+- xsk: introduce helper to determine rxq->frag_size (Michal Schmidt) [RHEL-177815]
+- xdp: use modulo operation to calculate XDP frag tailroom (Michal Schmidt) [RHEL-177815]
+- page_pool: Add page_pool_dev_alloc_netmems helper (Davide Caratti) [RHEL-132651]
+- net: Add skb_can_coalesce for netmem (Davide Caratti) [RHEL-132651]
+- net: Allow const args for of page_to_netmem() (Davide Caratti) [RHEL-132651]
+- xsk: add missing virtual address conversion for page (Davide Caratti) [RHEL-132651]
+- xsk: Bring back busy polling support in XDP_COPY (Davide Caratti) [RHEL-132651]
+- xsk: convert xdp_copy_frags_from_zc() to use page_pool_dev_alloc() (Davide Caratti) [RHEL-132651]
+- net: devmem: don't call queue stop / start when the interface is down (Davide Caratti) [RHEL-132651]
+- net: refactor netdev_rx_queue_restart() to use local qops (Davide Caratti) [RHEL-132651]
+
+* Mon Sep 28 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-272.el10]
+- nvmet-tcp: check INIT_FAILED before nvmet_req_uninit in digest error path (CKI Backport Bot) [RHEL-260474] {CVE-2026-64534}
+- nvmet-auth: reject short AUTH_RECEIVE buffers (CKI Backport Bot) [RHEL-244951] {CVE-2026-72130}
+- mm/huge_memory: update file PMD counter before folio_put() (Luiz Capitulino) [RHEL-231226] {CVE-2026-53189}
+- NFSv4: include MAY_WRITE in open permission mask for O_TRUNC (CKI Backport Bot) [RHEL-234061] {CVE-2026-64298}
+- NFSv4/flexfiles: reject zero filehandle version count (CKI Backport Bot) [RHEL-229408] {CVE-2026-53392}
+- nfsd: fix dead ACL conflict guard in nfsd4_create (CKI Backport Bot) [RHEL-228958] {CVE-2026-53395}
+- NFSv4/pNFS: reject zero-length r_addr in nfs4_decode_mp_ds_addr (CKI Backport Bot) [RHEL-228037] {CVE-2026-53391}
+- nfsd: release layout stid on setlease failure (CKI Backport Bot) [RHEL-227795] {CVE-2026-53399}
+- pNFS: Fix use-after-free in pnfs_update_layout() (CKI Backport Bot) [RHEL-226320] {CVE-2026-63800}
+- nfsd: fix posix_acl leak on SETACL decode failure (CKI Backport Bot) [RHEL-225524] {CVE-2026-53397}
+- zram: fix use-after-free in zram_bvec_write_partial() (Jeff Moyer) [RHEL-191446] {CVE-2026-53185}
+- blk-mq: reinsert cached request to the list (Jeff Moyer) [RHEL-213154]
+- blk-mq: pop cached request if it is usable (Jeff Moyer) [RHEL-213154] {CVE-2026-64017}
+- block: don't overwrite bip_vcnt in bio_integrity_copy_user() (Jeff Moyer) [RHEL-232371] {CVE-2026-64053}
+- KVM: s390: vsie: Avoid injecting machine check on signal (Cornelia Huck) [RHEL-143729]
+- KVM: s390: log machine checks more aggressively (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Fix gmap_helper_zap_one_page() again (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Use generic VIRT_XFER_TO_GUEST_WORK functions (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Enable and disable interrupts in entry code (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Add signal_exits counter (Cornelia Huck) [RHEL-143729]
+- KVM: s390: fix missing present bit for gmap puds (Cornelia Huck) [RHEL-143729]
+- s390/mm: Replace the CSP instruction with CSPG (Cornelia Huck) [RHEL-143729]
+- s390/mm: Remove cpu_has_idte() (Cornelia Huck) [RHEL-143729]
+- s390: Add Dat-Enhancement facility 1 to architecture level set (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Replace sprintf with snprintf for buffer safety (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Remove unused return variable in kvm_arch_vcpu_ioctl_set_fpu (Cornelia Huck) [RHEL-143729]
+- KVM: S390: Remove sca_lock (Cornelia Huck) [RHEL-143729]
+- KVM: s390: Use ESCA instead of BSCA at VM init (Cornelia Huck) [RHEL-143729]
+- s390/asm-offsets: Rename __LC_PGM_INT_CODE (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_IDTE to cpu_has_idte() (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_TOPOLOGY to cpu_has_topology() (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_TLB_LC to cpu_has_tlb_lc() (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_GS to cpu_has_gs() (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_RDP to cpu_has_rdp() (Cornelia Huck) [RHEL-143729]
+- s390/cpufeature: Convert MACHINE_HAS_SEQ_INSN to cpu_has_seq_insn() (Cornelia Huck) [RHEL-143729]
+- net: aquantia: Add missing descriptor cache invalidation on ATL2 (CKI Backport Bot) [RHEL-172178]
+- libceph: Reject monmaps advertising zero monitors (CKI Backport Bot) [RHEL-240895] {CVE-2026-68155}
+- libceph: bound pg_{temp,upmap,upmap_items} length to CEPH_PG_MAX_SIZE (CKI Backport Bot) [RHEL-237157] {CVE-2026-68159}
+- libceph: Amend checking to fix `make W=1` build breakage (CKI Backport Bot) [RHEL-237157] {CVE-2026-68159}
+- nvmet-auth: validate reply message payload bounds against transfer length (CKI Backport Bot) [RHEL-234143] {CVE-2026-64319}
+- net/sched: ets: Always remove class from active list before deleting in ets_qdisc_change (CKI Backport Bot) [RHEL-183002] {CVE-2025-71066}
+- tipc: fix slab-use-after-free Read in tipc_aead_decrypt_done (Xin Long) [RHEL-228916] {CVE-2026-63801}
+- tipc: clear sock->sk on the failed-insert path in tipc_sk_create() (Xin Long) [RHEL-238038] {CVE-2026-68117}
+- sctp: fix race between sctp_wait_for_connect and peeloff (Xin Long) [RHEL-229472] {CVE-2026-63971}
+- sctp: diag: reject stale associations in dump_one path (Xin Long) [RHEL-231580] {CVE-2026-52917}
+- sctp: validate stream count in sctp_process_strreset_inreq() (Xin Long) [RHEL-236159] {CVE-2026-68315}
+- sctp: fix auth_hmacs array size in struct sctp_cookie (Xin Long) [RHEL-237096] {CVE-2026-68376}
+- sctp: auth: verify auth requirement when auth_chunk is NULL (Xin Long) [RHEL-237096] {CVE-2026-68300}
+- x86/bugs: Make Safe-RET robust against interrupt injection (Waiman Long) [RHEL-230476] {CVE-2026-68480}
+- redhat: kernel.spec: allow overriding CROSS_COMPILE (Scott Weaver)
+- redhat: drop the Fedora 41 cross-build gdb-index workaround (Scott Weaver)
+- random: Drop the extrng module reference when import_ubuf() fails (Vladislav Dronov) [2524262 RHEL-251529]
+- vmxnet3: fix BUG_ON in vmxnet3_get_hdr_len() for Geneve packets (CKI Backport Bot) [RHEL-252823] {CVE-2026-68299}
+- ext4: fix e4b bitmap inconsistency reports (CKI Backport Bot) [RHEL-225941] {CVE-2026-45942}
+- tcp: initialize standalone TCP-AO response padding (Davide Caratti) [RHEL-153033]
+- net/tcp-ao: Drop support for most non-RFC-specified algorithms (Davide Caratti) [RHEL-153033]
+- net/tcp-ao: fix use-after-free of key in del_async path (Davide Caratti) [RHEL-153033]
+- tcp: defer md5sig_info kfree past RCU grace period in tcp_connect (Davide Caratti) [RHEL-153033]
+- tcp: restore RCU grace period in tcp_ao_destroy_sock (Davide Caratti) [RHEL-153033]
+- kernel.spec.template: add tcp_ao kselftests (Davide Caratti) [RHEL-153033]
+- Kconfig: enable CONFIG_TCP_AO (Davide Caratti) [RHEL-153033]
+- tcp: Fix out-of-bounds access for twsk in tcp_ao_established_key(). (Davide Caratti) [RHEL-153033]
+- net/tcp: Fix socket memory leak in TCP-AO failure handling for IPv6 (Davide Caratti) [RHEL-153033] {CVE-2025-39852}
+- net/tcp-ao: Fix MAC comparison to be constant-time (Davide Caratti) [RHEL-153033] {CVE-2026-43384}
+- tcp: Free TCP-AO/TCP-MD5 info/keys without RCU (Davide Caratti) [RHEL-153033]
+- tcp: Destroy TCP-AO, TCP-MD5 keys in .sk_destruct() (Davide Caratti) [RHEL-153033]
+- net/tcp: Add missing lockdep annotations for TCP-AO hlist traversals (Davide Caratti) [RHEL-153033]
+
+* Thu Sep 24 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-271.el10]
+- lsm: hold cred_guard_mutex for lsm_set_self_attr() (Pablo Alessandro Santos Hugen) [RHEL-226809] {CVE-2026-64111}
+- dm-verity: fix buffer overflow in FEC calculation (Benjamin Marzinski) [RHEL-244970] {CVE-2026-72098}
+- exfat: fix potential use-after-free in exfat_find_dir_entry() (CKI Backport Bot) [RHEL-231550] {CVE-2026-63808}
+- dm_early_create: fix freeing used table on dm_resume failure (Benjamin Marzinski) [RHEL-244946] {CVE-2026-72102}
+- scsi: libiscsi_tcp: Bound SCSI Response data segment to the connection buffer (CKI Backport Bot) [RHEL-254597] {CVE-2026-74556}
+- scsi: mpt3sas: Avoid freeing unallocated PCIe SGL buffers (Laurence Oberman) [RHEL-254167]
+- block: save page offset gaps in cloned bio (Eric Auger) [RHEL-179725 RHEL-191742 RHEL-213968]
+- block: don't initialize bi_vcnt for cloned bio in bio_iov_bvec_set() (Eric Auger) [RHEL-179725 RHEL-191742 RHEL-213968]
+- block: fix partial IOVA mapping cleanup in blk_rq_dma_map_iova (Eric Auger) [RHEL-179725 RHEL-191742 RHEL-213968]
+- IB/isert: Reject login PDUs shorter than ISER_HEADERS_LEN (CKI Backport Bot) [RHEL-191607] {CVE-2026-53176}
+- net: ena: PHC: Fix potential use-after-free in get_timestamp (Thilak KN) [RHEL-230628] {CVE-2026-52971}
+- cxl: Fix CXL_HEADERLOG_SIZE to match RAS Capability size (Aristeu Rozanski) [RHEL-140832]
+- cxl/ras: Fix CPER handler device confusion (Aristeu Rozanski) [RHEL-140832]
+- cxl/pci: Add trace logging for CXL PCIe Port RAS errors (Aristeu Rozanski) [RHEL-140832]
+- acpi/ghes, cxl/pci: Process CXL CPER Protocol Errors (Aristeu Rozanski) [RHEL-140832]
+- acpi/ghes, cper: Recognize and cache CXL Protocol errors (Aristeu Rozanski) [RHEL-140832]
+- nvmet-rdma: handle inline data with a nonzero offset (CKI Backport Bot) [RHEL-244925] {CVE-2026-72129}
+- ice: reject out-of-range ptype in ice_parser_profile_init (CKI Backport Bot) [RHEL-237210] {CVE-2026-68128}
+- octeontx2-af: cn10k: restrict VF LMTLINE sharing to its own PF (Michal Schmidt) [RHEL-231043] {CVE-2026-72045}
+- octeontx2-af: validate body pcifunc in rvu_mbox_handler_rep_event_notify (Michal Schmidt) [RHEL-231043] {CVE-2026-63923}
+- mshv: Fix infinite fault loop on permission-denied GPA intercepts (Maxim Levitsky) [RHEL-245033]
+- mshv: Fix error handling in mshv_region_pin (Maxim Levitsky) [RHEL-245033]
+- mshv: Fix use-after-free in mshv_map_user_memory error path (Maxim Levitsky) [RHEL-245033]
+- mshv: pass struct mshv_user_mem_region by reference (Maxim Levitsky) [RHEL-245033]
+- mshv: Handle insufficient root memory hypervisor statuses (Maxim Levitsky) [RHEL-245033]
+- mshv: Handle insufficient contiguous memory hypervisor status (Maxim Levitsky) [RHEL-245033]
+- mshv: Introduce hv_deposit_memory helper functions (Maxim Levitsky) [RHEL-245033]
+- mshv: Introduce hv_result_needs_memory() helper function (Maxim Levitsky) [RHEL-245033]
+- mshv: Add SMT_ENABLED_GUEST partition creation flag (Maxim Levitsky) [RHEL-245033]
+- mshv: Add support for integrated scheduler (Maxim Levitsky) [RHEL-245033]
+- mshv: Add debugfs to view hypervisor statistics (Maxim Levitsky) [RHEL-245033]
+- mshv: Add data for printing stats page counters (Maxim Levitsky) [RHEL-245033]
+- mshv: Update hv_stats_page definitions (Maxim Levitsky) [RHEL-245033]
+- mshv: Always map child vp stats pages regardless of scheduler type (Maxim Levitsky) [RHEL-245033]
+- mshv: Improve mshv_vp_stats_map/unmap(), add them to mshv_root.h (Maxim Levitsky) [RHEL-245033]
+- mshv: Use typed hv_stats_page pointers (Maxim Levitsky) [RHEL-245033]
+- mshv: Ignore second stats page map result failure (Maxim Levitsky) [RHEL-245033]
+- mm/khugepaged: write all dirty file folios when collapsing (Rafael Aquini) [RHEL-236348] {CVE-2026-68086}
+- xfrm: Don't clobber inner headers when already set (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net: pull headers in qdisc_pkt_len_segs_init() (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net: qdisc_pkt_len_segs_init() cleanup (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net_sched: initialize qdisc_skb_cb(skb)->pkt_segs in qdisc_pkt_len_init() (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net: init shinfo->gso_segs from qdisc_pkt_len_init() (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net_sched: make room for (struct qdisc_skb_cb)->pkt_segs (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- net: account for encap headers in qdisc pkt len (Ivan Vecera) [RHEL-188231] {CVE-2026-53091}
+- mm: shrinker: fix NULL pointer dereference in debugfs (Rafael Aquini) [RHEL-230834] {CVE-2026-64417}
+- mm: shrinker: fix shrinker_info teardown race with expansion (Rafael Aquini) [RHEL-230834] {CVE-2026-64418}
+- Reapply "firmware: arm_ffa: Change initcall level of ffa_init() to rootfs_initcall" (Jennifer Berringer) [RHEL-248828]
+- Revert "firmware: arm_ffa: Register core as a platform driver" (Jennifer Berringer) [RHEL-248828]
+- Revert "firmware: arm_ffa: Set the core device as FF-A device parent" (Jennifer Berringer) [RHEL-248828]
+- Revert "firmware: arm_ffa: Defer probe until pKVM is initialized" (Jennifer Berringer) [RHEL-248828]
+- tpm: tpm_crb_ffa: try to probe tpm_crb_ffa when it's built-in (Jennifer Berringer) [RHEL-248828]
+- mm/slab: do not limit zeroing to orig_size when only red zoning is enabled (Rafael Aquini) [RHEL-223406] {CVE-2026-64368}
+- userfaultfd: prevent registration of special VMAs (Rafael Aquini) [RHEL-237864] {CVE-2026-68166}
+- bonding: alb: fix UAF in rlb_arp_recv during bond up/down (CKI Backport Bot) [RHEL-225286] {CVE-2026-45970}
+- ixgbevf: fix use-after-free in VEPA multicast source pruning (CKI Backport Bot) [RHEL-227887] {CVE-2026-64113}
+- xfrm: ah6: validate routing header segments_left (CKI Backport Bot) [RHEL-264309] {CVE-2026-80844}
+- nvme-tcp: fix host memory disclosure on R2T for a read command (CKI Backport Bot) [RHEL-263410] {CVE-2026-89481}
+- arm_mpam: Disable driver unbind to avoid UAF (Gavin Shan) [RHEL-256832]
+- arm_mpam: Fix a NULL pointer dereference on unbinding after an error interrupt (Gavin Shan) [RHEL-256832]
+- arm_mpam: Apply T241-MPAM-6 to 63-bit counters (Gavin Shan) [RHEL-242415 RHEL-256832]
+- arm64: mpam: Add memory bandwidth usage (MBWU) documentation (Gavin Shan) [RHEL-242416 RHEL-256832]
+- arm_mpam: resctrl: Add resctrl_arch_cntr_read() & resctrl_arch_reset_cntr() (Gavin Shan) [RHEL-242416 RHEL-256832]
+- arm_mpam: resctrl: Add resctrl_arch_config_cntr() for ABMC use (Gavin Shan) [RHEL-242416 RHEL-256832]
+- arm_mpam: resctrl: Pre-allocate assignable monitors (Gavin Shan) [RHEL-242416 RHEL-256832]
+- arm_mpam: resctrl: Pick classes for use as MBM counters (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Document tasks file behaviour for task id 0 and idle tasks (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Document that automatic counter assignment is best effort (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Continue counter allocation after failure (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Add monitor property 'mbm_cntr_assign_fixed' (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Disallow the software controller when MBM counters are assignable (Gavin Shan) [RHEL-242416 RHEL-256832]
+- x86,fs/resctrl: Create 'event_filter' files read only if they're not configurable (Gavin Shan) [RHEL-242416 RHEL-256832]
+- fs/resctrl: Tidy up the error path in resctrl_mkdir_event_configs() (Gavin Shan) [RHEL-242416 RHEL-256832]
+- crypto/hkdf: Skip tests with keys too short in FIPS mode (Vladislav Dronov) [RHEL-131229]
+- smb: client: fix multiuser mount with krb5 (Jorge San Emeterio Villalain) [RHEL-254107]
+- smb/client: return EOPNOTSUPP for unsupported O_TMPFILE (Jorge San Emeterio Villalain) [RHEL-254107]
+- ALSA: timer: don't re-enter an instance callback that is still running (CKI Backport Bot) [RHEL-253651] {CVE-2026-68200}
+- ALSA: timer: drain a slave's callback before its master detaches it (CKI Backport Bot) [RHEL-253619] {CVE-2026-68201}
+
+* Tue Sep 22 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-270.el10]
+- KVM: SVM: make svm_flush_tlb_gva do a full asid flush if NPT enabled (Paolo Bonzini) [RHEL-188812]
+- RDMA/vmw_pvrdma: Fix double free on pvrdma_alloc_ucontext() error path (CKI Backport Bot) [RHEL-252966] {CVE-2026-46189}
+- security/keys: fix missed RCU read section on lookup (CKI Backport Bot) [RHEL-225693] {CVE-2026-64015}
+- scsi: scsi_transport_fc: Widen FPIN pname walker counter to u32 (CKI Backport Bot) [RHEL-228725] {CVE-2026-63889}
+- scsi: qla2xxx: Clear cmds after chip reset (CKI Backport Bot) [RHEL-235915] {CVE-2025-68745}
+- iommu/vt-d: Fix UCTP context table slot when copying root entries (Desnes Nunes) [RHEL-54449]
+- ALSA: virtio: Validate control metadata from the device (Jaroslav Kysela) [RHEL-230143] {CVE-2026-64490}
+- iomap: fix out-of-bounds bitmap_set() with zero-length range (CKI Backport Bot) [RHEL-240185] {CVE-2026-68145}
+- rhashtable: clear stale iter->p on table restart (Luiz Capitulino) [RHEL-248455] {CVE-2026-64563}
+- locking/rt: Fix the incorrect RCU protection in rt_spin_unlock() (Waiman Long) [RHEL-242859] {CVE-2026-72069}
+- redhat/configs: riscv: Enable SpacemiT V100 RISC-V platform support (Iker Pedrosa) [RHEL-259288]
+- redhat: disabled AMD_PMF_UTIL_SUPPORT config for x86 (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: fix build on !CONFIG_AMD_PMF_DEBUG (Krzysztof Pawlinski) [RHEL-222371]
+- Documentation/ABI: add testing entry for AMD PMF character device interface (Krzysztof Pawlinski) [RHEL-222371]
+- MAINTAINERS: Change AMD PMF driver status to "Supported" (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Introduce AMD PMF testing tool for driver metrics and features (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Add 1AH_M80H metrics table and NPU metrics support (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Refactor NPU metrics for platform extensibility (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Use upper/lower_32_bits() in amd_pmf_set_dram_addr() (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Add missing newline in dev_err message (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Move metrics code to dedicated file (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Add 1AH_M80H device IDs and extended SMU mailbox registers (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Use per-SoC smu_regs struct for SMU mailbox registers (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Implement util layer ioctl handler (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Move debug helper functions to UAPI header (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Store commonly used enums in the header file (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: store BIOS output values for user-space metrics via util IOCTL (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/pmf: Add util layer and userspace character device interface (Krzysztof Pawlinski) [RHEL-222371]
+- platform/x86/amd/hsmp: Add HSMP messages for Family 1Ah, Model 50h-5Fh (Steve Best) [RHEL-252297]
+- sched_ext: Use dsq->first_task instead of list_empty() in dispatch_enqueue() FIFO-tail (Phil Auld) [RHEL-151616]
+- sched_ext: Read scx_root under scx_cgroup_ops_rwsem in cgroup setters (Phil Auld) [RHEL-151616]
+- Revert "sched_ext: Use READ_ONCE() for the read side of dsq->nr update" (Phil Auld) [RHEL-151616]
+- sched_ext: Use WRITE_ONCE() for the write side of scx_enable helper pointer (Phil Auld) [RHEL-151616]
+- sched_ext: Fix enqueue_task_scx() truncation of upper enqueue flags (Phil Auld) [RHEL-151616]
+- sched_ext: Use READ_ONCE() for scx_slice_bypass_us in scx_bypass() (Phil Auld) [RHEL-151616]
+- sched_ext: Document task ownership state machine (Phil Auld) [RHEL-151616]
+- sched_ext: Use READ_ONCE() for lock-free reads of module param variables (Phil Auld) [RHEL-151616]
+- sched_ext: Use WRITE_ONCE() for the write side of dsq->seq update (Phil Auld) [RHEL-151616]
+- sched_ext: Fix starvation of scx_enable() under fair-class saturation (Phil Auld) [RHEL-151616]
+- sched_ext: Remove redundant css_put() in scx_cgroup_init() (Phil Auld) [RHEL-151616]
+- sched_ext: Use READ_ONCE() for plain reads of scx_watchdog_timeout (Phil Auld) [RHEL-151616]
+- sched_ext: Replace naked scx_root dereferences in kobject callbacks (Phil Auld) [RHEL-151616]
+- sched_ext: Use READ_ONCE() for the read side of dsq->nr update (Phil Auld) [RHEL-151616]
+- sched_ext: Fix SCX_EFLAG_INITIALIZED being a no-op flag (Phil Auld) [RHEL-151616]
+- sched_ext: Fix out-of-bounds access in scx_idle_init_masks() (Phil Auld) [RHEL-151616]
+- sched_ext: Disable preemption between scx_claim_exit() and kicking helper work (Phil Auld) [RHEL-151616]
+- sched_ext: Short-circuit sched_class operations on dead tasks (Phil Auld) [RHEL-151616]
+- selftests/sched_ext: Fix init_enable_count flakiness (Phil Auld) [RHEL-151616]
+- tools/sched_ext: update scx_show_state.py for scx_aborting change (Phil Auld) [RHEL-151616]
+- tools/sched_ext: fix scx_show_state.py for scx_root change (Phil Auld) [RHEL-151616]
+- sched_ext: Avoid multiple irq_work_queue() calls in destroy_dsq() (Phil Auld) [RHEL-151616]
+- sched_ext: Use the resched_cpu() to replace resched_curr() in the bypass_lb_node() (Phil Auld) [RHEL-151616]
+- sched_ext: Fix some comments in ext.c (Phil Auld) [RHEL-151616]
+- sched_ext: fix uninitialized ret on alloc_percpu() failure (Phil Auld) [RHEL-151616]
+- sched_ext: Remove unused code in the do_pick_task_scx() (Phil Auld) [RHEL-151616]
+- sched_ext: Fix missing post-enqueue handling in move_local_task_to_local_dsq() (Phil Auld) [RHEL-151616]
+- sched_ext: Factor out local_dsq_post_enq() from dispatch_enqueue() (Phil Auld) [RHEL-151616]
+- sched_ext: Fix bypass depth leak on scx_enable() failure (Phil Auld) [RHEL-151616]
+- sched/ext: Avoid null ptr traversal when ->put_prev_task() is called with NULL next (Phil Auld) [RHEL-151616]
+- sched_ext: Fix the memleak for sch->helper objects (Phil Auld) [RHEL-151616]
+- sched_ext: Fix incorrect sched_class settings for per-cpu migration tasks (Phil Auld) [RHEL-151616]
+- sched_ext: Fix scx_enable() crash on helper kthread creation failure (Phil Auld) [RHEL-151616]
+- sched_ext: Use kvfree_rcu() to release per-cpu ksyncs object (Phil Auld) [RHEL-151616]
+- sched_ext: Use IRQ_WORK_INIT_HARD() to initialize rq->scx.kick_cpus_irq_work (Phil Auld) [RHEL-151616]
+- sched_ext: Pass locked CPU parameter to scx_hardlockup() and add docs (Phil Auld) [RHEL-151616]
+- sched_ext: Fix possible deadlock in the deferred_irq_workfn() (Phil Auld) [RHEL-151616]
+- sched_ext: Update comments replacing breather with aborting mechanism (Phil Auld) [RHEL-151616]
+- sched/ext: convert scx_tasks_lock to raw spinlock (Phil Auld) [RHEL-151616]
+- sched_ext: Implement load balancer for bypass mode (Phil Auld) [RHEL-151616]
+- sched_ext: Factor out abbreviated dispatch dequeue into dispatch_dequeue_locked() (Phil Auld) [RHEL-151616]
+- sched_ext: Factor out scx_dsq_list_node cursor initialization into INIT_DSQ_LIST_CURSOR (Phil Auld) [RHEL-151616]
+- sched_ext: Add scx_cpu0 example scheduler (Phil Auld) [RHEL-151616]
+- sched_ext: Hook up hardlockup detector (Phil Auld) [RHEL-151616]
+- sched_ext: Make handle_lockup() propagate scx_verror() result (Phil Auld) [RHEL-151616]
+- sched_ext: Refactor lockup handlers into handle_lockup() (Phil Auld) [RHEL-151616]
+- sched_ext: Make scx_exit() and scx_vexit() return bool (Phil Auld) [RHEL-151616]
+- sched_ext: Exit dispatch and move operations immediately when aborting (Phil Auld) [RHEL-151616]
+- sched_ext: Simplify breather mechanism with scx_aborting flag (Phil Auld) [RHEL-151616]
+- sched_ext: Use per-CPU DSQs instead of per-node global DSQs in bypass mode (Phil Auld) [RHEL-151616]
+- sched_ext: Refactor do_enqueue_task() local and global DSQ paths (Phil Auld) [RHEL-151616]
+- sched_ext: Use shorter slice in bypass mode (Phil Auld) [RHEL-151616]
+- sched_ext: Fix unsafe locking in the scx_dump_state() (Phil Auld) [RHEL-151616]
+- sched_ext: Mark racy bitfields to prevent adding fields that can't tolerate races (Phil Auld) [RHEL-151616]
+- sched_ext: Minor cleanups to scx_task_iter (Phil Auld) [RHEL-151616]
+- sched_ext: Move __SCX_DSQ_ITER_ALL_FLAGS BUILD_BUG_ON to the right place (Phil Auld) [RHEL-151616]
+- sched_ext: Fix cgroup exit ordering by moving sched_ext_free() to finish_task_switch() (Phil Auld) [RHEL-151616]
+- sched_ext/tools: Restore backward compat with v6.12 kernels (Phil Auld) [RHEL-151616]
+- sched_ext: Allow scx_bpf_reenqueue_local() to be called from anywhere (Phil Auld) [RHEL-151616]
+- sched_ext: Factor out reenq_local() from scx_bpf_reenqueue_local() (Phil Auld) [RHEL-151616]
+- sched_ext: Split schedule_deferred() into locked and unlocked variants (Phil Auld) [RHEL-151616]
+- sched_ext/tools: Add compat wrapper for scx_bpf_task_set_slice/dsq_vtime() (Phil Auld) [RHEL-151616]
+- sched_ext: Fix use of uninitialized variable in scx_bpf_cpuperf_set() (Phil Auld) [RHEL-151616]
+- sched_ext: Use SCX_TASK_READY test instead of tryget_task_struct() during class switch (Phil Auld) [RHEL-151616]
+- sched_ext: Add ___compat suffix to scx_bpf_dsq_insert___v2 in compat.bpf.h (Phil Auld) [RHEL-151616]
+- sched_ext: Fix scx_bpf_dsq_peek() with FIFO DSQs (Phil Auld) [RHEL-151616]
+- sched_ext: Fix scx_bpf_dsq_insert() backward binary compatibility (Phil Auld) [RHEL-151616]
+- sched_ext: Add a selftest for scx_bpf_dsq_peek (Phil Auld) [RHEL-151616]
+- sched_ext: Add lockless peek operation for DSQs (Phil Auld) [RHEL-151616]
+- sched/ext: Implement cgroup_set_idle() callback (Phil Auld) [RHEL-151616]
+- sched_ext: Make scx_bpf_dsq_insert*() return bool (Phil Auld) [RHEL-151616]
+- sched_ext: Wrap kfunc args in struct to prepare for aux__prog (Phil Auld) [RHEL-151616]
+- sched_ext: Add scx_bpf_task_set_slice() and scx_bpf_task_set_dsq_vtime() (Phil Auld) [RHEL-151616]
+- tools/sched_ext: Strip compatibility macros for cgroup and dispatch APIs (Phil Auld) [RHEL-151616]
+- tools/sched_ext: Receive updates from SCX repo (Phil Auld) [RHEL-151616]
+- sched_ext: Exit early on hotplug events during attach (Phil Auld) [RHEL-151616]
+- sched_ext: Sync error_irq_work before freeing scx_sched (Phil Auld) [RHEL-151616]
+- sched_ext: Mark scx_bpf_dsq_move_set_[slice|vtime]() with KF_RCU (Phil Auld) [RHEL-151616]
+- sched_ext: Misc updates around scx_sched instance pointer (Phil Auld) [RHEL-151616]
+- sched_ext: Drop scx_kf_exit() and scx_kf_error() (Phil Auld) [RHEL-151616]
+- sched_ext: Add the @sch parameter to scx_dsq_insert_preamble/commit() (Phil Auld) [RHEL-151616]
+- sched_ext: Drop kf_cpu_valid() (Phil Auld) [RHEL-151616]
+- sched_ext: Add the @sch parameter to ext_idle helpers (Phil Auld) [RHEL-151616]
+- sched_ext: Add the @sch parameter to __bstr_format() (Phil Auld) [RHEL-151616]
+- sched_ext: Separate out scx_kick_cpu() and add @sch to it (Phil Auld) [RHEL-151616]
+- tools/sched_ext: scx_qmap: Make debug output quieter by default (Phil Auld) [RHEL-151616]
+- sched_ext: Make qmap dump operation non-destructive (Phil Auld) [RHEL-151616]
+- sched_ext: Add SCX_EFLAG_INITIALIZED to indicate successful ops.init() (Phil Auld) [RHEL-151616]
+- sched_ext: Use bitfields for boolean warning flags (Phil Auld) [RHEL-151616]
+- sched_ext: Fix stray scx_root usage in task_can_run_on_remote_rq() (Phil Auld) [RHEL-151616]
+- sched_ext: Improve SCX_KF_DISPATCH comment (Phil Auld) [RHEL-151616]
+- sched_ext: Verify RCU protection in scx_bpf_cpu_curr() (Phil Auld) [RHEL-151616]
+- sched_ext: Add migration-disabled counter to error state dump (Phil Auld) [RHEL-151616]
+- sched_ext: Fix NULL dereference in scx_bpf_cpu_rq() warning (Phil Auld) [RHEL-151616]
+- tools/sched_ext: Add compat helper for scx_bpf_cpu_curr() (Phil Auld) [RHEL-151616]
+- sched_ext: deprecation warn for scx_bpf_cpu_rq() (Phil Auld) [RHEL-151616]
+- sched_ext: Introduce scx_bpf_cpu_curr() (Phil Auld) [RHEL-151616]
+- sched_ext: Introduce scx_bpf_locked_rq() (Phil Auld) [RHEL-151616]
+- sched_ext: Use cgroup_lock/unlock() to synchronize against cgroup operations (Phil Auld) [RHEL-151616]
+- sched_ext: Put event_stats_cpu in struct scx_sched_pcpu (Phil Auld) [RHEL-151616]
+- sched_ext: Keep bypass on between enable failure and scx_disable_workfn() (Phil Auld) [RHEL-151616]
+- net: stmmac: eic7700: add support for eth1 clock inversion variant (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: eic7700: make RGMII delay properties optional (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: eswin: validate RGMII delay values (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: eswin: correct RGMII delay granularity to 20 ps (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: eswin: clear TXD and RXD delay registers during initialization (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: eswin: fix HSP CSR init ordering after clock enable (Jennifer Berringer) [RHEL-224408]
+- net: stmmac: pass struct device to init()/exit() methods (Jennifer Berringer) [RHEL-224408]
+- pinctrl: eswin: Fix Handling of PIN_CONFIG_PERSIST_STATE (Jennifer Berringer) [RHEL-224408]
+- hwmon: Add Eswin EIC7700 PVT sensor driver (Jennifer Berringer) [RHEL-224408]
+- reset: eswin: Add eic7700 HSP reset driver (Jennifer Berringer) [RHEL-224408]
+- clk: eswin: Add eic7700 HSP clock driver (Jennifer Berringer) [RHEL-224408]
+- dt-bindings: clock: Add ESWIN eic7700 HSP clock and reset generator (Jennifer Berringer) [RHEL-224408]
+- MAINTAINERS: Add entry for ESWIN EIC7700 clock driver (Jennifer Berringer) [RHEL-224408]
+- clk: eswin: Zero-initialize stack-allocated clk_init_data (Jennifer Berringer) [RHEL-224408]
+- clk: eswin: Add CLK_IGNORE_UNUSED to NoC clock (Jennifer Berringer) [RHEL-224408]
+- clk: eswin: Add eic7700 clock driver (Jennifer Berringer) [RHEL-224408]
+- dt-bindings: clock: eswin: Documentation for eic7700 SoC (Jennifer Berringer) [RHEL-224408]
+- clk: divider: Add devm_clk_hw_register_divider_parent_data (Jennifer Berringer) [RHEL-224408]
+- clk: Add devm_clk_hw_register_gate_parent_hw() (Jennifer Berringer) [RHEL-224408]
+- PCI: eswin: Add ESWIN PCIe Root Complex driver (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Perform cleanup in the error path of dw_pcie_resume_noirq() (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Fix missing iATU setup when ECAM is enabled (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Clean up iATU index usage in dw_pcie_iatu_setup() (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Fix msg_atu_index assignment (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Use multiple iATU windows for mapping large bridge windows and DMA ranges (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Skip waiting for L2/L3 Ready if dw_pcie_rp::skip_l23_wait is true (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Invoke post_init in dw_pcie_resume_noirq() (Jennifer Berringer) [RHEL-224408]
+- PCI: dwc: Skip PME_Turn_Off broadcast and L2/L3 transition during suspend if link is not up (Jennifer Berringer) [RHEL-224408]
+- phy: eswin: Fix incorrect error check in probe() (Jennifer Berringer) [RHEL-224408]
+- phy: eswin: Create eswin directory and add EIC7700 SATA PHY driver (Jennifer Berringer) [RHEL-224408]
+- phy: usb: Add driver for Canaan K230 USB 2.0 PHY (Jennifer Berringer) [RHEL-224408]
+- mmc: sdhci-of-dwcmshc: Fix reset, clk, and SDIO support for Eswin EIC7700 (Jennifer Berringer) [RHEL-224408]
+- mmc: sdhci-of-dwcmshc: Promote the th1520 reset handling to ip level (Jennifer Berringer) [RHEL-224408]
+- mmc: sdhci-of-dwcmshc: Fix DMA 128MB boundary for Eswin EIC7700 (Jennifer Berringer) [RHEL-224408]
+- mmc: sdhci-of-dwcmshc: Fix init for AXI clock for Eswin EIC7700 (Jennifer Berringer) [RHEL-224408]
+- mmc: sdhci-of-dwcmshc: Add support for Eswin EIC7700 (Jennifer Berringer) [RHEL-224408]
+- redhat/configs: Enable new EIC7700 SoC configs for RISC-V (Jennifer Berringer) [RHEL-224408]
+- Reapply "firmware: arm_ffa: Change initcall level of ffa_init() to rootfs_initcall" (Jennifer Berringer) [RHEL-249190]
+- Revert "firmware: arm_ffa: Register core as a platform driver" (Jennifer Berringer) [RHEL-249190]
+- Revert "firmware: arm_ffa: Set the core device as FF-A device parent" (Jennifer Berringer) [RHEL-249190]
+- Revert "firmware: arm_ffa: Defer probe until pKVM is initialized" (Jennifer Berringer) [RHEL-249190]
+- tpm: tpm_crb_ffa: try to probe tpm_crb_ffa when it's built-in (Jennifer Berringer) [RHEL-249190]
+- redhat/configs: Enable ethernet for SpacemiT K1 and K3 (Jennifer Berringer) [RHEL-183437]
+- riscv: dts: starfive: remove "snps,en-tx-lpi-clockgating" property (Jennifer Berringer) [RHEL-183437]
+- wifi: rtw89: pci: enable 36-bit DMA on spacemit K3 (Jennifer Berringer) [RHEL-183437]
+- PCI: Move Spacemit vendor and device IDs to linux/pci_ids.h (Jennifer Berringer) [RHEL-183437]
+- net: stmmac: dwmac-spacemit: Fix wrong irq definition (Jennifer Berringer) [RHEL-183437]
+- net: stmmac: dwmac-spacemit: Fix wrong phy interface definition (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Fix error handling in emac_tx_mem_map() (Jennifer Berringer) [RHEL-183437] {CVE-2026-43462}
+- net: spacemit: Fix error handling in emac_alloc_rx_desc_buffers() (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Remove unused buff_addr fields (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: k1-emac: fix jumbo frame support (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: display phy driver information (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Check for netif_carrier_ok() in emac_stats_update() (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Remove broken flow control support (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Check netif_running() in emac_set_pauseparam() (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Avoid -Wflex-array-member-not-at-end warnings (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Make stats_lock softirq-safe (Jennifer Berringer) [RHEL-183437]
+- net: spacemit: Add K1 Ethernet MAC (Jennifer Berringer) [RHEL-183437]
+- of: base: Add of_get_available_child_by_name() (Jennifer Berringer) [RHEL-183437]
+- vrf: Make pcpu_dstats update functions available to other modules. (Jennifer Berringer) [RHEL-183437]
+- net: stmmac: Add glue layer for Spacemit K3 SoC (Jennifer Berringer) [RHEL-183437]
+- net: stmmac: platform: Add snps,dwmac-5.40a IP compatible string (Jennifer Berringer) [RHEL-183437]
+- net: add helper to pre-check if PP for an Rx queue will be unreadable [partial: helper-only] (Jamie Bainbridge) [RHEL-185444]
+- eth: bnxt: add support rx side device memory TCP [partial: helper-only] (Jamie Bainbridge) [RHEL-185444]
+- idpf: remove unused code for getting RSS info from device (Michal Schmidt) [RHEL-132835]
+- idpf: remove 'vport_params_reqd' field (Michal Schmidt) [RHEL-132835]
+- idpf: add missing cpu_to_le32 in idpf_tx_splitq_build_flow_desc (Michal Schmidt) [RHEL-132835]
+- idpf: Fix mailbox IRQ name leak on request failure (Michal Schmidt) [RHEL-132835]
+- idpf: adjust TxQ ring count minimum (Michal Schmidt) [RHEL-132835]
+- idpf: bound interrupt-vector register fill to the allocated array (Michal Schmidt) [RHEL-132835]
+- idpf: fix max_vport related crash on allocation error during init (Michal Schmidt) [RHEL-132835]
+- idpf: Replace use of system_unbound_wq with system_dfl_wq (Michal Schmidt) [RHEL-132835]
+- idpf: add padding to PTP virtchnl structures (Michal Schmidt) [RHEL-132835]
+- idpf: fix mailbox capability for set device clock time (Michal Schmidt) [RHEL-132835]
+- idpf: fix double free and use-after-free in aux device error paths (Michal Schmidt) [RHEL-132835]
+- idpf: fix read_dev_clk_lock spinlock init in idpf_ptp_init() (Michal Schmidt) [RHEL-132835]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses [idpf] (Michal Schmidt) [RHEL-132835]
+- Convert more 'alloc_obj' cases to default GFP_KERNEL arguments [idpf] (Michal Schmidt) [RHEL-132835]
+- Convert 'alloc_flex' family to use the new default GFP_KERNEL argument [idpf] (Michal Schmidt) [RHEL-132835]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument [idpf] (Michal Schmidt) [RHEL-132835]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [idpf] (Michal Schmidt) [RHEL-132835]
+- idpf: set the payload size before calling the async handler (Michal Schmidt) [RHEL-132835]
+- idpf: improve locking around idpf_vc_xn_push_free() (Michal Schmidt) [RHEL-132835]
+- idpf: fix PREEMPT_RT raw/bh spinlock nesting for async VC handling (Michal Schmidt) [RHEL-132835]
+- idpf: only assign num refillqs if allocation was successful (Michal Schmidt) [RHEL-132835]
+- idpf: clear stale cdev_info ptr (Michal Schmidt) [RHEL-132835]
+- idpf: Fix flow rule delete failure due to invalid validation (Michal Schmidt) [RHEL-132835]
+- idpf: change IRQ naming to match netdev and ethtool queue numbering (Michal Schmidt) [RHEL-132835]
+- idpf: nullify pointers after they are freed (Michal Schmidt) [RHEL-132835]
+- idpf: skip deallocating txq group's txqs if it is NULL (Michal Schmidt) [RHEL-132835]
+- idpf: skip deallocating bufq_sets from rx_qgrp if it is NULL (Michal Schmidt) [RHEL-132835]
+- idpf: increment completion queue next_to_clean in sw marker wait routine (Michal Schmidt) [RHEL-132835]
+- idpf: generalize mailbox API (Michal Schmidt) [RHEL-132835]
+- idpf: avoid calling get_rx_ptypes for each vport (Michal Schmidt) [RHEL-132835]
+- idpf: generalize send virtchnl message API (Michal Schmidt) [RHEL-132835]
+- idpf: remove vport pointer from queue sets (Michal Schmidt) [RHEL-132835]
+- idpf: add rss_data field to RSS function parameters (Michal Schmidt) [RHEL-132835]
+- idpf: reshuffle idpf_vport struct members to avoid holes (Michal Schmidt) [RHEL-132835]
+- idpf: move some iterator declarations inside for loops (Michal Schmidt) [RHEL-132835]
+- idpf: move queue resources to idpf_q_vec_rsrc structure (Michal Schmidt) [RHEL-132835]
+- idpf: introduce idpf_q_vec_rsrc struct and move vector resources to it (Michal Schmidt) [RHEL-132835]
+- idpf: introduce local idpf structure to store virtchnl queue chunks (Michal Schmidt) [RHEL-132835]
+- idpf: Fix kernel-doc descriptions to avoid warnings (Michal Schmidt) [RHEL-132835]
+- idpf: update idpf_up_complete() return type to void (Michal Schmidt) [RHEL-132835]
+
+* Thu Sep 17 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-269.el10]
+- net: ipv6: clear suppressed fib6 rule result (Jamie Bainbridge) [RHEL-246370] {CVE-2026-74581}
+- fuse: fix race between interrupt and resend (CKI Backport Bot) [RHEL-249641] {CVE-2026-64265}
+- fuse: clear intr_entry in fuse_resend and fuse_remove_pending_req (CKI Backport Bot) [RHEL-249641] {CVE-2026-64265}
+- block: remove redundant GD_NEED_PART_SCAN in add_disk_final() (Jeff Moyer) [RHEL-211072]
+- drbd: reject data replies with an out-of-range payload size (Jeff Moyer) [RHEL-211072]
+- blk-mq: bound blk_hctx_poll() to one jiffy (Jeff Moyer) [RHEL-211072]
+- blk-cgroup: defer blkcg css_put until blkg is unlinked from queue (Jeff Moyer) [RHEL-211072]
+- blk-cgroup: fix UAF in __blkcg_rstat_flush() (Jeff Moyer) [RHEL-211072]
+- block: Remove redundant plug in __submit_bio() (Jeff Moyer) [RHEL-211072]
+- block: check bio split for unaligned bvec (Jeff Moyer) [RHEL-211072]
+- block: account for bi_bvec_done in bio_may_need_split() (Jeff Moyer) [RHEL-211072]
+- block: use bvec iterator helper for bio_may_need_split() (Jeff Moyer) [RHEL-211072]
+- virtio-blk: clamp zone report to the report buffer capacity (Jeff Moyer) [RHEL-211072]
+- partitions: aix: bound the pp_count scan to the ppe array (Jeff Moyer) [RHEL-211072]
+- ublk: set canceling flag even when disk is not allocated (Jeff Moyer) [RHEL-211072]
+- block: Avoid mounting the bdev pseudo-filesystem in userspace (Jeff Moyer) [RHEL-211072]
+- block: partitions: fix of_node refcount leak in of_partition() (Jeff Moyer) [RHEL-211072]
+- block: bio-integrity: Fix null-ptr-deref in bio_integrity_map_user() (Jeff Moyer) [RHEL-211072]
+- block: recompute nr_integrity_segments in blk_insert_cloned_request (Jeff Moyer) [RHEL-211072]
+- ublk: fix use-after-free in ublk_cancel_cmd() (Jeff Moyer) [RHEL-211072]
+- ublk: validate physical_bs_shift, io_min_shift and io_opt_shift (Jeff Moyer) [RHEL-211072]
+- ublk: use unchecked copy helpers for bio page data (Jeff Moyer) [RHEL-211072]
+- block: fix zones_cond memory leak on zone revalidation error paths (Jeff Moyer) [RHEL-211072]
+- ublk: fix NULL pointer dereference in ublk_ctrl_set_size() (Jeff Moyer) [RHEL-211072]
+- zloop: check for spurious options passed to remove (Jeff Moyer) [RHEL-211072]
+- zloop: advertise a volatile write cache (Jeff Moyer) [RHEL-211072]
+- drbd: fix null-pointer dereference on local read error (Jeff Moyer) [RHEL-211072]
+- drbd: fix "LOGIC BUG" in drbd_al_begin_io_nonblock() (Jeff Moyer) [RHEL-211072]
+- rbd: check for EOD after exclusive lock is ensured to be held (Jeff Moyer) [RHEL-211072]
+- blk-mq: ABI/sysfs-block: fix docs build warnings (Jeff Moyer) [RHEL-211072]
+- blk-mq: add documentation for new queue attribute async_dpeth (Jeff Moyer) [RHEL-211072]
+- block, bfq: convert to use request_queue->async_depth (Jeff Moyer) [RHEL-211072]
+- mq-deadline: covert to use request_queue->async_depth (Jeff Moyer) [RHEL-211072]
+- kyber: covert to use request_queue->async_depth (Jeff Moyer) [RHEL-211072]
+- blk-mq: add a new queue sysfs attribute async_depth (Jeff Moyer) [RHEL-211072]
+- blk-mq: factor out a helper blk_mq_limit_depth() (Jeff Moyer) [RHEL-211072]
+- blk-mq-sched: unify elevators checking for async requests (Jeff Moyer) [RHEL-211072]
+- block: convert nr_requests to unsigned int (Jeff Moyer) [RHEL-211072]
+- ublk: Validate SQE128 flag before accessing the cmd (Jeff Moyer) [RHEL-211072]
+- ublk: restore auto buf unregister refcount optimization (Jeff Moyer) [RHEL-211072]
+- block: add __must_check attribute to sb_min_blocksize() (Jeff Moyer) [RHEL-211072]
+- xfs: check the return value of sb_min_blocksize() in xfs_fs_fill_super (Jeff Moyer) [RHEL-211072]
+- isofs: check the return value of sb_min_blocksize() in isofs_fill_super (Jeff Moyer) [RHEL-211072]
+- exfat: check return value of sb_min_blocksize in exfat_read_boot_sector (Jeff Moyer) [RHEL-211072]
+- vfat: fix missing sb_min_blocksize() return value checks (Jeff Moyer) [RHEL-211072]
+- zram: refuse to use zero sized block device as backing device (Jeff Moyer) [RHEL-211072]
+- ipv4: raw: reject IP_HDRINCL packets with ihl < 5 (Paolo Abeni) [RHEL-225472] {CVE-2026-64114}
+- net: guard timestamp cmsgs to real error queue skbs (Paolo Abeni) [RHEL-225862] {CVE-2026-53223}
+- af_unix: Fix UAF read of tail->len in unix_stream_data_wait() (Paolo Abeni) [RHEL-225896] {CVE-2026-64109}
+- ethtool: coalesce: cap profile updates at NET_DIM_PARAMS_NUM_PROFILES (Paolo Abeni) [RHEL-227146] {CVE-2026-63987}
+- ipv4: free net->ipv4.sysctl_local_reserved_ports after unregister_net_sysctl_table() (Paolo Abeni) [RHEL-227273] {CVE-2026-64002}
+- af_unix: Drop all SCM attributes for SOCKMAP. (Paolo Abeni) [RHEL-229255] {CVE-2026-53005}
+- af_unix: Don't use skb_recv_datagram() in unix_stream_read_skb(). (Paolo Abeni) [RHEL-229255]
+- af_unix: Don't check SOCK_DEAD in unix_stream_read_skb(). (Paolo Abeni) [RHEL-229255]
+- net: add pskb_may_pull() to skb_gro_receive_list() (Paolo Abeni) [RHEL-229312] {CVE-2026-53235}
+- bpf, skmsg: fix verdict sk_data_ready racing with ktls rx (Paolo Abeni) [RHEL-229507] {CVE-2026-64025}
+- bpf: sockmap: Fix use-after-free of sk->sk_socket in sk_psock_verdict_data_ready(). (Paolo Abeni) [RHEL-229507]
+- ethtool: cmis: require exact CDB reply length (Paolo Abeni) [RHEL-229673] {CVE-2026-63996}
+- tcp: fix stale per-CPU tcp_tw_isn leak enabling ISN prediction (Paolo Abeni) [RHEL-231694] {CVE-2026-64024}
+- net: shaper: rework the VALID marking (again) (Paolo Abeni) [RHEL-231706] {CVE-2026-64027}
+- net: shaper: annotate the data races (Paolo Abeni) [RHEL-231706]
+- net: shaper: fix trivial ordering issue in net_shaper_commit() (Paolo Abeni) [RHEL-231706]
+- net: shaper: flip the polarity of the valid flag (Paolo Abeni) [RHEL-231706]
+- net: shaper: protect late read accesses to the hierarchy (Paolo Abeni) [RHEL-231706]
+- tcp: call sk_data_ready() after listener migration (Paolo Abeni) [RHEL-232243] {CVE-2026-46015}
+- flow_dissector: do not dissect PPPoE PFC frames (Paolo Abeni) [RHEL-232624] {CVE-2026-46306}
+- ipv4: fib: free fib_alias with kfree_rcu() on insert error path (Paolo Abeni) [RHEL-233126] {CVE-2026-64572}
+- bpf: Reject fragmented frames in devmap (Paolo Abeni) [RHEL-234199] {CVE-2026-64355}
+- tcp: fix TIME_WAIT socket reference leak on PSP policy failure (Paolo Abeni) [RHEL-236481] {CVE-2026-68379}
+- mptcp: pm: userspace: fix use-after-free in get_local_id (Paolo Abeni) [RHEL-236705] {CVE-2026-68169}
+- powerpc/qspinlock: Add spinlock contention tracepoint (Mamatha Inamdar) [RHEL-190816]
+- powerpc/pseries: papr-phy-attest - validate cmd.length, plug mem leak (Mamatha Inamdar) [RHEL-238389]
+- powerpc/pseries: lparcfg - fix kbuf[] underflow (Mamatha Inamdar) [RHEL-238390]
+- powerpc/pseries: pci - logic bug (Mamatha Inamdar) [RHEL-238392]
+- cpufreq/amd-pstate: Document missing kernel-doc members (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate-ut: Add unit test for CPPC Performance Priority (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate-ut: Add unit test for "dynamic" EPP mode (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Reduce the scope of exported symbols (Dennis Chen) [RHEL-222490]
+- Documentation/amd-pstate: Update dynamic_epp documentation with new behavior (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Remove "amd_dynamic_epp" cmdline and "dynamic_epp" sysfs (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Add dynamic EPP as an "energy_performance_preference" mode (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Extract platform profile to EPP conversion into a helper (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Remove the defensive check for bios_min_perf (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Set min_limit_freq based on bios_min_perf (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: handle missing policy in dynamic EPP callbacks (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Cache the firmware programmed EPP value (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Toggle auto_sel in active mode on shared memory systems (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Fix EPP return type and handle errors during initialization (Dennis Chen) [RHEL-222490]
+- cpufreq: amd-pstate-ut: Skip tests when amd-pstate driver is not active (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Prevent the driver from loading on unsupported hardware (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Loosen requirement on lowest nonlinear frequency != min freq (Dennis Chen) [RHEL-222490]
+- cpufreq: intel_pstate: Adjust the .adjust_perf() driver callback (Dennis Chen) [RHEL-222490]
+- cpufreq: Remove driver default policy->min/max init (Dennis Chen) [RHEL-222490]
+- x86/msr: Switch rdmsrl_on_cpu() user to rdmsrq_on_cpu() (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Fix setting EPP in performance mode (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: drop stale @epp_cached kdoc (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate-ut: Disable dynamic_epp after the mode switch (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Drop Kconfig option for dynamic EPP (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate-ut: Drop policy reference before driver switch (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Use "epp_default_dc" as default when dynamic_epp is disabled (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Reorder notifier unregistration and floor perf reset (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Allow writes to dynamic_epp when state isn't modified (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Return -ENOMEM on failure to allocate profile_name (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Grab "amd_pstate_driver_lock" when toggling dynamic_epp (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Use FIELD_MODIFY() (Dennis Chen) [RHEL-222490]
+- cpufreq: Pass the policy to cpufreq_driver->adjust_perf() (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Pass the policy to amd_pstate_update() (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Add POWER_SUPPLY select for dynamic EPP (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate-ut: Add a unit test for raw EPP (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Add support for raw EPP writes (Dennis Chen) [RHEL-222490]
+- redhat/configs: x86: Build CONFIG_ACPI_PLATFORM_PROFILE as =y (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Add support for platform profile class (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: add kernel command line to override dynamic epp (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Add dynamic energy performance preference (Dennis Chen) [RHEL-222490]
+- Documentation: amd-pstate: fix dead links in the reference section (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Cache the max frequency in cpudata (Dennis Chen) [RHEL-222490]
+- Documentation/amd-pstate: Add documentation for amd_pstate_floor_{freq,count} (Dennis Chen) [RHEL-222490]
+- Documentation/amd-pstate: List amd_pstate_prefcore_ranking sysfs file (Dennis Chen) [RHEL-222490]
+- Documentation/amd-pstate: List amd_pstate_hw_prefcore sysfs file (Dennis Chen) [RHEL-222490]
+- amd-pstate-ut: Add a testcase to validate the visibility of driver attributes (Dennis Chen) [RHEL-222490]
+- amd-pstate-ut: Add module parameter to select testcases (Dennis Chen) [RHEL-222490]
+- amd-pstate: Introduce a tracepoint trace_amd_pstate_cppc_req2() (Dennis Chen) [RHEL-222490]
+- amd-pstate: Add sysfs support for floor_freq and floor_count (Dennis Chen) [RHEL-222490]
+- amd-pstate: Add support for CPPC_REQ2 and FLOOR_PERF (Dennis Chen) [RHEL-222490]
+- x86/cpufeatures: Add AMD CPPC Performance Priority feature. (Dennis Chen) [RHEL-222490]
+- amd-pstate: Make certain freq_attrs conditionally visible (Dennis Chen) [RHEL-222490]
+- amd-pstate: Update cppc_req_cached in fast_switch case (Dennis Chen) [RHEL-222490]
+- amd-pstate: Fix memory leak in amd_pstate_epp_cpu_init() (Dennis Chen) [RHEL-222490] {CVE-2026-53121}
+- cpufreq: Allocate QoS freq_req objects with policy (Dennis Chen) [RHEL-222490]
+- cpufreq: Add boost_freq_req QoS request (Dennis Chen) [RHEL-222490]
+- cpufreq: Remove max_freq_req update for pre-existing policy (Dennis Chen) [RHEL-222490]
+- cpufreq/amd-pstate: Move max_perf limiting in amd_pstate_update (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'wrmsrl_on_cpu()' to 'wrmsrq_on_cpu()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'rdmsrl_on_cpu()' to 'rdmsrq_on_cpu()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'wrmsrl_safe_on_cpu()' to 'wrmsrq_safe_on_cpu()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'rdmsrl_safe_on_cpu()' to 'rdmsrq_safe_on_cpu()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'rdmsrl_safe()' to 'rdmsrq_safe()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'wrmsrl()' to 'wrmsrq()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/msr: Rename 'rdmsrl()' to 'rdmsrq()' [partial] (Dennis Chen) [RHEL-222490]
+- x86/cpu: Add Intel CPU model number for rugged Panther Lake (Steve Best) [RHEL-250351]
+- tools/power/x86/intel-speed-select: v1.26 release (Steve Best) [RHEL-242440]
+- tools/power/x86/intel-speed-select: Print Version info when Incompatible API version is detected (Steve Best) [RHEL-242440]
+- tools/power/x86/intel-speed-select: Avoid current base freq as maximum (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Add a NULL check for sst_inst[] (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Return error during profile addition (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Just allow 2 bits for SST feature enable (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Use PP level enable mask (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate parameter for frequency and priority (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate parameter for core power state (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate max level for set feature (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate logical CPU id and clos id (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate level in perf mask ioctls (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Validate socket ID in clos_assoc ioctl (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Restore SST-PP control to all domains (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Reset core count to 0 (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Correct locked bit width (Steve Best) [RHEL-242440]
+- platform/x86: ISST: Check HWP support before MSR access (Steve Best) [RHEL-242440]
+- platform/x86/amd/hsmp: Reject negative power cap writes in hwmon (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Enable protocol version 7 metric tables on the ACPI driver (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Add IOCTL_GET_TELEMETRY_DATA for metric table reads (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Source metric-table size from firmware (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Unify response_sz validation to an upper-bound check (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Serialize the data plane against socket teardown (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: ACPI HSMP refcounted sockets and coordinated release (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Clear mdev.this_device on deregister (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Serialize per-socket metric table reads with a mutex (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Map the metric table with ioremap() and unmap it explicitly (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Serialize ACPI HSMP probe and remove with an rwsem (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Gate the data plane on a fully initialized socket (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Pass struct device explicitly to ACPI mailbox parsers (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Validate _DSD mailbox sub-package element count (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Validate ACPI UID before parsing socket index (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Fix typo in error message (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Replace dev_err() with dev_info() for non-fatal errors (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Ensure success even if hwmon registration fails (Steve Best) [RHEL-222491]
+- platform/x86/amd/hsmp: Ensure sock->metric_tbl_addr is non-NULL (Steve Best) [RHEL-222491]
+- redhat/configs: automotive: enable RTC_DRV_PL031 (Eric Chanudet) [RHEL-242412]
+- ixgbe: e610: remove redundant assignment (Michal Schmidt) [RHEL-118532]
+- ixgbe: do not configure xps for XDP queues (Michal Schmidt) [RHEL-118532]
+- ixgbevf: fix use-after-free in VEPA multicast source pruning (Michal Schmidt) [RHEL-118534]
+- net: Consistently define pci_device_ids using named initializers [ixgbe,ixgbevf] (Michal Schmidt) [RHEL-118532 RHEL-118534]
+- ixgbe: E610: do not fill EEE lp_advertised from local PHY caps (Michal Schmidt) [RHEL-118532]
+- ixgbe: fix unaligned u32 access in ixgbe_update_flash_X550() (Michal Schmidt) [RHEL-118532]
+- ixgbe: E610: add EEE support (Michal Schmidt) [RHEL-118532]
+- ixgbe: move EEE config validation out of ixgbe_set_eee() (Michal Schmidt) [RHEL-118532]
+- ixgbe: E610: update ACI command structs with EEE fields (Michal Schmidt) [RHEL-118532]
+- ixgbe: E610: use new version of 0x601 ACI command buffer (Michal Schmidt) [RHEL-118532]
+- ixgbe: E610: update EEE supported speeds (Michal Schmidt) [RHEL-118532]
+- ixgbe: E610: add discovering EEE capability (Michal Schmidt) [RHEL-118532]
+- ixgbe: stop re-reading flash on every get_drvinfo for e610 (Michal Schmidt) [RHEL-118532]
+- libie: prevent memleak in fwlog code (Michal Schmidt) [RHEL-118532]
+- libie: don't unroll if fwlog isn't supported (Michal Schmidt) [RHEL-118532]
+- ixgbe: refactor: use DECLARE_BITMAP for ring state field (Michal Schmidt) [RHEL-118532]
+- ixgbevf: fix link setup issue (Michal Schmidt) [RHEL-118534]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses [ixgbe,libie] (Michal Schmidt) [RHEL-118532]
+- Convert more 'alloc_obj' cases to default GFP_KERNEL arguments [ixgbe,ixgbevf,libie] (Michal Schmidt) [RHEL-118532 RHEL-118534]
+- Convert 'alloc_flex' family to use the new default GFP_KERNEL argument [ixgbe] (Michal Schmidt) [RHEL-118532]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument [ixgbe,ixgbevf,libie] (Michal Schmidt) [RHEL-118532 RHEL-118534]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [ixgbe,ixgbevf,libie] (Michal Schmidt) [RHEL-118532 RHEL-118534]
+- ixgbe: don't initialize aci lock in ixgbe_recovery_probe() (Michal Schmidt) [RHEL-118532]
+- ixgbe: fix memory leaks in the ixgbe_recovery_probe() path (Michal Schmidt) [RHEL-118532]
+- ixgbe: Add 10G-BX support (Michal Schmidt) [RHEL-118532]
+- ceph: fix NULL pointer dereference in ceph_mds_auth_match() (Alex Markuze) [RHEL-177507]
+- ceph: fix multifs mds auth caps issue (Alex Markuze) [RHEL-177507]
+
+* Mon Sep 14 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-268.el10]
+- drm/connector/hdmi: Fix out of bounds memory read (Mika Penttilä) [RHEL-222711]
+- watchdog: fix hrtimer start when pretimeout is zero (David Arcari) [RHEL-255219]
+- platform/x86: int1092: Fix info leak in parse_package() (Dennis Chen) [RHEL-248696]
+- platform/x86: int1092: Fix potential memory leak in sar_probe() (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: free ACPI discovery data on early errors (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: initialize empty PMT read result (Dennis Chen) [RHEL-248696]
+- Replace <linux/mod_devicetable.h> by more specific <linux/device-id/*.h> (c files) [partial] (Dennis Chen) [RHEL-248696]
+- platform/x86: ishtp_eclite: Fix ACPI device reference leak in probe error path (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Add NVL PCI IDs for SSRAM telemetry discovery (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Make PMT registration optional (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Add ACPI discovery scaffolding (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Switch to static array with per-index probe state (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Refactor DEVID/PWRMBASE extraction into helper (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Add PCI platform data (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc/ssram: Rename probe and PCI ID table for consistency (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Add ACPI PWRM telemetry driver for Nova Lake S (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Add PMC SSRAM Kconfig description (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt: Unify header fetch and add ACPI source (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt: Cache the telemetry discovery header (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt: Pass discovery index instead of resource (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt/telemetry: Move overlap check to post-decode hook (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt/crashlog: Split init into pre-decode (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmt: Add pre/post decode hooks around header parsing (Dennis Chen) [RHEL-248696]
+- platform/x86: intel-hid: Add HP ProBook x360 440 G1 to button_array_table (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Restore BAR fallback for header walk (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: rate-limit LTR scale-factor warning (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/tpmi: convert mutex in mem_write() to guard (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/tpmi: use cleanup helpers in mem_write() (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Add TPS68470 board data for intel nvl (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Rename daisy-chain GPIO props to generic (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Fix enable_cnt imbalance on PCIe error recovery (Dennis Chen) [RHEL-248696]
+- platform/x86: intel-vbtn: Check ACPI_HANDLE() against NULL (Dennis Chen) [RHEL-248696]
+- platform/x86: intel_sar: Check ACPI_HANDLE() against NULL (Dennis Chen) [RHEL-248696]
+- platform/x86: intel/smartconnect: Check ACPI_HANDLE() against NULL (Dennis Chen) [RHEL-248696]
+- platform/x86: intel/rst: Check ACPI_COMPANION() against NULL (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Add Nova Lake support to intel_pmc_core driver (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Retrieve PMC info only for available PMCs (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Add support for variable DMU offsets (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Use PCI DID for PMC SSRAM device discovery (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Enable Pkgc blocking residency counter (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Enable PkgC LTR blocking counter (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/pmc: Use __free() in pmc_core_punit_pmt_init() (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: allocate res with intel_vsec_dev (Dennis Chen) [RHEL-248696]
+- platform/x86/intel-uncore-freq: Expose instance ID in the sysfs (Dennis Chen) [RHEL-248696]
+- platform/x86/intel-uncore-freq: Rename instance_id (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Add support for GPIO type 0x02 (IR flood LED) (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Parameterize LED con_id in registration (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Rename pled to led in LED registration code (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Use local variable for LED struct access (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/tpmi: Use 32 bit aligned address for debugfs mem write (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Add more MSI AI evo laptops (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Match MSI laptop board name (Dennis Chen) [RHEL-248696]
+- platform: int3472: Drop redundant initialisation to 0 and NULL (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Plumb ACPI PMT discovery tables through vsec (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Return real error codes from registration path (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Switch exported helpers from pci_dev to device (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Decouple add/link helpers from PCI (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Make driver_data info const (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Refactor base_addr handling (Dennis Chen) [RHEL-248696]
+- platform: int3472: Add MSI prestige board data (Dennis Chen) [RHEL-248696]
+- gpio: tps68470: Add i2c daisy chain support (Dennis Chen) [RHEL-248696]
+- platform: int3472: Add gpio software node (Dennis Chen) [RHEL-248696]
+- platform/x86: intel/smartconnect: Convert ACPI driver to a platform one (Dennis Chen) [RHEL-248696]
+- platform/x86: intel/rst: Convert ACPI driver to a platform one (Dennis Chen) [RHEL-248696]
+- Convert remaining multi-line kmalloc_obj/flex GFP_KERNEL uses [partial] (Dennis Chen) [RHEL-248696]
+- Convert 'alloc_obj' family to use the new default GFP_KERNEL argument [partial] (Dennis Chen) [RHEL-248696]
+- treewide: Replace kmalloc with kmalloc_obj for non-scalar types [partial] (Dennis Chen) [RHEL-248696]
+- platform/x86: int3472: Handle GPIO type 0x10 (DOVDD) (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: correct kernel-doc comments (Dennis Chen) [RHEL-248696]
+- platform/x86/intel/vsec: Remove a useless mutex (Dennis Chen) [RHEL-248696]
+- Documentation: admin-guide: pm: Add documentation for die_id (Dennis Chen) [RHEL-248696]
+- Documentation: admin-guide: pm: Add documentation for agent_types (Dennis Chen) [RHEL-248696]
+- Revert "platform/x86/intel/vsec: Make driver_data info const" (Dennis Chen) [RHEL-248696]
+- Revert "platform/x86/intel/vsec: Fix enable_cnt imbalance on PCIe error recovery" (Dennis Chen) [RHEL-248696]
+
+* Thu Sep 10 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-267.el10]
+- Fix the statement regarding CONFIG_RHEL_DIFFERENCES in the FAQ (Vladislav Dronov)
+- virtio-net: fix len check in receive_big() (Laurent Vivier) [RHEL-238371]
+- virtio-net: fix incorrect flags recording in big mode (Laurent Vivier) [RHEL-238371]
+- virtio-net: fix received length check in big packets (Laurent Vivier) [RHEL-238371]
+- netfilter: flowtable: publish GC-visible tuple last (CKI Backport Bot) [RHEL-250533] {CVE-2026-74746}
+- iommu/vt-d: Fix UCTP context table slot when copying root entries (Desnes Nunes) [RHEL-250489]
+- fuse: fix race between interrupt and resend (Miklos Szeredi) [RHEL-254171] {CVE-2026-64265}
+- fuse: clear intr_entry in fuse_resend and fuse_remove_pending_req (Miklos Szeredi) [RHEL-254171] {CVE-2026-64265}
+- ALSA: virtio: Validate control metadata from the device (CKI Backport Bot) [RHEL-252341] {CVE-2026-64490}
+
+* Fri Sep 04 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-266.el10]
+- mm/list_lru: drain before clearing xarray entry on reparent (Rafael Aquini) [RHEL-227151] {CVE-2026-53153}
+- redhat: set defaults for RHEL 10.3 (Shivani Chandanshive)
+- powerpc/perf: Add power12 Base Performance Monitoring support (Mamatha Inamdar) [RHEL-190876]
+- powerpc: Add Power12 architected mode (Mamatha Inamdar) [RHEL-190876]
+- powerpc: Add Power12 raw mode (Mamatha Inamdar) [RHEL-190876]
+- powerpc/pseries: Limit PVR list to 16 entries for CAS negotiation (Mamatha Inamdar) [RHEL-190876]
+- KVM: PPC: Book3S HV: Add Power11 capability support for Nested PAPR guests (Mamatha Inamdar) [RHEL-190876]
+- stmmac: s32: enable support for Multi-IRQ mode (Jared Kangas) [RHEL-168971]
+- dt-bindings: net: nxp,s32-dwmac: Declare per-queue interrupts (Jared Kangas) [RHEL-168971]
+- net: stmmac: platform: read channels irq (Jared Kangas) [RHEL-168971]
+- spi: dt-bindings: fsl,dspi: Fix example indentation (Jared Kangas) [RHEL-248519]
+- watchdog: s32g_wdt: remove incorrect options in watchdog_info struct (Jared Kangas) [RHEL-248519]
+- usb: chipidea: fix usage_count leak when autosuspend_delay is negative (Jared Kangas) [RHEL-248519]
+- usb: chipidea: core: convert ci_role_switch to local variable (Jared Kangas) [RHEL-248519]
+- usb: chipidea: udc: support dynamic gadget add/remove (Jared Kangas) [RHEL-248519]
+- usb: chipidea: udc: add a helper ci_udc_enable_vbus_irq() (Jared Kangas) [RHEL-248519]
+- usb: chipidea: otg: not wait vbus drop if use role_switch (Jared Kangas) [RHEL-248519]
+- usb: chipidea: core: allow ci_irq_handler() handle both ID and VBUS change (Jared Kangas) [RHEL-248519]
+- usb: chipidea: core: refactor ci_usb_role_switch_set() (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: fix resume error handling (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: make non-fatal errors non-blocking in suspend (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: use pm_runtime_resume_and_get() in suspend (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: disable irq during suspend to fix unhandled interrupt (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: restore pinctrl before restoring ios timing on resume (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: fix esdhc_change_pinstate() to allow default state restore (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: restore DLL override for DDR modes on resume (Jared Kangas) [RHEL-248519]
+- mmc: sdhci-esdhc-imx: remove unnecessary mmc_card_wake_sdio_irq check for tuning save/restore (Jared Kangas) [RHEL-248519]
+- dt: bindings: fsl,vf610-pit: Add compatible for s32g2 and s32g3 (Jared Kangas) [RHEL-248519]
+- dt-bindings: timer: Add fsl,vf610-pit.yaml (Jared Kangas) [RHEL-248519]
+- pinctrl: s32cc: use dev_err_probe() and improve error messages (Jared Kangas) [RHEL-248519]
+- pinctrl: s32: correct kernel-doc bad line warning (Jared Kangas) [RHEL-248519]
+- i2c: imx: fix locked bus on SMBus block-read of 0 (IRQ) (Jared Kangas) [RHEL-248519]
+- i2c: imx: fix locked bus on SMBus block-read of 0 (atomic) (Jared Kangas) [RHEL-248519]
+- i2c: imx: Cancel hrtimer before clearing slave pointer (Jared Kangas) [RHEL-248519]
+- i2c: imx: Fix slave registration race and error handling (Jared Kangas) [RHEL-248519]
+- i2c: imx: mark I2C adapter when hardware is powered down (Jared Kangas) [RHEL-248519]
+- gpio: pca953x: fix cache_only and IRQ state on restore_context() failure (Jared Kangas) [RHEL-248519]
+- gpio: pca953x: fix pca953x_irq_bus_sync_unlock regmap lock (Jared Kangas) [RHEL-248519]
+- replace kernel-qe-ci gating with osci tier0 plans (Bruno Goncalves) [RHEL-186035]
+- RDMA/vmw_pvrdma: Fix double free on pvrdma_alloc_ucontext() error path (CKI Backport Bot) [RHEL-179960] {CVE-2026-46189}
+
+* Tue Sep 01 2026 CKI KWF Bot <cki-ci-bot+kwf-gitlab-com@redhat.com> [6.12.0-265.el10]
+- redhat: bump RHEL_MINOR to 10.4 (Oleksii Baranov)
+- hwmon: (k10temp) Add per-CCD temperature monitoring for Zen5 Turin (Dennis Chen) [RHEL-247220]
+- s390/cpum_cf: Handle CPU hotplug via prepare/dead callbacks (Jan Polensky) [RHEL-248146]
+- fs/resctrl: Add "*" shorthand to set io_alloc CBM for all domains (Steve Best) [RHEL-174711]
+- fs/resctrl: Report invalid domain ID when parsing io_alloc_cbm (Steve Best) [RHEL-174711]
+- hwmon: spd5118: Add I3C support (Jennifer Berringer) [RHEL-143335]
+- hwmon: spd5118: Remove 16-bit addressing (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: Add ACPI ID for Tegra410 (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: Add ACPI core clock frequency quirk (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: Add SETAASA as supported CCC (Jennifer Berringer) [RHEL-143335]
+- i3c: master: match I3C device through DT and ACPI (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add support for devices without PID (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add support for devices using SETAASA (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Support ACPI enumeration of child devices (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Use unified device property interface (Jennifer Berringer) [RHEL-143335]
+- dt-bindings: i3c: Add mipi-i3c-static-method to support SETAASA (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Expose the APIs to support I3C hub (Jennifer Berringer) [RHEL-143335]
+- i3c: master: rename i3c_master_reattach_i3c_dev() to *_locked (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Use unsigned int for dev_nack_retry_count consistently (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add missing runtime PM get in dev_nack_retry_count_store() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Update dev_nack_retry_count under maintenance lock (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Prevent reuse of dynamic address on device add failure (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Serialize i3c_set_hotjoin() with the maintenance lock (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Make hot-join workqueue freezable to block hot-join during suspend (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: Fix IBI count register selection for versalnet (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Simplify xfer cleanup with __free(kfree) (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Fix memory leak in dw_i3c_master_i3c_xfers() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: dw-i3c: Fix missing reset assertion in remove() callback (Jennifer Berringer) [RHEL-143335]
+- i3c: fix missing newline in dev_err messages (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add sysfs option to rescan bus via entdaa (Jennifer Berringer) [RHEL-143335]
+- i3c: master: use kzalloc_flex (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: Set SIR_REJECT in DAT on device attach and reattach (Jennifer Berringer) [RHEL-143335]
+- i3c: master: dw-i3c: Fix missing of_node for virtual I2C adapter (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Convert more 'alloc_obj' cases to default GFP_KERNEL arguments (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Convert 'alloc_obj' family to use the new default GFP_KERNEL argument (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Replace kmalloc with kmalloc_obj for non-scalar types (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: fix SIR reject bit mapping for dynamic addresses (Jennifer Berringer) [RHEL-143335]
+- i3c: dw-i3c-master: convert spinlock usage to scoped guards (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Fix memory leak in dw_i3c_master_i2c_xfers() (Jennifer Berringer) [RHEL-143335] {CVE-2026-45863}
+- i3c: master: Add i3c_master_do_daa_ext() for post-hibernation address recovery (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Initialize spinlock to avoid upsetting lockdep (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Introduce optional Runtime PM support (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Replace WARN_ON() with dev_err() in i3c_dev_free_ibi_locked() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Update hot-join flag only on success (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Preserve DAT entry bits when restoring addresses (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: use FIELD_PREP for device address table macros (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Add support for Device NACK Retry configuration (Jennifer Berringer) [RHEL-143335]
+- i3c: add sysfs entry and attribute for Device NACK Retry count (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Fix confusing cleanup.h syntax (Jennifer Berringer) [RHEL-143335]
+- i3c: master: cleanup callback .priv_xfers() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: switch to use new callback .i3c_xfers() from .priv_xfers() (Jennifer Berringer) [RHEL-143335]
+- i3c: document i3c_xfers (Jennifer Berringer) [RHEL-143335]
+- i3c: master: svc: Add basic HDR mode support (Jennifer Berringer) [RHEL-143335]
+- i3c: master: svc: Replace bool rnw with union for HDR support (Jennifer Berringer) [RHEL-143335]
+- i3c: Switch to use new i3c_xfer from i3c_priv_xfer (Jennifer Berringer) [RHEL-143335]
+- i3c: Add HDR API support (Jennifer Berringer) [RHEL-143335]
+- i3c: mipi-i3c-hci: Use core helpers for DMA mapping and bounce buffering (Jennifer Berringer) [RHEL-143335]
+- i3c: master: svc: skip address resend on repeat START (Jennifer Berringer) [RHEL-143335]
+- i3c: master: add WQ_PERCPU to alloc_workqueue users (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Remove i3c_device_free_ibi from i3c_device_remove (Jennifer Berringer) [RHEL-143335]
+- i3c: fix big-endian FIFO transfers (Jennifer Berringer) [RHEL-143335]
+- i3c: Remove superfluous FIXME (Jennifer Berringer) [RHEL-143335]
+- i3c: Fix default I2C adapter timeout value (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add helpers for DMA mapping and bounce buffer handling (Jennifer Berringer) [RHEL-143335]
+- i3c: add missing include to internal header (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: Remove redundant pm_runtime_mark_last_busy() calls (Jennifer Berringer) [RHEL-143335]
+- i3c: Add more parameters for controllers to the header (Jennifer Berringer) [RHEL-143335]
+- i3c: Standardize defines for specification parameters (Jennifer Berringer) [RHEL-143335]
+- i3c: master: cdns: Use i3c_writel_fifo() and i3c_readl_fifo() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: dw: Use i3c_writel_fifo() and i3c_readl_fifo() (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Add inline i3c_readl_fifo() and i3c_writel_fifo() (Jennifer Berringer) [RHEL-143335]
+- i3c: prefix hexadecimal entries in sysfs (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: replace ENOTSUPP with SUSV4-compliant EOPNOTSUPP (Jennifer Berringer) [RHEL-143335]
+- i3c: master: replace ENOTSUPP with SUSV4-compliant EOPNOTSUPP (Jennifer Berringer) [RHEL-143335]
+- i3c: don't fail if GETHDRCAP is unsupported (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Initialize ret in i3c_i2c_notifier_call() (Jennifer Berringer) [RHEL-143335]
+- i3c: dw: use adapter timeout value for I2C transfers (Jennifer Berringer) [RHEL-143335]
+- i3c: Add NULL pointer check in i3c_master_queue_ibi() (Jennifer Berringer) [RHEL-143335] {CVE-2025-23147}
+- i3c: mipi-i3c-hci: Use I2C DMA-safe api (Jennifer Berringer) [RHEL-143335]
+- i3c: Remove the const qualifier from i2c_msg pointer in i2c_xfers API (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Fix missing 'ret' assignment in set_speed() (Jennifer Berringer) [RHEL-143335]
+- i3c: Use i3cdev->desc->info instead of calling i3c_device_get_info() to avoid deadlock (Jennifer Berringer) [RHEL-143335] {CVE-2024-43098}
+- i3c: Document I3C_ADDR_SLOT_EXT_STATUS_MASK (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Fix miss free init_dyn_addr at i3c_master_put_i3c_addrs() (Jennifer Berringer) [RHEL-143335] {CVE-2024-56562}
+- i3c: master: Remove i3c_dev_disable_ibi_locked(olddev) on device hotjoin (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Fix dynamic address leak when 'assigned-address' is present (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Extend address status bit to 4 and add I3C_ADDR_SLOT_EXT_DESIRED (Jennifer Berringer) [RHEL-143335]
+- i3c: master: Replace hard code 2 with macro I3C_ADDR_SLOT_STATUS_BITS (Jennifer Berringer) [RHEL-143335]
+- ACPICA: fix I2C LVR item count in the conversion table (Jennifer Berringer) [RHEL-143335]
+- ACPICA: Mention the LVR bits (Jennifer Berringer) [RHEL-143335]
+- ACPICA: Change LVR to 8 bit value (Jennifer Berringer) [RHEL-143335]
+- ACPICA: Fetch LVR I2C resource descriptor (Jennifer Berringer) [RHEL-143335]
+- ACPICA: Add LVR to acrestyp.h (Jennifer Berringer) [RHEL-143335]
+- arm64: Add support for TSV110 Spectre-BHB mitigation (Steve Dunnagan) [RHEL-224485]
+- rcu: Fix rcu_read_unlock() deadloop due to softirq (Jerome Marchand) [RHEL-178446]
+
+
+###
+# The following Emacs magic makes C-c C-e use UTC dates.
+# Local Variables:
+# rpm-change-log-uses-utc: t
+# End:
+###
