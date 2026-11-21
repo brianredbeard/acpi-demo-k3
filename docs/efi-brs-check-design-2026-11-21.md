@@ -138,3 +138,23 @@ one-shot kernel module (k3fb.ko, built against dbg1, deployed
 to /usr/local/lib on the board; wrapper at
 /usr/local/bin/k3-enter-fastboot). Source packaged in
 tools/k3-fastboot/.
+
+## rhct5 acceptance -> rhct6 (the four findings + the Type44 lesson)
+
+rhct5 verified: 16 GiB (MB-units fix) ✓. The fresh dmicheck
+then exposed four real bugs — and one spec lesson:
+- Type4 length 0x33 -> 0x32 (sizeof included 3.8 fields)
+- Type16 MaximumCapacity 0xFFFFFFFF -> 0x80000000 (the
+  required marker with extended capacity)
+- Type17 MemoryTechnology 0 -> 0x03 DRAM
+- Type44: my ISA-string PSB was an invented layout (and the
+  263-char string overflowed the PSB length byte). The
+  ratified riscv/riscv-smbios v0.10 PSB is a fixed 110-byte
+  CSR body: mhartid/boot-hart/mvendorid(0x710)/marchid(X100)/
+  mimpid/misa/privileges/delegations/XLENs. Rewritten with
+  the live CSR values; the ISA string's home is the RHCT.
+
+rhct6 staged, inspect-gated. The lesson recorded: when a
+structure's layout isn't in the SMBIOS spec proper, find the
+arch spec FIRST — the riscv-smbios repo was one search away
+the whole time.
