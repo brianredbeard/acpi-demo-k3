@@ -205,3 +205,59 @@ B. Treat the shipped v12 FIT payload as the pinned ESOS base
 C. Reproduce the v12 build's link order (find the scons/env
    difference that orders objects differently and pin it) —
    the reproducibility fix, unknown difficulty
+
+## The QEMU differential (2026-11-21, final diagnostic of the arc)
+
+Both the working rcpu0 firmware and the from-source rebuild,
+booted under qemu-system-riscv64 (virt, 8G, loader), execute
+IDENTICALLY to the first fault: epc 0x10020f268, load fault at
+0x280002800 — the same instruction, same address, same cause.
+
+Interpretation: the from-source firmware's boot code path is
+CORRECT and equivalent to the working firmware's up to the first
+peripheral-dependent access. The failure that kills the from-
+source builds on real hardware manifests only against real K3
+peripherals — after this point, which QEMU (absent the K3 SoC)
+cannot model.
+
+Also resolved in this final round:
+- rcpu1-fw is byte-IDENTICAL between working and mine (and it is
+  a -9-style lzo stream in both — so the FSBL decodes those
+  fine; the compression theory is dead on the evidence of rcpu1)
+- fix1 (default-lzo rcpu0) flashed and verified on NOR — still
+  boots dead; compression exonerated for rcpu0 as well
+
+## The complete falsification ledger (what the failure is NOT)
+
+- NOT the patch content (committed v12-era series also dies)
+- NOT the drivers/init table (identical: 50 entries, 32 unique)
+- NOT build nondeterminism (one path-name byte)
+- NOT FIT properties (identical)
+- NOT compression (rcpu1 proves -9 streams decode; fix1 default-
+  lzo rcpu0 also dies)
+- NOT the early boot code path (QEMU: identical execution)
+
+What remains: a difference in the rcpu0 firmware's behavior that
+only manifests against real K3 hardware, past the first
+peripheral access — most plausibly in register values written to
+a real peripheral whose QEMU-absent access both builds fault on
+identically (e.g. a DT-derived address both builds compute the
+same way, where real hardware responds differently to different
+register CONTENT written by the two builds).
+
+## Recommendation (user decision)
+
+The from-source pipeline cannot currently be qualified on this
+board without rcpu-console visibility or SoC modeling — both are
+infrastructure projects. The pragmatic paths to "working firmware
+with P1/P2":
+
+A. SURGICAL TRANSPLANT: extend the working rcpu0 ELF with the P1
+   code (append sections, extend the init table, fix
+   relocations) — bypasses the from-source pipeline entirely;
+   bounded, verifiable work with the map files on hand
+B. RCPU CONSOLE: wire the rcpu uart0 to an observable port
+   (board-level; needs hardware knowledge of the ruart0 pin mux
+   — a question for the board team)
+C. SoC MODELING in QEMU: the full K3 peripheral set — months,
+   low confidence
