@@ -103,7 +103,7 @@
 +		clki->name = devm_kstrdup(dev, ufs_acpi_clocks[i].list_name,
 +					  GFP_KERNEL);
 +		clki->min_freq = 0;
-+		clki->max_freq = ULONG_MAX;
++		clki->max_freq = U32_MAX;
 +		list_add_tail(&clki->list, &hba->clk_list_head);
 +	}
 +}
