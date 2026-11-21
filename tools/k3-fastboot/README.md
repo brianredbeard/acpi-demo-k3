@@ -21,3 +21,12 @@ Verified: module loads + writes the byte on rhct4 firmware
 (ESOS patches 0001-0010, reboot functional). The full
 power-cycle path (PMIC flag -> BootROM USB -> k3-firmware
 flash handshake) is exercised on the next flash cycle.
+
+## QUALIFIED (2026-11-21, end-to-end)
+
+Full cycle proven on hardware: k3-enter-fastboot ->
+k3fb.ko writes FLAG_FASTBOOT to LISTEN_ADDR (0xc087c000) ->
+reboot -> ESOS sysreset reads the flag, writes the PMIC
+nonvolatile fastboot flag -> next power-on lands in BootROM
+USB download mode -> the flash tool's version-brom handshake
+connects. No FDL button.
