@@ -1,0 +1,16 @@
+#!/bin/sh
+# Enter USB fastboot/download mode on the next power-on.
+# The ESOS RPMI sysreset handler (k3-os0_sysreset.c) reads the
+# flag byte at 0xc087c000 (LISTEN_ADDR, DTB_TABLE shared region)
+# on every reboot; 0x1 (FLAG_FASTBOOT) -> nonvolatile PMIC flag
+# -> BootROM USB download mode, no button.
+# /dev/mem is STRICT_DEVMEM-blocked, so the write goes through a
+# tiny kernel module (k3fb.ko).
+set -e
+if [ "$(id -u)" -ne 0 ]; then exec sudo "$0" "$@"; fi
+modprobe -r k3fb 2>/dev/null || true
+insmod /usr/local/lib/k3fb.ko
+dmesg | tail -1
+echo "k3-enter-fastboot: rebooting into fastboot/download mode in 3s..."
+sleep 3
+reboot
