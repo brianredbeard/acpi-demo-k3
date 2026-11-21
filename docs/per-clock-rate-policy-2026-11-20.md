@@ -290,3 +290,27 @@ is fully repaired — firmware AND config reproducible.
 
 The 'user decision' options (transplant/console/modeling) are
 superseded: none are needed.
+
+## fix2 VERIFIED (2026-11-21): the pipeline is repaired
+
+fix2 (from-source frwk2 firmware + the ORIGINAL dtbs; the FIT
+differs from the working image in exactly one payload, rcpu0-fw):
+
+- CLOCK TREE: 17 entries, ufs_aclk 491.52 MHz — the full consumer
+  set at truth rates from a FROM-SOURCE build
+- Full regression green: P0 codes -1/-2/-3/-2, type-0 0, _LPI
+  live (6964 entries), UFS 673 MB/s, ZERO clock fallback warnings
+  (clocks resolve), zero lockups
+
+THE CORRECTED PIPELINE (for all future ESOS cycles):
+1. build the firmware via build_esos.py (the reproducible path)
+2. package the FIT with the ORIGINAL payload set (extracted from
+   the qualified bundle or a NOR backup) — NEVER regenerated dtbs
+   unless the dtb change itself is the qualified variable
+3. run the payload-diff check: the staged FIT vs the last-known-
+   good image must differ in exactly the intended payloads
+4. flash; gate on the clock tree first
+
+P1 staged on the repaired pipeline: /tmp/esos-p1-fix.itb (frwk2 +
+the reconciled 0007; payload-diff verified: only rcpu0-fw
+differs from the working image).
