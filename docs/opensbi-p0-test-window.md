@@ -322,3 +322,27 @@ the M2-enter-ISR-driven cluster sequence (votes placed by the
 coordination that observes the whole cluster idle — not by
 individual harts), which is the future qualified cluster work per
 the plan. 0x11000000 remains unadvertised in _LPI (P0-6 principle).
+
+---
+
+## v22 (audit-fixed ownership model) — hardware verification (2026-11-20)
+
+Payload: pico-acpi-v22. ESOS-only delta over v21h: the audit-corrected
+P1 model (atomic late-consumer invalidation + commit-gate recheck;
+per-class refcounts; blocked-init with provider qualification — the
+X100 clusters hold K3_CONSUMER_X100_AP; bounded M2-enter ISR ack).
+
+### Results: ALL PASS
+
+- Deny regression: harts 0/3/5/7 all EDENIED (-4) in 7-11ms — now
+  denied by the REAL ownership provider (the AP OS holds its
+  clusters), not the M2-wait timeout. Repeat probe clean (no
+  EALREADY, no state stick).
+- Full regression: P0 rejections -1/-2/-3/-2; type-0 0; _LPI live
+  (21216 entries); UFS 675 MB/s; zero lockups.
+- Reboot: clean; post-reboot health all green (_LPI accumulating,
+  UFS from initramfs, zero lockups).
+
+The repo now reproduces the flashed state: patch 0007 is the true
+tree diff, OpenSBI is pinned as a sources.lock component, and the
+host suite (41 real assertions) validates the LOCKED source.
