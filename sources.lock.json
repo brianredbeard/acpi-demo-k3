@@ -46,7 +46,11 @@
         },
         {
           "file": "patches/esos/0010-cppc-service-group.patch",
-          "sha256": "0e1c5fc2c5be171ce588d3ce70cac788783b1762a204f6882ffb0dfaebc58f11"
+          "sha256": "4a65cd6c15091057c5f72a1f4f527701bf90592ab570d36a922da40b88498f65"
+        },
+        {
+          "file": "patches/esos/0011-ownership-sticky-block-and-provider-release.patch",
+          "sha256": "1c4c8e0c3acf68de8eb14c46b6e51f8250d34986fae5b504e760f1dcb51fd26d"
         }
       ],
       "configs": [

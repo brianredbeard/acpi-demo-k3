@@ -23,28 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-def build_fixture():
-    """AUDIT FIX 5: test the LOCKED source — the tree produced by
-    meta.prepare (pristine e0b8d955b + patches 0001-0007 from
-    sources.lock.json), which is exactly what a reproducible build
-    compiles. Prepares it on demand into a temp dir. The mutable
-    dev checkout (esos-reset-handoff) is deliberately NOT used: a
-    test that passes against uncommitted edits proves nothing about
-    the shipped artifact."""
-    import subprocess, sys, tempfile
-    import meta
-    lock = ROOT / 'sources.lock.json'
-    prepared = ROOT.parent / '.p1-test-lock-source' / 'esos' / 'bsp/spacemit/drivers/rpmi/k3'
-    if not (prepared / 'k3_domain_ownership.c').exists():
-        dest = ROOT.parent / '.p1-test-lock-source'
-        if dest.exists():
-            import shutil; shutil.rmtree(dest)
-        meta.prepare(lock, dest,
-                     repositories={'esos': str(ROOT.parent / 'esos-reset-diagnostic')},
-                     select={'esos', 'esos-lite'})
-    if not (prepared / 'k3_domain_ownership.c').exists():
-        raise unittest.SkipTest('locked P1 source did not prepare')
-    return prepared
+from tests.test_rpmi_clk_service import build_fixture
 
 SOURCE_DIR = build_fixture()
 
@@ -169,6 +148,9 @@ int main(void){
     /* --- unknown class rejected --------------------------------------- */
     require(k3_domain_consumer_acquire(0, K3_CONSUMER_UNKNOWN) == -RT_EINVAL,
             "unknown class rejected at acquire");
+    require(k3_domain_sleep_eligible(0) == RT_FALSE, "unknown revokes qualification");
+    require(k3_domain_request_sleep(0, 0) == -RT_EPERM, "unknown blocks entry");
+    require(k3_domain_qualify(0) == 0, "explicit requalification after investigation");
 
     /* --- bounded-wait timeout aborts, no stale vote -------------------- */
     require(k3_domain_request_sleep(0, 1) == -RT_ETIMEOUT, "timeout aborts entry");
@@ -259,12 +241,14 @@ int main(void){
         mock_stopped = 1;   /* even with cores stopped */
         require(k3_domain_cluster_quiesced(1) == RT_FALSE,
                 "seq: held domain not quiesced");
+        require(k3_domain_provider_release(1) == 1,
+                "seq: stopped provider releases its own hold");
         require(k3_domain_provider_release(1) == 0,
-                "seq: no release while held+stopped (provider contract)");
+                "seq: repeated release is idempotent");
 
         /* provider release on all-stopped */
-        require(k3_domain_consumer_release(1, K3_CONSUMER_X100_AP) == 0,
-                "seq: provider releases");
+        require(k3_test_domain(1)->consumers[K3_CONSUMER_X100_AP] == 0,
+                "seq: monitor release consumed the AP hold");
         require(k3_domain_cluster_quiesced(1) == RT_TRUE,
                 "seq: released+stopped -> quiesced");
 
