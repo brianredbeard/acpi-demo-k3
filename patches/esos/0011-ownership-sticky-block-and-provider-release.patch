@@ -1,8 +1,20 @@
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
-index ac5c78dc1..85e8a8af2 100644
---- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
-@@ -57,8 +57,20 @@ int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c)
+--- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c	2026-11-21 10:15:15.959096572 -0800
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c	2026-11-21 10:21:47.627197827 -0800
+@@ -14,6 +14,12 @@
+ #include "k3_hsm.h"
+ #include "k3_domain_ownership.h"
+ 
++/* RT-Thread nano's errno set lacks EPERM; the permission
++ * semantics (sticky unqualified blocker) need it. */
++#ifndef RT_EPERM
++#define RT_EPERM 1
++#endif
++
+ static struct k3_cluster_domain k3_domains[K3_MAX_CLUSTERS];
+ 
+ /*
+@@ -57,8 +63,20 @@
  	if (!d)
  		return -RT_EINVAL;
  
@@ -25,7 +37,7 @@ index ac5c78dc1..85e8a8af2 100644
  
  	level = rt_hw_interrupt_disable();
  	if (d->state != K3_DOMAIN_ACTIVE) {
-@@ -279,13 +291,27 @@ int k3_domain_provider_release(int cluster)
+@@ -279,13 +297,27 @@
  
  	if (!d)
  		return -RT_EINVAL;
@@ -58,108 +70,17 @@ index ac5c78dc1..85e8a8af2 100644
  	return 1;
  }
  
-@@ -364,7 +390,14 @@ int k3_domain_request_sleep(int cluster, int timeout_ms)
+@@ -364,7 +396,12 @@
  				eligible = RT_FALSE;
  		if (!eligible) {
  			rt_hw_interrupt_enable(level);
 -			return -RT_ERROR;	/* unqualified or consumers active */
 +			/*
-+			 * Unqualified (sticky unknown-ownership blocker) is a
-+			 * permission failure; active consumers is busy — the
-+			 * caller may retry after releasing them.
++			 * Denial is a permission failure whether the cause is
++			 * the sticky unknown-ownership blocker or active
++			 * consumers (the retry contract is the caller's).
 +			 */
-+			if (!d->qualified)
-+				return -RT_EPERM;
-+			return -RT_EBUSY;
++			return -RT_EPERM;
  		}
  	}
  
-@@ -618,6 +651,69 @@ int k3_domain_init(int cluster)
- 	return 0;
- }
- 
-+/* ---- device-power ownership (P2 #1) ---------------------------------
-+ *
-+ * The cluster model guards shared-cluster sleep; device domains
-+ * (RPMI DEVICE_POWER group: vpu/gpu/audio/lcd0/lcd1) need the same
-+ * contract at device granularity: a device's power may transition
-+ * only when no consumer class holds it. Same rules as P1:
-+ *   unregistered device      -> ineligible (unknown blocks)
-+ *   registered + any holder  -> ineligible
-+ *   registered + quiescent   -> eligible
-+ * The registry is per CONSUMER CLASS (the device domains each have
-+ * exactly one natural owner class; multi-owner devices would need
-+ * the full refcount array — none exist on this board).
-+ */
-+static rt_uint16_t k3_device_power_consumers[K3_CONSUMER_CLASS_COUNT];
-+static rt_uint8_t k3_device_power_registered[K3_CONSUMER_CLASS_COUNT];
-+
-+int k3_device_power_register(enum k3_consumer_class owner)
-+{
-+	if ((owner >= K3_CONSUMER_CLASS_COUNT) || (owner == K3_CONSUMER_UNKNOWN))
-+		return -RT_EINVAL;
-+
-+	rt_base_t level = rt_hw_interrupt_disable();
-+	k3_device_power_registered[owner] = 1;
-+	k3_device_power_consumers[owner] = 0;
-+	rt_hw_interrupt_enable(level);
-+	return 0;
-+}
-+
-+int k3_device_power_consumer_acquire(enum k3_consumer_class c)
-+{
-+	if ((c >= K3_CONSUMER_CLASS_COUNT) || (c == K3_CONSUMER_UNKNOWN))
-+		return -RT_EINVAL;
-+
-+	rt_base_t level = rt_hw_interrupt_disable();
-+	k3_device_power_consumers[c]++;
-+	rt_hw_interrupt_enable(level);
-+	return 0;
-+}
-+
-+int k3_device_power_consumer_release(enum k3_consumer_class c)
-+{
-+	if ((c >= K3_CONSUMER_CLASS_COUNT) || (c == K3_CONSUMER_UNKNOWN))
-+		return -RT_EINVAL;
-+
-+	rt_base_t level = rt_hw_interrupt_disable();
-+	if (k3_device_power_consumers[c])
-+		k3_device_power_consumers[c]--;
-+	rt_hw_interrupt_enable(level);
-+	return 0;
-+}
-+
-+rt_bool_t k3_device_power_eligible(enum k3_consumer_class owner)
-+{
-+	if ((owner >= K3_CONSUMER_CLASS_COUNT) || (owner == K3_CONSUMER_UNKNOWN))
-+		return RT_FALSE;
-+
-+	rt_base_t level = rt_hw_interrupt_disable();
-+	rt_bool_t eligible = k3_device_power_registered[owner] &&
-+			     (k3_device_power_consumers[owner] == 0);
-+	rt_hw_interrupt_enable(level);
-+	return eligible;
-+}
-+
- #ifdef K3_DOMAIN_TEST
- /* Test hook: simulate ONLY the semaphore release of the M2-enter ISR
-  * (the full ISR drives state too; tests use this to deliver a
-diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
-index 7d0435ccd..a192c44cb 100644
---- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
-@@ -119,6 +119,14 @@ int k3_domain_consumer_acquire(int cluster, enum k3_consumer_class c);
- int k3_domain_consumer_release(int cluster, enum k3_consumer_class c);
- rt_bool_t k3_domain_sleep_eligible(int cluster);
- 
-+/* ---- device-power ownership (P2 #1) ---------------------------------
-+ * RPMI DEVICE_POWER group gate: per-consumer-class registry with
-+ * the P1 rules (unregistered blocks; any holder blocks). */
-+int k3_device_power_register(enum k3_consumer_class owner);
-+int k3_device_power_consumer_acquire(enum k3_consumer_class c);
-+int k3_device_power_consumer_release(enum k3_consumer_class c);
-+rt_bool_t k3_device_power_eligible(enum k3_consumer_class owner);
-+
- /* Domain qualification: clears the sticky unqualified blocker once an
-  * ownership provider has actually enumerated this cluster's consumers. */
- int k3_domain_qualify(int cluster);

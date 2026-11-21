@@ -50,7 +50,7 @@
         },
         {
           "file": "patches/esos/0011-ownership-sticky-block-and-provider-release.patch",
-          "sha256": "1c4c8e0c3acf68de8eb14c46b6e51f8250d34986fae5b504e760f1dcb51fd26d"
+          "sha256": "9b72d3d4de5cc50894a9f479d74c338d36182aa331b365fce66d28db3fabe666"
         }
       ],
       "configs": [
