@@ -226,3 +226,28 @@ any input events) the moment cros_ec registers; if the
 power key reports active, that's the answer — and the fix
 is the EC firmware/power-button line state, not our GPIO
 work (which is now PROVEN: probe order, bind, no defer).
+
+## The 29s poweroff ROOT-CAUSED: my own obsolete service
+
+Deterministic on every gpioy boot:
+  [28.29s] Starting gpio-spacemit-early.service
+  [29.31s] reboot: Power down
+
+gpio-spacemit-early is MY unit — from the initrd cpio-append
+round (loading the GPIO module before udev, when it was
+modular). It survived into the boot's unit set. With GPIO
+now built into the gpioy kernel, the unit is obsolete — and
+whatever its ExecStart does against the current state (the
+module path is gone; =y means no .ko) results in the clean
+systemd poweroff a second later.
+
+FIX (on next power-on): remove/disable the unit from the
+real root AND from any initrd copy —
+  systemctl disable --now gpio-spacemit-early
+  rm /etc/systemd/system/... /usr/lib/systemd/system/...
+Then one more gpioy boot verifies clean (the EC bind at
+1.98s is already proven twice).
+
+COROLLARY: the EC power-key theory is RETRACTED — the EC
+event stream was innocent; my own leftover unit was the
+trigger. The EC fix stands unconditionally proven.
