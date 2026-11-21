@@ -70,3 +70,30 @@ Considered and rejected:
 2. EC: dmesg — cros_ec_espi probes and BINDS (no -517), the
    GpioInt IRQ acquired; /sys/class/chromeos devices appear
 3. Full regression (clocks, LPI, UFS) unchanged
+
+## The GRUB cleanup (final state, supersedes the intermediate one)
+
+Consolidated to TWO honest entries:
+
+- "K3 dbg1" (default): vmlinuz-dbg1, full initramfs, cmdline
+  = root + driver_deferred_probe_timeout=30. NOTHING else.
+- "K3 stock kernel (6.12.0-284)": the fallback.
+
+Removed (all fossils of dev cycles):
+- every `acpi ($root)/boot/*.aml` override — the firmware DSDT
+  (the qualified 12-patch series) is the single source of truth;
+  the v8-era /boot copies were months stale (no UFS0, no _LPI)
+- console= and earlycon= — SPCR (our ACPI table) provides the
+  console, verified live: "ACPI: SPCR: console: uart,mmio32,
+  0xd4017000,115200", /proc/consoles ttyS0 active
+- ip=enaprp1i0:dhcp rd.neednet=1 — the 40s initrd network
+  wait; root is local NVMe, network is NetworkManager's job
+  post-switchroot (the gmac-dhcp profile holds the address)
+- clk_ignore_unused — dev leftover
+- the dev-cycle entries (DSDT-v8 debug, GPIO SSDT test, the
+  plain variant) and the GRUB_DEFAULT pointing at a deleted
+  stanza
+
+Principle: the firmware owns the platform description (DSDT,
+SPCR, MADT...); the kernel cmdline owns only what is genuinely
+per-boot policy (root, and the one deliberate defer timeout).
