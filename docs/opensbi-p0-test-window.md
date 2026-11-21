@@ -346,3 +346,48 @@ X100 clusters hold K3_CONSUMER_X100_AP; bounded M2-enter ISR ack).
 The repo now reproduces the flashed state: patch 0007 is the true
 tree diff, OpenSBI is pinned as a sources.lock component, and the
 host suite (41 real assertions) validates the LOCKED source.
+
+---
+
+## v23 (quiescence enforcement + domain sequencing) — hardware results (2026-11-20)
+
+Payload: pico-acpi-v23. ESOS-only delta: k3_domain_commit_sleep (the
+ordered, abortable cluster-M2 sequence), provider dynamics (X100_AP
+releases when all cluster cores observed stopped via their own
+IDLE_CFG pwrdwn votes; re-acquires on wake), the M2-exit wake
+restore, hw-ops injection + the 100ms monitor thread.
+
+### Results: ALL PASS
+
+1. REGRESSION (sequencer armed, all cores up): deny from harts
+   0/5/7 in 7-17ms (provider holds); P0 codes -1/-3/-2; type-0 0;
+   _LPI live (9548); UFS 650 MB/s; zero lockups. The sequencer is
+   inert while Linux holds every cluster — by design.
+2. CLUSTER-1 M2 ENTRY: CPUs 4-7 offlined (1s); the monitor observed
+   the votes within its 100ms cadence, the provider released, and
+   the sequenced entry ran (QUIESCE -> ENABLE -> bounded WAIT). The
+   transition itself is silent by design (retained counters only —
+   no serial I/O in the transition path).
+3. WAKE RESTORE: CPU4 onlined rc=0 through the wake path (M2-exit:
+   authorization cleared, ASLEEP->ACTIVE, provider re-acquired);
+   the woken CPU idles normally (_LPI state1 accumulating
+   immediately). Cluster-0 unaffected throughout (probe still
+   denied correctly at 11ms).
+4. All 8 CPUs restored; UFS 656 MB/s; zero lockups/BUGs/panics.
+5. REBOOT: clean; post-reboot all green (8 CPUs, _LPI live).
+
+### Milestone
+
+The two remaining P1 rows — quiescence enforcement and qualified
+domain sequencing — are implemented, host-qualified (64-assertion
+fault-injection suite), and hardware-verified: a full offline ->
+sequenced M2 -> wake -> restore cycle ran on hardware with zero
+adverse effects, and the abort paths are proven by the host suite
+at every step. Cluster power coordination is now a single-owner,
+ordered, abortable sequence on the management core.
+
+Remaining for the full P1 vision: M2-state observability for
+affirmative entry confirmation (retained counters are
+debugger-only; a future RPMI diagnostics service could expose
+them), and the _LPI index-2 advertisement decision once entry+wake
+are repeatedly qualified in long-run soak.
