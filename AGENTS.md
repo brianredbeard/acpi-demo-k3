@@ -4,7 +4,7 @@ Hard-won rules from the 2026-11-20/21 sessions. Every rule below exists
 because violating it cost a flash cycle, a hardware wedge, or an audit
 finding. Read before building, flashing, or "just testing" anything.
 
-## The three commandments
+## The four commandments
 
 1. **ESOS builds go through `build_esos.py` — always.** The hand-build
    path (`./build.sh` from a working tree) produced every dead firmware
@@ -17,6 +17,16 @@ finding. Read before building, flashing, or "just testing" anything.
    its result proves nothing and the next debug step is a guess.
 3. **Commit before you flash.** The flash that panicked in v21f had its
    fix living in `/tmp`. If work isn't committed, it doesn't exist.
+4. **A bundle is not flash-ready until `k3-firmware inspect
+   --bundle <dir>` passes.** "Assembled" means the installer's own
+   validation accepted it — not that construction finished. Any file
+   mutated inside a bundle (payloads OR provenance) requires
+   re-sealing the manifest checksums, then running the inspect gate.
+   The 2026-11-21 rhct1 handoff failed on exactly this: provenance
+   refreshed after manifest copy; two aborted flash commands, zero
+   board risk because the installer caught it — but it should never
+   have reached the user. Construction completion and validation
+   passage feel identical from the producer's chair; they are not.
 
 ## Build discipline
 
