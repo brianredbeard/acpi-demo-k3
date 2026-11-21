@@ -210,3 +210,15 @@ the full type set (4/7/16/17/19/44 ratified PSB), chassis +
 identity plumbing, datasheet-true memory, all DMI checks
 clean, the Spacemit UiApp override live with the System
 Information front page.
+
+## rhct10: the combined conformance bundle (staged, gated)
+
+Single edk2 variable on rhct8 carrying the full audit-fix
+batch: K3BrsCheckDxe + the _OSC error-path fixes + the
+FlashFvbDxe VA-change fix + PCI-03 (RES0 consumer) + PCI-04
+(DBI0 reservation identity). PCI-01 (ECAM filtering) and
+PCI-02 (INTx policy) remain open by design — they are
+kernel-qualification and board-policy work, not DSDT edits.
+
+Acceptance: the K3BRSCHECK: PASS lines on the serial at boot
++ the full regression battery + a >60s soak.
