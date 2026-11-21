@@ -131,3 +131,27 @@ Fixes applied for round 3:
 
 Round 3 acceptance: EC binds on first probe (no -517 at all),
 kernel time back to ~12s, initrd <11s, total <35s.
+
+## Round 3 results: add_drivers silently ignored
+
+Round 3 boot: same failure signature (module at 31.9s, EC
+fails at 27.3s). The set default fix WORKED (menu starred
+"K3 dbg1", booted without interaction). Boot held at 52.6s.
+
+Investigation: unmkinitramfs of the 05:28 image shows NO
+gpio_spacemit_k1 inside — despite
+/etc/dracut.conf.d/40-gpio.conf (add_drivers) being in place
+before the run and byte-verified (cat -A: clean quoting, no
+CR). The verbose rerun (dracut-run.log) has ZERO gpio
+mentions; kernel-modules ran but never installed the driver.
+
+The robust workaround: a dracut module
+/usr/lib/dracut/modules.d/01gpio_spacemit/module-setup.sh
+with install() { instmods gpio_spacemit_k1 gpio-generic; } —
+instmods is dracut's own copier, unconditional, no alias
+resolution involved. Board-disk-local; no kernel change.
+
+Round 4 acceptance: module loads at initrd time (~2-3s,
+dmesg "gpio_spacemit_k1: loading out-of-tree module" early),
+EC first probe binds (zero -517), kernel time back to ~12s
+(no deferred-wait block), clocks/LPI/UFS regression green.
