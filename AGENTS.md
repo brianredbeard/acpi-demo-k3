@@ -151,3 +151,23 @@ drift since v20. v25b (the v20-exact rebuild) is staged to discriminate.
 - Every flash cycle's provenance JSON records what changed, why, the
   test plan, and the rollback. If a bundle's provenance can't explain
   itself, don't flash it.
+
+## THE compression rule (the v20-v26 post-mortem, 2026-11-21)
+
+**ESOS FIT payloads are compressed with plain `lzop` (default
+level 1). NEVER `lzop -9`.** The FSBL's lzo decompressor only
+handles the default stream format (level 1, flags 0x05). `lzop -9`
+produces level 3 / flags 0x09 — the FSBL fails or silently
+corrupts the decompression, and the rcpu firmware boots dead:
+no clock service, no RPMI transport, hanging reboot.
+
+This single flag caused the entire v20+ failure cascade — every
+from-source ESOS image was packaged with -9 ("for better
+compression") while the working images used the default. Firmware
+content was equivalent the whole time (same drivers, same init
+table, same strings — verified by binary analysis); the
+compression format was the only loading-relevant difference.
+
+When comparing a working image against a broken one, compare the
+LOADING path first: compression headers, FIT properties, entry
+points. Content equivalence does not imply loading equivalence.
