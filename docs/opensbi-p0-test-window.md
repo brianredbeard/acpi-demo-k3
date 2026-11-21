@@ -391,3 +391,46 @@ affirmative entry confirmation (retained counters are
 debugger-only; a future RPMI diagnostics service could expose
 them), and the _LPI index-2 advertisement decision once entry+wake
 are repeatedly qualified in long-run soak.
+
+---
+
+## P1 COMPLETE ON HARDWARE (2026-11-21, the 0008 cycle)
+
+The final image: patches 0001-0008 (consumer clock service + P1
+ownership model + sequencer + gate wiring + rate policy), built
+via build_esos.py, packaged with the ORIGINAL dtbs, payload-diff
+verified (only rcpu0-fw differs from the working image).
+
+### Results: ALL PASS
+
+- CLOCK TREE: 17 entries, ufs_aclk 491.52MHz — held across all
+  three P1-pipeline flashes (fix2 -> P1 -> policy)
+- P0 rejections: -1/-2/-3/-2 (unchanged)
+- Type-0 + _LPI: 0, live (20,140 entries)
+- Deny probe 0x11000000: -2 ENOTSUPP (correct: the original dtb
+  carries no such idle state; the end-to-end gate path requires
+  a dtb change as its own qualified variable), canary intact
+- UFS: 672 MB/s, ZERO clock fallback warnings (clocks resolve —
+  the service-callback harness's RPROC-stub fix proven)
+- Zero lockups
+- REBOOT: clean; post-reboot all green (17 clocks, _LPI live)
+
+### The full ledger of the P1 arc
+
+P0 (all hardware-qualified): explicit dispatch, genuine type-0
+WFI, error propagation, rejection semantics (v16); _LPI restored
+(v18); UFS at true sys1clk (fix2+); display Phase 1 (v19-era).
+
+P1 (now hardware-qualified via 0007+0008 on the repaired
+pipeline): the audit-fixed ownership model (per-class refcounts,
+blocked-init with provider qualification, atomic invalidation),
+the sequencer (commit_sleep with abort at every step, hw-ops +
+monitor), the RPMI-routed gate (routing live; the end-to-end
+deny needs the 0x11000000 idle state as a dtb variable), and
+the per-clock rate-change policy (idempotent state, allowlist,
+shared-parent, boot snapshot — with the RPROC-stub crash caught
+by the host harness before hardware).
+
+The pipeline lesson (AGENTS.md 'FIT payload rule'): the entire
+v20-v26 cascade was a regenerated rcpu0 dtb. Fixed; documented;
+the payload-diff check is mandatory before every flash.
