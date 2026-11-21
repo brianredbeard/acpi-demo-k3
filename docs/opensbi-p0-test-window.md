@@ -434,3 +434,26 @@ by the host harness before hardware).
 The pipeline lesson (AGENTS.md 'FIT payload rule'): the entire
 v20-v26 cascade was a regenerated rcpu0 dtb. Fixed; documented;
 the payload-diff check is mandatory before every flash.
+
+---
+
+## The 0x11000000 idle state: THE GATE DRIVEN END-TO-END (2026-11-21)
+
+The single-dtb-variable flash (cluster-retentive@18 appended to
+the ORIGINAL dtb; firmware byte-identical to the policy image;
+payload-diff verified): ALL PASS.
+
+- Clock tree: 17 entries, truth rates — unchanged (no revert)
+- THE GATE: 0x11000000 deny = EDENIED on harts 0/3/5/7 in 7-11ms,
+  repeat clean, canary intact. The full chain live for the first
+  time on the repaired pipeline: ecall -> OpenSBI routing ->
+  RPMI -> ESOS service -> the P1 ownership model -> the
+  provider's denial (Linux running holds the X100 clusters —
+  the CORRECT reason) -> back to the caller.
+- P0 rejections unchanged (-1/-2/-3/-2); type-0 0; _LPI live;
+  UFS 659 MB/s zero fallback; zero lockups
+- Reboot: clean; post-reboot all green (17 clocks, _LPI live)
+
+P2 item 1 (the idle state) is DONE. The next decision point:
+the _LPI index-2 advertisement — the firmware path is now
+qualified for it.
