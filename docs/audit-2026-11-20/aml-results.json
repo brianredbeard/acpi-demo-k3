@@ -1,0 +1,122 @@
+[
+  {
+    "snapshot": "canonical",
+    "test": "unknown",
+    "status": "FAIL",
+    "expected": "04 00 00 00 FF FF FF FF",
+    "description": "Unknown UUID preserves capability DWORD",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00) 1 2 (00 00 00 00 FF FF FF FF)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/canonical-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "canonical",
+    "test": "valid",
+    "status": "PASS",
+    "expected": "00 00 00 00 80 00 00 00",
+    "description": "Supported platform PCLPI request",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 2 (00 00 00 00 80 00 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/canonical-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "canonical",
+    "test": "masked",
+    "status": "FAIL",
+    "expected": "10 00 00 00 80 00 00 00",
+    "description": "Masked capability status bit",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 2 (00 00 00 00 80 01 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/canonical-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "canonical",
+    "test": "short",
+    "status": "NOT APPLICABLE",
+    "expected": null,
+    "description": "Robustness only: malformed input must not be confused with valid ABI",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 1 (00 00 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/canonical-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": true
+  },
+  {
+    "snapshot": "maintained",
+    "test": "unknown",
+    "status": "FAIL",
+    "expected": "04 00 00 00 FF FF FF FF",
+    "description": "Unknown UUID preserves capability DWORD",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00) 1 2 (00 00 00 00 FF FF FF FF)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/maintained-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "maintained",
+    "test": "valid",
+    "status": "PASS",
+    "expected": "00 00 00 00 80 00 00 00",
+    "description": "Supported platform PCLPI request",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 2 (00 00 00 00 80 00 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/maintained-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "maintained",
+    "test": "masked",
+    "status": "FAIL",
+    "expected": "10 00 00 00 80 00 00 00",
+    "description": "Masked capability status bit",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 2 (00 00 00 00 80 01 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/maintained-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": false
+  },
+  {
+    "snapshot": "maintained",
+    "test": "short",
+    "status": "NOT APPLICABLE",
+    "expected": null,
+    "description": "Robustness only: malformed input must not be confused with valid ABI",
+    "command": [
+      "acpiexec",
+      "-b",
+      "evaluate _SB._OSC (6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48) 1 1 (00 00 00 00)",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/maintained-dsdt.aml"
+    ],
+    "process_exit": 0,
+    "buffer_limit": true
+  }
+]

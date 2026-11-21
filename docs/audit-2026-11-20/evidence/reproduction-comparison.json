@@ -1,0 +1,9 @@
+{
+  "canonical-dsdt.aml": true,
+  "firmware-k3-com260-ifx.dtb": true,
+  "firmware-k3-deepcomputing-fml13v05.dtb": true,
+  "firmware-k3-pico-itx.dtb": true,
+  "k3-com260-ifx.dtb": true,
+  "k3-pico-itx.dtb": true,
+  "maintained-dsdt.aml": true
+}

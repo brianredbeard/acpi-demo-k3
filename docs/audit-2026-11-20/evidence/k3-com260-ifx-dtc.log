@@ -1,0 +1,1 @@
+/tmp/k3-independent-audit/platforms/Platform/Spacemit/K3/DeviceTree/Os/Sources/arch/riscv/boot/dts/spacemit/k3-com260-ifx.dts:84.24-111.5: Warning (unit_address_vs_reg): /soc/i2c@d4010800/tcpc@25/connector@0: node has a unit name, but no reg or ranges property

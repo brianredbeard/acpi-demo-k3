@@ -1,0 +1,10 @@
+
+Intel ACPI Component Architecture
+ASL+ Optimizing Compiler/Disassembler version 20260930
+Copyright (c) 2000 - 2026 Intel Corporation
+
+ASL Input:     docs/audit-2026-11-20/evidence/maintained-dsdt.asl -   15900 bytes    174 keywords      0 source lines
+AML Output:    docs/audit-2026-11-20/evidence/maintained-dsdt.aml -    5223 bytes     29 opcodes     145 named objects
+Hex Dump:      docs/audit-2026-11-20/evidence/maintained-dsdt.hex -   49408 bytes
+
+Compilation successful. 0 Errors, 0 Warnings, 0 Remarks, 191 Optimizations

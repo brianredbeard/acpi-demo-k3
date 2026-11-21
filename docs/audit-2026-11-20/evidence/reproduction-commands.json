@@ -1,0 +1,327 @@
+[
+  {
+    "command": [
+      "git",
+      "-C",
+      "../edk2-platforms",
+      "archive",
+      "8e686e13d9f76e9acc478fa03bf1ba74f06517a2"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tar",
+      "-x",
+      "-C",
+      "/tmp/k3-audit-reproduction-check"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0001-Platform-Spacemit-K3-ACPI-tables-for-Pico-ITX-bring-.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0002-Silicon-Spacemit-K3-ClockDxe-TSEN-ESPI-entries-and-c.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0003-Silicon-Spacemit-K3-add-AcpiClockInitDxe-for-OS-visi.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0004-Platform-Spacemit-K3-MUSE-Pico-ACPI-build-config-and.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0005-Silicon-Spacemit-K3-DwEqosDxe-leave-EMAC-clocks-enab.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0006-Silicon-Spacemit-extend-PCIe-bus-0-config-window.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0009-Platform-Spacemit-K3-ACPI-6-6-conformance-fixes-for-t.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0010-Platform-Spacemit-K3-DSDT-v12-promote-the-qualified.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "apply",
+      "--unsafe-paths",
+      "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/patches/edk2-platforms/0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "cpp",
+      "-nostdinc",
+      "-undef",
+      "-D__DTS__",
+      "-x",
+      "assembler-with-cpp",
+      "-I",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/Sources/include",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/k3-pico-itx.os.dts"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "dtc",
+      "-I",
+      "dts",
+      "-O",
+      "dtb",
+      "-o",
+      "/tmp/k3-audit-evidence-check/k3-pico-itx.dtb"
+    ],
+    "returncode": 0,
+    "stderr": "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/Sources/arch/riscv/boot/dts/spacemit/k3-pico-itx.dts:81.24-101.5: Warning (unit_address_vs_reg): /soc/i2c@d4011000/tcpc@25/connector@0: node has a unit name, but no reg or ranges property\n"
+  },
+  {
+    "command": [
+      "cpp",
+      "-nostdinc",
+      "-undef",
+      "-D__DTS__",
+      "-x",
+      "assembler-with-cpp",
+      "-I",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/Sources/include",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/k3-com260-ifx.os.dts"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "dtc",
+      "-I",
+      "dts",
+      "-O",
+      "dtb",
+      "-o",
+      "/tmp/k3-audit-evidence-check/k3-com260-ifx.dtb"
+    ],
+    "returncode": 0,
+    "stderr": "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/Os/Sources/arch/riscv/boot/dts/spacemit/k3-com260-ifx.dts:84.24-111.5: Warning (unit_address_vs_reg): /soc/i2c@d4010800/tcpc@25/connector@0: node has a unit name, but no reg or ranges property\n"
+  },
+  {
+    "command": [
+      "cpp",
+      "-nostdinc",
+      "-undef",
+      "-D__DTS__",
+      "-x",
+      "assembler-with-cpp",
+      "-I",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/k3-pico-itx.dts"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "dtc",
+      "-I",
+      "dts",
+      "-O",
+      "dtb",
+      "-o",
+      "/tmp/k3-audit-evidence-check/firmware-k3-pico-itx.dtb"
+    ],
+    "returncode": 0,
+    "stderr": "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-clk@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-voltage@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unit_address_vs_reg): /soc/rpmi-system-suspend@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-hsm@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-domain@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-rtc@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-pwrkey@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-sysreset@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:194.45-205.5: Warning (simple_bus_reg): /soc/rpmi-shmem-mbox@cac90c00: simple-bus unit address format error, expected \"100e00000\"\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-clk@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-voltage@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (simple_bus_reg): /soc/rpmi-system-suspend@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-hsm@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-domain@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-rtc@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-pwrkey@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-sysreset@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:272.29-285.5: Warning (avoid_unnecessary_addr_size): /soc/pinctrl@d401e000: unnecessary #address-cells/#size-cells without \"ranges\", \"dma-ranges\" or child \"reg\" or \"ranges\" property\n  also defined at /tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/../MUSE-Pico/DeviceTree/MUSE-PicoPinctrl.dtsi:12.10-1750.3\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-voltage@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unique_unit_address): /soc/rpmi-mpxy-pwrkey@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n"
+  },
+  {
+    "command": [
+      "cpp",
+      "-nostdinc",
+      "-undef",
+      "-D__DTS__",
+      "-x",
+      "assembler-with-cpp",
+      "-I",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/k3-com260-ifx.dts"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "dtc",
+      "-I",
+      "dts",
+      "-O",
+      "dtb",
+      "-o",
+      "/tmp/k3-audit-evidence-check/firmware-k3-com260-ifx.dtb"
+    ],
+    "returncode": 0,
+    "stderr": "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-clk@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-voltage@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unit_address_vs_reg): /soc/rpmi-system-suspend@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-hsm@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-domain@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-rtc@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-pwrkey@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-sysreset@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:194.45-205.5: Warning (simple_bus_reg): /soc/rpmi-shmem-mbox@cac90c00: simple-bus unit address format error, expected \"100e00000\"\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-clk@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-voltage@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (simple_bus_reg): /soc/rpmi-system-suspend@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-hsm@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-domain@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-rtc@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-pwrkey@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-sysreset@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:272.29-285.5: Warning (avoid_unnecessary_addr_size): /soc/pinctrl@d401e000: unnecessary #address-cells/#size-cells without \"ranges\", \"dma-ranges\" or child \"reg\" or \"ranges\" property\n  also defined at /tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/../MUSE-Pico/DeviceTree/MUSE-PicoPinctrl.dtsi:12.10-1750.3\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-voltage@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unique_unit_address): /soc/rpmi-mpxy-pwrkey@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n"
+  },
+  {
+    "command": [
+      "cpp",
+      "-nostdinc",
+      "-undef",
+      "-D__DTS__",
+      "-x",
+      "assembler-with-cpp",
+      "-I",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree",
+      "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/k3-deepcomputing-fml13v05.dts"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "dtc",
+      "-I",
+      "dts",
+      "-O",
+      "dtb",
+      "-o",
+      "/tmp/k3-audit-evidence-check/firmware-k3-deepcomputing-fml13v05.dtb"
+    ],
+    "returncode": 0,
+    "stderr": "/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-clk@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-voltage@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unit_address_vs_reg): /soc/rpmi-system-suspend@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-hsm@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-domain@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-rtc@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-pwrkey@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (unit_address_vs_reg): /soc/rpmi-mpxy-sysreset@0: node has a unit name, but no reg or ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:194.45-205.5: Warning (simple_bus_reg): /soc/rpmi-shmem-mbox@cac90c00: simple-bus unit address format error, expected \"100e00000\"\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-clk@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-voltage@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (simple_bus_reg): /soc/rpmi-system-suspend@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-hsm@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-domain@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-rtc@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-pwrkey@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:256.44-261.5: Warning (simple_bus_reg): /soc/rpmi-mpxy-sysreset@0: missing or empty reg/ranges property\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:272.29-285.5: Warning (avoid_unnecessary_addr_size): /soc/pinctrl@d401e000: unnecessary #address-cells/#size-cells without \"ranges\", \"dma-ranges\" or child \"reg\" or \"ranges\" property\n  also defined at /tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/../MUSE-Pico/DeviceTree/MUSE-PicoPinctrl.dtsi:12.10-1750.3\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-voltage@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-system-suspend@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-hsm@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-domain@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-rtc@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-pwrkey@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:207.34-212.5: Warning (unique_unit_address): /soc/rpmi-mpxy-clk@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:214.42-219.5: Warning (unique_unit_address): /soc/rpmi-mpxy-voltage@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:221.46-226.5: Warning (unique_unit_address): /soc/rpmi-system-suspend@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:228.34-233.5: Warning (unique_unit_address): /soc/rpmi-mpxy-hsm@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:235.40-240.5: Warning (unique_unit_address): /soc/rpmi-mpxy-domain@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:242.34-247.5: Warning (unique_unit_address): /soc/rpmi-mpxy-rtc@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n/tmp/k3-audit-reproduction-check/Platform/Spacemit/K3/DeviceTree/K3.dtsi:249.40-254.5: Warning (unique_unit_address): /soc/rpmi-mpxy-pwrkey@0: duplicate unit-address (also used in node /soc/rpmi-mpxy-sysreset@0)\n"
+  },
+  {
+    "command": [
+      "cpp",
+      "-P",
+      "-x",
+      "c",
+      "-"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "iasl",
+      "-p",
+      "/tmp/k3-audit-evidence-check/canonical-dsdt",
+      "-tc",
+      "/tmp/k3-audit-evidence-check/canonical-dsdt.asl"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "cpp",
+      "-P",
+      "-x",
+      "c",
+      "-"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "command": [
+      "iasl",
+      "-p",
+      "/tmp/k3-audit-evidence-check/maintained-dsdt",
+      "-tc",
+      "/tmp/k3-audit-evidence-check/maintained-dsdt.asl"
+    ],
+    "returncode": 0,
+    "stderr": ""
+  }
+]

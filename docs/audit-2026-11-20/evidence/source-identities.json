@@ -1,0 +1,44 @@
+{
+  "integration": {
+    "path": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3",
+    "head": "d3daf3750450cb42601294173203907c3e1e25eb",
+    "status": "?? docs/audit-2026-11-20/\n",
+    "git_toplevel": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3"
+  },
+  "maintained-platforms": {
+    "path": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/edk2-platforms",
+    "head": "a2a647a5173ee10f837b6e18eadf2b7313e14f15",
+    "status": "",
+    "git_toplevel": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/edk2-platforms"
+  },
+  "edk2-core": {
+    "path": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/efi-development/baseline/edk2",
+    "head": "0dbb43a7303de574dc3e98ddae7666b68cf664e0",
+    "status": "?? ../../../../docs/superpowers/plans/2026-11-13-k3-upstream-integration.md\n",
+    "git_toplevel": "/home/bharring/Projects/K3-Ubuntu-Images",
+    "identity_limitation": "head is enclosing K3-Ubuntu-Images project, not established EDK2 upstream source revision"
+  },
+  "linux-comparator": {
+    "path": "/home/bharring/Projects/linux",
+    "head": "20eef29b7c8465ac98d7dd6d6f2ac07a8d8056ca",
+    "status": "",
+    "git_toplevel": "/home/bharring/Projects/linux"
+  },
+  "hardware-docs": {
+    "path": "/home/bharring/Projects/spacemit-docs-chip",
+    "head": "4879ed5dfb5415212099dd898906cd893b3fa286",
+    "status": "",
+    "git_toplevel": "/home/bharring/Projects/spacemit-docs-chip"
+  },
+  "opensbi-local": {
+    "path": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic",
+    "head": "b4152e0761ac1986dfd313876eaff8d7f63cd703",
+    "status": "",
+    "git_toplevel": "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic"
+  },
+  "locked-platform-reconstruction": {
+    "base": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
+    "manifest_sha256": "a0ab30f9d02d739482812bc6304af11c960c3c12b6fc92416b15e30cc12dda7b",
+    "patches": "all twelve manifest patches applied successfully"
+  }
+}

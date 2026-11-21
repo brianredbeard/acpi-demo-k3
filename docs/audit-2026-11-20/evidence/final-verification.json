@@ -1,0 +1,16 @@
+{
+  "standards": 95,
+  "regression": 54,
+  "findings": 20,
+  "devices": 1418,
+  "equivalence": 5131,
+  "dt-dependencies": 1098,
+  "clock-dependencies": 404,
+  "AML_tests": {
+    "PASS": 2,
+    "FAIL": 4,
+    "NOT_APPLICABLE_robustness": 2
+  },
+  "hardware_tests_executed": 0,
+  "release_decision": "HOLD"
+}

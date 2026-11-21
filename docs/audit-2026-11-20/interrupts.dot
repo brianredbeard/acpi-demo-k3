@@ -1,0 +1,19 @@
+digraph K3Interrupts {
+ rankdir=LR;
+ node [shape=box];
+ wired [label="Shipped wired devices\nUART42 GMAC131 USB105\nGPIO58 I2C2=38 TSEN61"];
+ ufs [label="UFS135: maintained a2a647a5\nnot yet in locked export",style=dashed];
+ aplic [label="Supervisor APLIC / IC00\n0xe0804000 size0x4000\n512 sources; GSI base0; MSI-only"];
+ pci [label="PCI0 segment0\nMSI / MSI-X endpoints"];
+ imsic [label="Supervisor IMSIC\n511 supervisor IDs;63 guest IDs/file\nguest index bits6; hart bits4"];
+ harts [label="8 X100 harts0..7\nS file=0xe0400000+h*0x40000\nSEI local interrupt9"];
+ guests [label="VS reserved address slots63/hart\nobserved usable guest lines7\nNOT derived from63 IDs/file",style=dashed];
+ intx [label="INTx route absent: no _PRT",color=red];
+ wired -> aplic;
+ ufs -> aplic [style=dashed];
+ aplic -> imsic [label="MSI EIID assigned by Linux"];
+ pci -> imsic [label="direct MSI; bypasses APLIC"];
+ imsic -> harts;
+ imsic -> guests [style=dashed,label="separate guest files"];
+ pci -> intx [style=dashed];
+}

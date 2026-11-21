@@ -1,0 +1,50 @@
+lite-header: /tmp/tmp7rqf5_6_/out/logs/lite-header.log
+lite-config: /tmp/tmp7rqf5_6_/out/logs/lite-config.log
+lite-build: /tmp/tmp7rqf5_6_/out/logs/lite-build.log
+.lite-header: /tmp/tmpzysprt_u/out/logs/lite-header.log
+lite-config: /tmp/tmpzysprt_u/out/logs/lite-config.log
+lite-build: /tmp/tmpzysprt_u/out/logs/lite-build.log
+main-header: /tmp/tmpzysprt_u/out/logs/main-header.log
+main-config: /tmp/tmpzysprt_u/out/logs/main-config.log
+main-build: /tmp/tmpzysprt_u/out/logs/main-build.log
+....warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmp07_pq07u/failed/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+error: No valid patches in input (allow with "--allow-empty")
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmprupmcxo7/snapshot/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmp3tpvdy5s/cached/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpx6chn883/nested/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+Cloning into '/tmp/tmpx6chn883/nested/main/components/lite'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpesxbre36/prepared/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 69128f9 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+..
+----------------------------------------------------------------------
+Ran 17 tests in 1.003s
+
+OK

@@ -1,0 +1,53 @@
+# Normative baseline, 2026-11-20
+
+This is a standards applicability and evidence register, not a certificate or exhaustive clause-by-clause compliance assessment. The maintained patches describe a K3 ACPI bring-up target. They do not establish a declared BRS-I product profile. The references to BRS v0.0.2 in patch 0001 are historical draft references, not evidence of conformance to ratified BRS 1.0. Choose and document the intended profile before treating additional BRS-I obligations as unconditional product failures.
+
+The expanded `standards.csv` has 95 distinct requirement/coverage identifiers, normative levels, applicability, source file/line anchors, explicit validation states, severity and evidence. Normative level applies **inside the stated applicability condition**: a mandatory BRS-I rule is not automatically mandatory for every UEFI machine. BLOCKED distinguishes missing profile/source/hardware evidence from a demonstrated failure. Source anchors identify the nearest implementation/configuration location; they do not imply an absent feature is implemented there. NOT APPLICABLE is narrowly scoped to the check described, not a product-wide exemption. This is still **not exhaustive**: PCI normative access, component subclauses and complete installed/runtime evidence remain gaps.
+
+The parent audit executed isolated acpiexec tests against canonical and maintained AML. Both snapshots FAIL unknown-UUID preservation and masked-capability status; both PASS the single valid support-0x80 case. See [structured results](aml-results.json), [canonical unknown UUID](evidence/canonical-dsdt-osc-unknown.log), [maintained unknown UUID](evidence/maintained-dsdt-osc-unknown.log), [canonical masking](evidence/canonical-dsdt-osc-masked.log), and [maintained masking](evidence/maintained-dsdt-osc-masked.log). Input capability 0x180 becomes 0x80 with status zero instead of the required masking indication. The one-DWORD malformed-input exception is robustness evidence outside the defined platform two-DWORD ABI, not another demonstrated conformance failure. These are host AML results, not board runtime results.
+
+Current-source distinction: reconstructed integration firmware omits _LPI and UFS; maintained `a2a647a5` includes UFS and inherits _LPI restoration from `a56c27ff`. The earlier absence observations below refer to the reconstructed series. Neither source state is proven to be the installed image.
+
+## Published baselines verified
+
+The [UEFI Forum specification catalog](https://uefi.org/specifications) lists **UEFI 2.11 (December 2024)** and **ACPI 6.6 (May 2025)** as latest. It also lists PI 1.10 (July 2026); PI is an implementation architecture specification and should not be conflated with the OS-facing UEFI version.
+
+The [RISC-V ratified catalog](https://docs.riscv.org/reference/home/) lists Privileged ISA document v20260120, AIA 1.0, BRS 1.0, SBI 3.0, FFH 1.0.1, RPMI 1.0, RIMT 1.0 and RISC-V UEFI Protocol 1.0.0. The IOMMU catalog date is v20260222; the [document itself](https://docs.riscv.org/reference/iommu/v20260222/index.html) identifies **IOMMU architecture 1.0.1, revised 2026-02-22**. A publication date/version is not evidence that a particular K3 hardware block implements every extension in that publication.
+
+The [BRS version page](https://docs.riscv.org/reference/brs/v1.0/index.html) identifies ratified 1.0, 2025-08-29. Use its versioned PDF for chapter numbering: the older unversioned HTML indexed by search uses different numbering. BRS-I is a recipe within BRS, not a separately versioned specification. The [PCI-SIG catalog](https://pcisig.com/specifications?field_revision_value%5B0%5D=3&order=field_document_type&sort=asc&speclib=) lists PCI Firmware 3.3 (2021-02-11); full normative text was not accessed. Do not substitute current PCIe link-generation specifications for PCI Firmware requirements.
+
+## Applicability and review map
+
+| Baseline / exact location | Applicability | Local evidence and required closure |
+|---|---|---|
+| [UEFI 2.11 §2.3.7](https://uefi.org/specs/UEFI/2.11/02_Overview.html), RISC-V execution environment; §2.6 conformance | All claimed RISC-V UEFI implementations, subject to supported profile | Patch series alone does not prove privilege mode, memory attributes, service availability or conformance-table contents. Inspect built firmware and loader handoff. |
+| [UEFI 2.11 chapter 7](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html), especially §7.2.3 GetMemoryMap and §7.4.6 ExitBootServices | UEFI boot handoff | Need captured memory map, descriptor attributes, allocation ownership and successful ExitBootServices sequence. |
+| [UEFI 2.11 chapter 8](https://uefi.org/specs/UEFI/2.11/08_Services_Runtime_Services.html), §§8.1 time, 8.2 variables, 8.3 virtual mapping, 8.5.1 reset | Runtime services actually exposed; unsupported-service declaration must agree | Patch 0007 changes ResetSystem backend to SBI; this does not verify all reset types, persistence, virtual-address operation or runtime mapping. |
+| [RISC-V UEFI Protocol 1.0.0 chapter 3, §3.3.1](https://docs.riscv.org/reference/uefi/v1.0.0/_attachments/RISCV_UEFI_PROTOCOL-spec.pdf) | RISC-V UEFI boot-hart discovery | RISCV_EFI_BOOT_PROTOCOL supplies GetBootHartId, revision 0x00010000. No proof from the reviewed patch delta; inspect base edk2 and run a protocol probe. |
+| [ACPI 6.6 chapter 5](https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html), §§5.2.5–5.2.11 | Exported ACPI root/table structures | Validate checksums, lengths, pointer lifetimes, FADT and DSDT against extracted installed tables, not just C constants. |
+| ACPI 6.6 §§5.2.12.27–5.2.12.29, §5.2.31, §5.2.37 | RINTC/IMSIC/APLIC, PPTT, RHCT when exported | Patches 0009/0011 revise counts, APLIC and ISA information. Verify UID/hart/topology consistency and advertised ISA against hardware. See [ACPI 6.6 contents](https://uefi.org/specs/ACPI/6.6/). |
+| [ACPI 6.6 §6.2.12](https://uefi.org/specs/ACPI/6.6/06_Device_Configuration.html), §6.2.12.2 platform _OSC | Any implemented _OSC, independent of BRS-I | Patch 0012 clears capabilities on unknown UUID; specified error behavior preserves capabilities. It also clears status after masking supported capabilities. Both issues reproduced in host AML tests for both snapshots; see evidence above. PCI-specific fields need PCI Firmware cross-check. |
+| [ACPI 6.6 §8.4.3.3](https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf) | _LPI is optional under base ACPI | Patch 0012 removes _LPI. Absence alone is not a universal ACPI violation. Its remaining comment claims _LPI backs PCLPI, so documentation/advertisement need separate review. |
+| [SBI 3.0 HSM §9.1.4 in versioned HTML](https://docs.riscv.org/reference/sbi/v3.0/ext-hsm.html), FID 3 | Implemented hart_suspend, regardless of BRS-I | Default type zero is retentive and preserves registers/CSRs; nonretentive resume has a different contract. Patch 0012 documents the deployed problem; pending OpenSBI patch must be qualified separately. Removing _LPI reduces exposure but cannot establish SBI correctness. |
+| [AIA 1.0](https://docs.riscv.org/reference/hardware/aia/_attachments/riscv-interrupts.pdf), APLIC and IMSIC architectural definitions | Hardware blocks actually implemented/exposed | ACPI entries do not prove interrupt source count, target privilege files, delivery routing or isolation. No whole-AIA compliance claim follows from MADT correctness. |
+| [RIMT 1.0 chapters 1–2](https://docs.riscv.org/reference/acpi-rimt/v1.0/_attachments/rimt-spec.pdf) | ACPI description of RISC-V IOMMU connectivity | RIMT describes IOMMU, root-complex and platform-device relationships. No RIMT evidence found in reviewed patch series. Establish whether standard IOMMU hardware exists and is exposed before calling absence a violation. |
+| IOMMU 1.0.1 architecture | Conditional on implementing that architecture | Obtain hardware capabilities and requester-ID wiring. A DMA-capable platform is not automatically required by base UEFI/ACPI to implement a RISC-V IOMMU. |
+| PCI Firmware 3.3 §3.5 (reference identified by BRS UIO_010); remaining exact clauses pending licensed text | PCI firmware handoff, MCFG/ECAM and PCI _OSC | Patch 0006 expands bus-zero configuration aperture; 0011 revises _OSC. Neither proves generic ECAM or full PCI firmware compliance. Full normative PCI text remains an access gap. |
+
+## BRS overlay: conditional on selected profile
+
+The [ratified BRS 1.0 PDF](https://docs.riscv.org/reference/brs/v1.0/_attachments/riscv-brs-spec.pdf) gives BRS-I minimums in §2.1: RVA20S64, UEFI 2.10, ACPI 6.6, SBI 2.0 and SMBIOS 3.7.0. Chapters 3–4 govern both recipes; chapters 5–7 are optional/recommended for BRS-B. Selected BRS-I closure points:
+
+- §§5–5.1, UEFI_060/070/080 and UIO_010: conformance declarations, hardware-DT exclusion and PCI initialization/resource assignment.
+- §5.2 URT_020/030/040/050: shared-bus RTC behavior, reset, persistent variables and direct runtime updates.
+- Chapter 6 ACPI_010–060: 64-bit-clean tables, reduced hardware, PPTT, compliant MCFG and SPCR.
+- §6.1 AML_050: idle states use _LPI; AML_060/070: shared-bus RTC TAD; AML_080/100: interrupt-controller namespace requirements.
+- Chapter 7: SMBIOS requirements need independent inventory.
+
+These are audit entry points, not a full BRS matrix. Patch 0012's absent _LPI is a BRS-I gap to resolve if that profile is selected; it is not a reason to restore unqualified suspend states. Patch 0008's UART quirk and patch 0011's source changes require actual generic-OS and hardware validation; neither patch title nor successful Linux boot certifies interoperability.
+
+## Access limits and next evidence
+
+Some direct ACPI 6.6 browser opens returned HTTP 403; official search-indexed chapter text and contents remained accessible. Exact sections above were checked against those results; full tables were not exhaustively read. RISC-V versioned PDFs were accessible. PCI-SIG catalog access established the listed edition, but not full normative clause text or all subsequent ECNs. SMBIOS, SPCR, FFH and RPMI require deeper clause review in their respective component audits; this document does not certify them.
+
+Required closure evidence is a declared target profile, immutable source/build pins, extracted installed ACPI/SMBIOS tables, UEFI protocol/configuration and memory-map captures, SBI version/extension probes, actual hart/interrupt/IOMMU capabilities, and targeted runtime/handoff tests. The latest published specification is an audit reference, not an automatic retroactive obligation to claim every new optional feature.

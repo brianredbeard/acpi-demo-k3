@@ -1,0 +1,10 @@
+device,gsi_aplic_source,trigger,polarity,sharing,description_state,controller,destination,dsdt_line,hardware_interrupts_md_line
+COM0,42,Level,ActiveHigh,Exclusive,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,99,63
+ETH0,131,Level,ActiveHigh,Exclusive,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,141,150
+USB2,105,Level,ActiveHigh,Exclusive,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,185,125
+GPIO,58,Level,ActiveHigh,Shared,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,341,79
+I2C2,38,Level,ActiveHigh,Exclusive,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,365,59
+TSEN,61,Level,ActiveHigh,Exclusive,shipped,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,543,82
+UFS0,135,Level,ActiveHigh,Exclusive,maintained a2a647a5; absent locked export,S APLIC 0xe0804000,S IMSIC -> selected hart SEI9,193 (maintained),154
+PCI0 MSI/MSI-X,dynamic EIID,message,n/a,allocated,shipped,bypasses APLIC,S IMSIC 0xe0400000 + hart*0x40000,207,n/a
+PCI0 INTx,unmapped,n/a,n/a,n/a,no _PRT,unknown,no described GSI,207-326,not established

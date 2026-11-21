@@ -1,0 +1,1 @@
+/tmp/k3-independent-audit/platforms/Platform/Spacemit/K3/DeviceTree/Os/Sources/arch/riscv/boot/dts/spacemit/k3-pico-itx.dts:81.24-101.5: Warning (unit_address_vs_reg): /soc/i2c@d4011000/tcpc@25/connector@0: node has a unit name, but no reg or ranges property

@@ -1,0 +1,8 @@
+Madt 384 revision 7 sha256 5c3a323429e497f77be1d0e7177a1c527366d6bc3c8eeee8226c88370db9161e
+Mcfg 60 revision 1 sha256 c17d5d71f96cb981edc1692254c818f266ead1af211ee92f422e44691ea678e5
+Rhct 538 revision 1 sha256 2e396901bb79c6d4356b45908ee03279464474f86d39cf0e5c6c37bed0cc6071
+Pptt 832 revision 3 sha256 3c627b36e084a14e0ebda9163b07f7e902bd2b8751e802a1db74fd8975dffebf
+Fadt 276 revision 6 sha256 8aaa93259c411c4170773c0f7dc11ea43c8fb00d2179480924f31653efec7e90
+Spcr 98 revision 4 sha256 3677a2589a95091218eb1043bc219ed43391b5d8523018c86cab7078144629e9
+PASS: structure, topology, references, reserved fields sampled; 3 negative mutations rejected.
+Runtime checksum/install path and hardware behavior NOT tested.

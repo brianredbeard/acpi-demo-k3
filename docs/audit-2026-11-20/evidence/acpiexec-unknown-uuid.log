@@ -1,0 +1,170 @@
+Input file docs/audit-2026-11-20/evidence/canonical-dsdt.aml, Length 0x1085 (4229) bytes
+
+Intel ACPI Component Architecture
+AML Execution/Debug Utility version 20260930
+Copyright (c) 2000 - 2026 Intel Corporation
+
+
+
+ACPI: RSDP 0x000055E5F3138F60 000024 (v02 Intel )
+ACPI: XSDT 0x000055E60E41FAC0 000034 (v00 Intel  AcpiExec 00001001 INTL 20260930)
+ACPI: FACP 0x000055E5F3139020 000114 (v05 Intel  AcpiExec 00001001 INTL 20260930)
+ACPI: DSDT 0x000055E60E426190 001085 (v02 SPMT   K3       00000001 INTL 20260930)
+ACPI: FACS 0x000055E5F3138F20 000040
+
+ACPI table initialization:
+Table [DSDT: K3      ] (id 01) -  124 Objects with  27 Devices,   0 Regions,    2 Methods (2/0/2 Serial/Non/Cvt)
+ACPI: 1 ACPI AML tables successfully acquired and loaded
+
+Final data object initialization: Namespace contains 133 (0x85) objects
+Initializing General Purpose Events (GPEs):
+    Initialized GPE 00 to 7F [_GPE] 16 regs on interrupt 0x0 (SCI)
+    Initialized GPE 80 to FF [_GPE] 16 regs on interrupt 0x0 (SCI)
+Initializing Device/Processor/Thermal objects and executing _INI/_STA methods:
+    Executed 0 _INI methods requiring 0 _STA executions (examined 29 objects)
+ACPI Namespace (from Namespace Root):
+ 0  _GPE Scope        0x55e60e41f4a0 000 
+ 0  _PR_ Scope        0x55e60e41f510 000 
+ 0  _SB_ Device       0x55e60e41f580 000 Notify Object: 0x55e60e4252b0
+ 1    CL00 Device       0x55e60e427560 001 
+ 2      _HID String       0x55e60e427790 001 Len 08 "ACPI0010"
+ 2      _UID Integer      0x55e60e427a90 001 = 0000000002000000
+ 2      CPU0 Device       0x55e60e427b80 001 
+ 3        _HID String       0x55e60e427c80 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e427ea0 001 = 0000000000000000
+ 2      CPU1 Device       0x55e60e427f90 001 
+ 3        _HID String       0x55e60e428000 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e4280f0 001 = 0000000000000001
+ 2      CPU2 Device       0x55e60e4281e0 001 
+ 3        _HID String       0x55e60e428250 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e428340 001 = 0000000000000002
+ 2      CPU3 Device       0x55e60e428430 001 
+ 3        _HID String       0x55e60e4284a0 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e428590 001 = 0000000000000003
+ 1    CL01 Device       0x55e60e428680 001 
+ 2      _HID String       0x55e60e4286f0 001 Len 08 "ACPI0010"
+ 2      _UID Integer      0x55e60e4287e0 001 = 0000000002000001
+ 2      CPU4 Device       0x55e60e4288d0 001 
+ 3        _HID String       0x55e60e428940 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e428a30 001 = 0000000000000004
+ 2      CPU5 Device       0x55e60e428b20 001 
+ 3        _HID String       0x55e60e428b90 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e428c80 001 = 0000000000000005
+ 2      CPU6 Device       0x55e60e428d70 001 
+ 3        _HID String       0x55e60e428de0 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e428ed0 001 = 0000000000000006
+ 2      CPU7 Device       0x55e60e428fc0 001 
+ 3        _HID String       0x55e60e429030 001 Len 08 "ACPI0007"
+ 3        _UID Integer      0x55e60e429120 001 = 0000000000000007
+ 1    SBP_ Integer      0x55e60e429210 001 = 0000000000000000
+ 1    _OSC Method       0x55e60e429300 001 Args 4 Len 006D Aml 0x55e60e4262f8
+ 1    IC00 Device       0x55e60e429470 001 
+ 2      _HID String       0x55e60e4294e0 001 Len 08 "RSCV0002"
+ 2      _UID Integer      0x55e60e429550 001 = 0000000000000000
+ 2      _GSB Integer      0x55e60e429640 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e429730 001 Len 30 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 1    COM0 Device       0x55e60e429910 001 
+ 2      _HID String       0x55e60e429980 001 Len 08 "RSCV0003"
+ 2      _UID Integer      0x55e60e4299f0 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e429ae0 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e429cd0 001 Elements 02
+ 1    ETH0 Device       0x55e60e42b0e0 001 
+ 2      _HID String       0x55e60e42b150 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e42b1c0 001 = 0000000000000040
+ 2      _CCA Integer      0x55e60e42b2b0 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e42b3a0 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e42b590 001 Elements 02
+ 1    USB2 Device       0x55e60e42da70 001 
+ 2      _HID String       0x55e60e42dae0 001 Len 08 "808622B7"
+ 2      _UID Integer      0x55e60e42db50 001 = 0000000000000000
+ 2      _CCA Integer      0x55e60e42dc40 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e42dd30 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e42df20 001 Elements 02
+ 1    PCI0 Device       0x55e60e42f810 001 Notify Object: 0x55e60e43b1a0
+ 2      _HID String       0x55e60e42f880 001 Len 07 "PNP0A08"
+ 2      _CID String       0x55e60e42f8f0 001 Len 07 "PNP0A03"
+ 2      _UID Integer      0x55e60e42f9e0 001 = 0000000000000000
+ 2      _SEG Integer      0x55e60e42fad0 001 = 0000000000000000
+ 2      _BBN Integer      0x55e60e42fbc0 001 = 0000000000000000
+ 2      _CCA Integer      0x55e60e42fcb0 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e42fda0 001 Len 6E = 88 0D 00 02 0C 00 00 00 00 00 FF 00
+ 2      SUPP Integer      0x55e60e42ffc0 001 = 0000000000000000
+ 2      CTRL Integer      0x55e60e430030 001 = 0000000000000000
+ 2      _OSC Method       0x55e60e430120 001 Args 4 Len 0086 Aml 0x55e60e42697b
+ 2      RES0 Device       0x55e60e430290 001 
+ 3        _HID String       0x55e60e430300 001 Len 07 "PNP0C02"
+ 3        _CRS Buffer       0x55e60e430370 001 Len 30 = 8A 2B 00 00 0C 01 00 00 00 00 00 00
+ 2      DBI0 Device       0x55e60e430550 001 
+ 3        _HID String       0x55e60e4305c0 001 Len 08 "AMZN0001"
+ 3        _CID String       0x55e60e430630 001 Len 07 "PNP0C02"
+ 3        _UID Integer      0x55e60e430720 001 = 0000000000000000
+ 3        _CRS Buffer       0x55e60e430810 001 Len 30 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 1    GPIO Device       0x55e60e4309f0 001 
+ 2      _HID String       0x55e60e430a60 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e430ad0 001 = 0000000000000050
+ 2      _CCA Integer      0x55e60e430bc0 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e430cb0 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e430ea0 001 Elements 02
+ 1    I2C2 Device       0x55e60e431350 001 
+ 2      _HID String       0x55e60e4313c0 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e431430 001 = 0000000000000060
+ 2      _CCA Integer      0x55e60e431520 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e431610 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e431800 001 Elements 02
+ 2      EPR0 Device       0x55e60e432060 001 
+ 3        _HID String       0x55e60e4320d0 001 Len 07 "PRP0001"
+ 3        _UID Integer      0x55e60e432140 001 = 0000000000000000
+ 3        _CRS Buffer       0x55e60e432230 001 Len 1E = 8E 19 00 01 00 01 02 00 00 01 06 00
+ 3        _DSD Package      0x55e60e432400 001 Elements 02
+ 1    ESPI Device       0x55e60e432cf0 001 
+ 2      _HID String       0x55e60e432d60 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e432dd0 001 = 0000000000000071
+ 2      _CCA Integer      0x55e60e432ec0 001 = 0000000000000001
+ 2      _CRS Buffer       0x55e60e432fb0 001 Len 30 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e433190 001 Elements 02
+ 2      EC0_ Device       0x55e60e434e30 001 
+ 3        _HID String       0x55e60e434ea0 001 Len 07 "PRP0001"
+ 3        _UID Integer      0x55e60e434f10 001 = 0000000000000000
+ 3        _CCA Integer      0x55e60e435000 001 = 0000000000000001
+ 3        _CRS Buffer       0x55e60e4350f0 001 Len 53 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 3        _DSD Package      0x55e60e4352f0 001 Elements 02
+ 3        PWM0 Device       0x55e60e4357a0 001 
+ 4          _HID String       0x55e60e435810 001 Len 07 "PRP0001"
+ 4          _UID Integer      0x55e60e4358e0 001 = 0000000000000000
+ 4          _DSD Package      0x55e60e4359d0 001 Elements 02
+ 1    FAN0 Device       0x55e60e436070 001 
+ 2      _HID String       0x55e60e4360e0 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e4361a0 001 = 0000000000000072
+ 2      _DSD Package      0x55e60e436290 001 Elements 02
+ 1    MPXY Device       0x55e60e436fd0 001 
+ 2      _HID String       0x55e60e437040 001 Len 08 "RSCV0005"
+ 2      _UID Integer      0x55e60e4370b0 001 = 0000000000000073
+ 2      _DSD Package      0x55e60e4371a0 001 Elements 02
+ 1    RCLK Device       0x55e60e4376d0 001 
+ 2      _HID String       0x55e60e437740 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e4377b0 001 = 0000000000000074
+ 2      _DSD Package      0x55e60e4378a0 001 Elements 02
+ 1    TSEN Device       0x55e60e438180 001 
+ 2      _HID String       0x55e60e4381f0 001 Len 07 "PRP0001"
+ 2      _UID Integer      0x55e60e438260 001 = 0000000000000070
+ 2      _CCA Integer      0x55e60e438350 001 = 0000000000000000
+ 2      _CRS Buffer       0x55e60e438440 001 Len 39 = 8A 2B 00 00 0D 01 00 00 00 00 00 00
+ 2      _DSD Package      0x55e60e438630 001 Elements 02
+ 0  _SI_ Scope        0x55e60e41f5f0 000 
+ 0  _TZ_ Device       0x55e60e41f660 000 
+ 0  _REV Integer      0x55e60e41f6d0 000 = 0000000000000002
+ 0  _OS_ String       0x55e60e41f7c0 000 Len 14 "Microsoft Windows NT"
+ 0  _GL_ Mutex        0x55e60e41f8b0 000 Object 0x55e60e41f920
+ 0  _OSI Method       0x55e60e41fa00 000 Args 1 Len 0000 Aml (nil)
+ 0  _TI_ Untyped      0x55e60e425c30 000 
+ 1    _T97 Method       0x55e60e425ca0 000 Args 1 Len 0023 Aml 0x55e60e425d10
+
+Namespace node count: 135
+
+Evaluating \._SB._OSC
+Evaluation of \._SB._OSC failed with status AE_NOT_FOUND
+0x55e60e439510 Length 0x0048   utcache-0315 [Operand Object]       Method  RefCount 0x0001
+0x55e60e425d10 Length 0x0023  nsxfname-0600 [Not a Descriptor] 
+0x55e60e425bd0 Length 0x0023  nsxfname-0600 [Not a Descriptor] 
+0x55e60e425a20 Length 0x0048   utcache-0315 [Operand Object]       Method  RefCount 0x0001
+ACPI Error: 4 (0x4) Outstanding cache allocations (20260930/uttrack-764)

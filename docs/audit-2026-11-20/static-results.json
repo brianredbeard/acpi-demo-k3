@@ -1,0 +1,67 @@
+[
+  {
+    "check": "duplicate HID/UID requires PRP0001 compatible review",
+    "status": "BLOCKED",
+    "evidence": "\\_SB.I2C2.EPR0 \\_SB.ESPI.EC0"
+  },
+  {
+    "check": "duplicate HID/UID requires PRP0001 compatible review",
+    "status": "BLOCKED",
+    "evidence": "\\_SB.ESPI.EC0 \\_SB.ESPI.EC0.PWM0"
+  },
+  {
+    "check": "MMIO overlap requires ownership review",
+    "status": "BLOCKED",
+    "evidence": "\\_SB.ESPI \\_SB.ESPI.EC0"
+  },
+  {
+    "check": "firmware-k3-com260-ifx inventory",
+    "status": "PASS",
+    "evidence": "309 nodes; every raw property retained; bus-local reg not translated"
+  },
+  {
+    "check": "firmware-k3-deepcomputing-fml13v05 inventory",
+    "status": "PASS",
+    "evidence": "309 nodes; every raw property retained; bus-local reg not translated"
+  },
+  {
+    "check": "firmware-k3-pico-itx inventory",
+    "status": "PASS",
+    "evidence": "309 nodes; every raw property retained; bus-local reg not translated"
+  },
+  {
+    "check": "k3-com260-ifx inventory",
+    "status": "PASS",
+    "evidence": "234 nodes; every raw property retained; bus-local reg not translated"
+  },
+  {
+    "check": "k3-pico-itx inventory",
+    "status": "PASS",
+    "evidence": "257 nodes; every raw property retained; bus-local reg not translated"
+  },
+  {
+    "check": "ACPI binary header canonical-dsdt.aml",
+    "status": "PASS",
+    "evidence": {
+      "signature": "DSDT",
+      "length": 4229,
+      "revision": 2,
+      "sha256": "f2fbaaa24187ec5ebc0e4ce0650904bda7cc51f15eae293d87e0b53c8a7f4e68"
+    }
+  },
+  {
+    "check": "ACPI binary header maintained-dsdt.aml",
+    "status": "PASS",
+    "evidence": {
+      "signature": "DSDT",
+      "length": 5223,
+      "revision": 2,
+      "sha256": "888568e9a9a55620e65af1b8692404728f280953e01f854dfc749d67cef5380c"
+    }
+  },
+  {
+    "check": "ASL reference/clock/reset/power/child semantics",
+    "status": "BLOCKED",
+    "evidence": "Requires ACPICA load plus manual driver and hardware analysis; lexical matching is insufficient"
+  }
+]

@@ -1,0 +1,399 @@
+[
+  {
+    "name": "CL00",
+    "body": "\n    Name (_HID, \"ACPI0010\")\n    Name (_UID, 0x02000000)\n    \n    \n    \n    \n  ",
+    "path": "\\_SB.CL00",
+    "hid": "\"ACPI0010\"",
+    "uid": "0x02000000",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU0",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 0) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL00.CPU0",
+    "hid": "\"ACPI0007\"",
+    "uid": "0",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU1",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 1) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL00.CPU1",
+    "hid": "\"ACPI0007\"",
+    "uid": "1",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU2",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 2) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL00.CPU2",
+    "hid": "\"ACPI0007\"",
+    "uid": "2",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU3",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 3) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL00.CPU3",
+    "hid": "\"ACPI0007\"",
+    "uid": "3",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CL01",
+    "body": "\n    Name (_HID, \"ACPI0010\")\n    Name (_UID, 0x02000001)\n    \n    \n    \n    \n  ",
+    "path": "\\_SB.CL01",
+    "hid": "\"ACPI0010\"",
+    "uid": "0x02000001",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU4",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 4) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL01.CPU4",
+    "hid": "\"ACPI0007\"",
+    "uid": "4",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU5",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 5) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL01.CPU5",
+    "hid": "\"ACPI0007\"",
+    "uid": "5",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU6",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 6) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL01.CPU6",
+    "hid": "\"ACPI0007\"",
+    "uid": "6",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "CPU7",
+    "body": " Name (_HID, \"ACPI0007\") Name (_UID, 7) Name (_LPI, Package () { 0, 0, 2, Package () { 1, 1, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0, 4) }, 0, 0, \"WFI\" }, Package () { 950, 500, 1, 0, 0, 0, ResourceTemplate () { Register (FFixedHW, 64, 0, 0x1000000000000000, 4) }, 0, 0, \"SBI_WFI\" } }) ",
+    "path": "\\_SB.CL01.CPU7",
+    "hid": "\"ACPI0007\"",
+    "uid": "7",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "IC00",
+    "body": "\n      Name (_HID, \"RSCV0002\")\n      Name (_UID, Zero)\n      Name (_GSB, Zero)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xE0804000, 0xE0807FFF, 0x0, 0x4000\n        )\n      })\n    ",
+    "path": "\\_SB.IC00",
+    "hid": "\"RSCV0002\"",
+    "uid": "Zero",
+    "cca": "",
+    "mmio": [
+      {
+        "base": 3766501376,
+        "end": 3766517759,
+        "length": 16384,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "COM0",
+    "body": "\n      Name (_HID, \"RSCV0003\")\n      Name (_UID, Zero)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xD4017000, 0xD40170FF, 0x0, 0x100\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 42 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package (2) { \"clock-frequency\", 14745600 },\n          Package (2) { \"reg-shift\", 2 },\n          Package (2) { \"reg-io-width\", 4 },\n          Package () { \"compatible\", Package () { \"spacemit,k3-uart\", \"intel,xscale-uart\" } }\n        }\n      })\n    ",
+    "path": "\\_SB.COM0",
+    "hid": "\"RSCV0003\"",
+    "uid": "Zero",
+    "cca": "",
+    "mmio": [
+      {
+        "base": 3556864000,
+        "end": 3556864255,
+        "length": 256,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      42
+    ]
+  },
+  {
+    "name": "ETH0",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x40)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xCAC80000, 0xCAC81FFF, 0x0, 0x2000\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 131 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", Package () { \"spacemit,k3-dwmac\", \"snps,dwmac-5.40a\" } },\n          Package () { \"phy-mode\", \"rgmii-id\" },\n          Package () { \"snps,clk-csr\", 5 },\n          Package () { \"tx-internal-delay-ps\", 0 },\n          Package () { \"rx-internal-delay-ps\", 0 },\n          Package () { \"spacemit,apmu-ctrl-reg\", 0xD4282BE4 },\n          Package () { \"spacemit,apmu-dline-reg\", 0xD4282BE8 },\n          Package () { \"snps,multicast-filter-bins\", 64 },\n          Package () { \"snps,perfect-filter-entries\", 32 },\n          Package () { \"snps,txpbl\", 8 },\n          Package () { \"snps,rxpbl\", 8 },\n          Package () { \"snps,aal\", 1 },\n          Package () { \"snps,force_sf_dma_mode\", 1 },\n          Package () { \"rx-fifo-depth\", 8192 },\n          Package () { \"tx-fifo-depth\", 8192 }\n        }\n      })\n    ",
+    "path": "\\_SB.ETH0",
+    "hid": "\"PRP0001\"",
+    "uid": "0x40",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3402104832,
+        "end": 3402113023,
+        "length": 8192,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      131
+    ]
+  },
+  {
+    "name": "UFS0",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x41)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xC0E00000, 0xC0E3FFFF, 0x0, 0x40000\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 135 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"spacemit,k3-ufshc\" },\n          Package () { \"lanes-per-direction\", 2 },\n          Package () { \"spacemit,apmu-ufs-reg\", 0xD4282A68 }\n        }\n      })\n    ",
+    "path": "\\_SB.UFS0",
+    "hid": "\"PRP0001\"",
+    "uid": "0x41",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3235905536,
+        "end": 3236167679,
+        "length": 262144,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      135
+    ]
+  },
+  {
+    "name": "USB2",
+    "body": "\n      Name (_HID, \"808622B7\")\n      Name (_UID, Zero)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xC0A00000, 0xC0A0FFFF, 0x0, 0x10000\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 105 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"dr_mode\", \"host\" },\n          Package () { \"phy_type\", \"utmi\" },\n          Package () { \"snps,hsphy_interface\", \"utmi\" },\n          Package () { \"snps,dis_enblslpm_quirk\", 1 },\n          Package () { \"snps,dis_u2_susphy_quirk\", 1 },\n          Package () { \"snps,dis_u3_susphy_quirk\", 1 },\n          Package () { \"snps,dis-del-phy-power-chg-quirk\", 1 },\n          Package () { \"snps,dis-tx-ipgap-linecheck-quirk\", 1 },\n          Package () { \"snps,parkmode-disable-ss-quirk\", 1 },\n          Package () { \"usb-role-switch\", 1 },\n          Package () { \"role-switch-default-mode\", \"host\" },\n          Package () { \"maximum-speed\", \"high-speed\" }\n        }\n      })\n    ",
+    "path": "\\_SB.USB2",
+    "hid": "\"808622B7\"",
+    "uid": "Zero",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3231711232,
+        "end": 3231776767,
+        "length": 65536,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      105
+    ]
+  },
+  {
+    "name": "PCI0",
+    "body": "\n      Name (_HID, \"PNP0A08\")\n      Name (_CID, \"PNP0A03\")\n      Name (_UID, 0)\n      Name (_SEG, 0)\n      Name (_BBN, 0x00)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate () {\n        WordBusNumber (\n          ResourceProducer, MinFixed, MaxFixed, PosDecode,\n          0x0,\n          0x00,\n          0xff,\n          0x00,\n          0x100\n        )\n        QWordMemory (\n          ResourceProducer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x00000000,\n          0x0010000000,\n          0x007FFFFFFF,\n          0x1100000000,\n          0x0070000000\n        )\n        QWordMemory (\n          ResourceProducer, PosDecode, MinFixed, MaxFixed,\n          Prefetchable, ReadWrite,\n          0x0,\n          0x0000001800000000,\n          0x00000018FFFFFFFF,\n          0x0000000000000000,\n          0x0000000100000000\n        )\n      })\n      Name (SUPP, 0)\n      Name (CTRL, 0)\n      Method (_OSC, 4, NotSerialized)\n      {\n        CreateDWordField (Arg3, 0, CDW1)\n        If (Arg0 == ToUUID (\"33DB4D5B-1FF7-401C-9657-7441C03DD766\"))\n        {\n          CreateDWordField (Arg3, 4, CDW2)\n          CreateDWordField (Arg3, 8, CDW3)\n          SUPP = CDW2 & 0x10\n          CTRL = CDW3 & 0x10\n          If (Arg1 != 1) { CDW1 |= 0x08 }\n          If (CDW3 != CTRL) { CDW1 |= 0x10 }\n          CDW3 = CTRL\n          Return (Arg3)\n        }\n        CDW1 |= 0x04\n        Return (Arg3)\n      }\n      \n      \n    ",
+    "path": "\\_SB.PCI0",
+    "hid": "\"PNP0A08\"",
+    "uid": "0",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 268435456,
+        "end": 2147483647,
+        "length": 1879048192,
+        "kind": "ResourceProducer"
+      },
+      {
+        "base": 103079215104,
+        "end": 107374182399,
+        "length": 4294967296,
+        "kind": "ResourceProducer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "RES0",
+    "body": "\n        Name (_HID, \"PNP0C02\")\n        Name (_CRS, ResourceTemplate () {\n          QWordMemory (\n            ResourceProducer, PosDecode, MinFixed, MaxFixed,\n            NonCacheable, ReadWrite,\n            0x0,\n            0x0000001100000000,\n            0x000000110FFFFFFF,\n            0x0000000000000000,\n            0x0000000010000000\n          )\n        })\n      ",
+    "path": "\\_SB.PCI0.RES0",
+    "hid": "\"PNP0C02\"",
+    "uid": "",
+    "cca": "",
+    "mmio": [
+      {
+        "base": 73014444032,
+        "end": 73282879487,
+        "length": 268435456,
+        "kind": "ResourceProducer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "DBI0",
+    "body": "\n    Name (_HID, \"AMZN0001\")\n        Name (_CID, \"PNP0C02\")\n        Name (_UID, 0)\n        Name (_CRS, ResourceTemplate () {\n          QWordMemory (\n            ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n            NonCacheable, ReadWrite,\n            0x0,\n            0x80000000,\n            0x80000FFF,\n            0x00000000,\n            0x1000\n          )\n        })\n      ",
+    "path": "\\_SB.PCI0.DBI0",
+    "hid": "\"AMZN0001\"",
+    "uid": "0",
+    "cca": "",
+    "mmio": [
+      {
+        "base": 2147483648,
+        "end": 2147487743,
+        "length": 4096,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "GPIO",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x50)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xD4019000, 0xD40190FF, 0x0, 0x100\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Shared) { 58 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"spacemit,k3-gpio\" },\n        }\n      })\n    ",
+    "path": "\\_SB.GPIO",
+    "hid": "\"PRP0001\"",
+    "uid": "0x50",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3556872192,
+        "end": 3556872447,
+        "length": 256,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      58
+    ]
+  },
+  {
+    "name": "I2C2",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x60)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xD4012000, 0xD4012037, 0x0, 0x38\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 38 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"spacemit,k1-i2c\" },\n          Package () { \"clock-frequency\", 100000 },\n          Package () { \"spacemit,func-clock-rate\", 31500000 },\n        }\n      })\n      \n    ",
+    "path": "\\_SB.I2C2",
+    "hid": "\"PRP0001\"",
+    "uid": "0x60",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3556843520,
+        "end": 3556843575,
+        "length": 56,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      38
+    ]
+  },
+  {
+    "name": "EPR0",
+    "body": "\n        Name (_HID, \"PRP0001\")\n        Name (_UID, 0)\n        Name (_CRS, ResourceTemplate ()\n        {\n          I2cSerialBus (0x50, ControllerInitiated, 100000,\n            AddressingMode7Bit, \"\\\\_SB.I2C2\")\n        })\n        Name (_DSD, Package () {\n          ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n          Package () {\n            Package () { \"compatible\", \"atmel,24c02\" },\n            Package () { \"pagesize\", 8 },\n            Package () { \"read-only\", 1 },\n          }\n        })\n      ",
+    "path": "\\_SB.I2C2.EPR0",
+    "hid": "\"PRP0001\"",
+    "uid": "0",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "ESPI",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x71)\n      Name (_CCA, 1)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xCAC8C000, 0xCAC8CFFF, 0x0, 0x1000\n        )\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"spacemit,k3-espi\" },\n          Package () { \"operating-frequency\", 20 },\n          Package () { \"watchdog-timeout\", 0xffff },\n          Package () { \"pr-mem-base0\", 0x84000000 },\n          Package () { \"pr-mem-base1\", 0xcac8c000 },\n          Package () { \"io-mode\", \"single\" },\n          Package () { \"alert-mode\", \"io1\" },\n          Package () { \"alert-type\", \"open-drain\" },\n          Package () { \"crc-enable\", 1 },\n          Package () { \"auto-gating-enable\", 1 },\n          Package () { \"peripheral-channel-enable\", 1 },\n          Package () { \"vwire-channel-enable\", 1 },\n          Package () { \"oob-channel-enable\", 1 },\n          Package () { \"flash-channel-enable\", 1 }\n        }\n      })\n      Device (EC0)\n      {\n        Name (_HID, \"PRP0001\")\n        Name (_UID, 0)\n        Name (_CCA, 1)\n        Name (_CRS, ResourceTemplate ()\n        {\n          QWordMemory (\n            ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n            NonCacheable, ReadWrite,\n            0x0, 0x84000000, 0x84000FFF, 0x0, 0x1000\n          )\n          GpioInt (Edge, ActiveHigh, Exclusive, PullUp, 0x0000,\n            \"\\\\_SB.GPIO\", 0x00, ResourceConsumer, ,\n            ) { 43 }\n        })\n        Name (_DSD, Package () {\n          ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n          Package () {\n            Package () { \"compatible\", \"google,cros-ec-espi\" }\n          }\n        })\n        \n      }\n    ",
+    "path": "\\_SB.ESPI",
+    "hid": "\"PRP0001\"",
+    "uid": "0x71",
+    "cca": "1",
+    "mmio": [
+      {
+        "base": 3402153984,
+        "end": 3402158079,
+        "length": 4096,
+        "kind": "ResourceConsumer"
+      },
+      {
+        "base": 2214592512,
+        "end": 2214596607,
+        "length": 4096,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "EC0",
+    "body": "\n        Name (_HID, \"PRP0001\")\n        Name (_UID, 0)\n        Name (_CCA, 1)\n        Name (_CRS, ResourceTemplate ()\n        {\n          QWordMemory (\n            ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n            NonCacheable, ReadWrite,\n            0x0, 0x84000000, 0x84000FFF, 0x0, 0x1000\n          )\n          GpioInt (Edge, ActiveHigh, Exclusive, PullUp, 0x0000,\n            \"\\\\_SB.GPIO\", 0x00, ResourceConsumer, ,\n            ) { 43 }\n        })\n        Name (_DSD, Package () {\n          ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n          Package () {\n            Package () { \"compatible\", \"google,cros-ec-espi\" }\n          }\n        })\n        \n      ",
+    "path": "\\_SB.ESPI.EC0",
+    "hid": "\"PRP0001\"",
+    "uid": "0",
+    "cca": "1",
+    "mmio": [
+      {
+        "base": 2214592512,
+        "end": 2214596607,
+        "length": 4096,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": []
+  },
+  {
+    "name": "PWM0",
+    "body": "\n          Name (_HID, \"PRP0001\")\n          Name (_UID, 0)\n          Name (_DSD, Package () {\n            ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n            Package () {\n              Package () { \"compatible\", \"google,cros-ec-pwm\" }\n            }\n          })\n        ",
+    "path": "\\_SB.ESPI.EC0.PWM0",
+    "hid": "\"PRP0001\"",
+    "uid": "0",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "FAN0",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x72)\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"pwm-fan\" },\n          Package () { \"pwms\", Package () {\n            \\_SB.ESPI.EC0.PWM0, 0, 0xffff, 0\n          } },\n          Package () { \"cooling-levels\", Package () { 77, 153, 204, 255 } }\n        }\n      })\n    ",
+    "path": "\\_SB.FAN0",
+    "hid": "\"PRP0001\"",
+    "uid": "0x72",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "MPXY",
+    "body": "\n      Name (_HID, \"RSCV0005\")\n      Name (_UID, 0x73)\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"#mbox-cells\", 2 }\n        }\n      })\n    ",
+    "path": "\\_SB.MPXY",
+    "hid": "\"RSCV0005\"",
+    "uid": "0x73",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "RCLK",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x74)\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"riscv,rpmi-clock\" },\n          Package () { \"mboxes\", Package () {\n            \\_SB.MPXY, 8, 0\n          } }\n        }\n      })\n    ",
+    "path": "\\_SB.RCLK",
+    "hid": "\"PRP0001\"",
+    "uid": "0x74",
+    "cca": "",
+    "mmio": [],
+    "gsis": []
+  },
+  {
+    "name": "TSEN",
+    "body": "\n      Name (_HID, \"PRP0001\")\n      Name (_UID, 0x70)\n      Name (_CCA, 0)\n      Name (_CRS, ResourceTemplate ()\n      {\n        QWordMemory (\n          ResourceConsumer, PosDecode, MinFixed, MaxFixed,\n          NonCacheable, ReadWrite,\n          0x0, 0xD4018000, 0xD40180FF, 0x0, 0x100\n        )\n        Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive) { 61 }\n      })\n      Name (_DSD, Package () {\n        ToUUID (\"daffd814-6eba-4d8c-8a91-bc9bbf4aa301\"),\n        Package () {\n          Package () { \"compatible\", \"spacemit,k3-tsensor\" },\n          Package () { \"sensor_range\", Package () { 0, 7 } },\n          Package () { \"tsensor_map\", Package () { 1, 0, 1, 1, 1, 1, 1, 1 } },\n          Package () { \"temperature_offset\", 274 }\n        }\n      })\n    ",
+    "path": "\\_SB.TSEN",
+    "hid": "\"PRP0001\"",
+    "uid": "0x70",
+    "cca": "0",
+    "mmio": [
+      {
+        "base": 3556868096,
+        "end": 3556868351,
+        "length": 256,
+        "kind": "ResourceConsumer"
+      }
+    ],
+    "gsis": [
+      61
+    ]
+  }
+]

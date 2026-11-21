@@ -1,0 +1,45 @@
+
+Intel ACPI Component Architecture
+AML Execution/Debug Utility version 20260930
+Copyright (c) 2000 - 2026 Intel Corporation
+
+
+
+ACPI: RSDP 0x000055FD630B6F60 000024 (v02 Intel )
+ACPI: XSDT 0x000055FD9CCF8AC0 000034 (v00 Intel  AcpiExec 00001001 INTL 20260930)
+ACPI: FACP 0x000055FD630B7020 000114 (v05 Intel  AcpiExec 00001001 INTL 20260930)
+ACPI: DSDT 0x000055FD9CCFF190 001085 (v02 SPMT   K3       00000001 INTL 20260930)
+ACPI: FACS 0x000055FD630B6F20 000040
+
+ACPI table initialization:
+Table [DSDT: K3      ] (id 01) -  124 Objects with  27 Devices,   0 Regions,    2 Methods (2/0/2 Serial/Non/Cvt)
+ACPI: 1 ACPI AML tables successfully acquired and loaded
+
+Final data object initialization: Namespace contains 133 (0x85) objects
+Initializing General Purpose Events (GPEs):
+    Initialized GPE 00 to 7F [_GPE] 16 regs on interrupt 0x0 (SCI)
+    Initialized GPE 80 to FF [_GPE] 16 regs on interrupt 0x0 (SCI)
+Initializing Device/Processor/Thermal objects and executing _INI/_STA methods:
+    Executed 0 _INI methods requiring 0 _STA executions (examined 29 objects)
+Evaluating \_SB._OSC
+Firmware Error (ACPI): AE_AML_BUFFER_LIMIT, Field [CDW2] at bit offset/length 32/32 exceeds size of target Buffer (32 bits) (20260930/dsopcode-218)
+Failed at AML Offset 00007, Opcode 008A: CreateDWordField (Arg3, 0x04, CDW2)
+
+No Local Variables are initialized for Method [_OSC]
+
+Initialized Arguments for Method [_OSC]:  (4 arguments defined for method invocation)
+    Arg0:   0x55fd9cd06240 <Obj>             Buffer(16) 6E B0 11 08 27 4A F9 44
+    Arg1:   0x55fd9cd06700 <Obj>             Integer 0000000000000001
+    Arg2:   0x55fd9cd037d0 <Obj>             Integer 0000000000000001
+    Arg3:   0x55fd9cd02d40 <Obj>             Buffer(4) 00 00 00 00
+
+ACPI Error: Aborting method \_SB._OSC due to previous error (AE_AML_BUFFER_LIMIT) (20260930/psparse-567)
+ACPI Error: AE_AML_BUFFER_LIMIT, while executing \_SB._OSC from AML Debugger (20260930/dbexec-196)
+0x1 Outstanding allocations after evaluation of \_SB._OSC
+Evaluation of \_SB._OSC failed with status AE_AML_BUFFER_LIMIT
+0x55fd9cd12510 Length 0x0048   utcache-0315 [Operand Object]       Method  RefCount 0x0001
+0x55fd9ccfed10 Length 0x0023  nsxfname-0600 [Not a Descriptor] 
+0x55fd9ccfebd0 Length 0x0023  nsxfname-0600 [Not a Descriptor] 
+0x55fd9ccfea20 Length 0x0048   utcache-0315 [Operand Object]       Method  RefCount 0x0001
+ACPI Error: 4 (0x4) Outstanding cache allocations (20260930/uttrack-764)
+Input file /home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/docs/audit-2026-11-20/evidence/canonical-dsdt.aml, Length 0x1085 (4229) bytes
