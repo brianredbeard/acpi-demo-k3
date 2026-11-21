@@ -85,3 +85,70 @@ RHCTISABadOrder GONE (the one real violation fixed);
 RHCTProfileMissingExtensions remains (hardware fact,
 documented waiver); 17 clocks, 3 LPI states, UFS unchanged
 (same ESOS/OpenSBI/dtb payloads).
+
+## Full-suite triage (post-rhct1, all unique failures)
+
+### REAL firmware bugs (fix in next bundle)
+
+1. **ACPI_020 [CRITICAL]: FACS must not exist** — the FACP carries
+   x_facs=0x6000000 (nonzero) though no FACS table is present.
+   BRS-I forbids FACS on RISC-V. Fix: zero the X_FACS pointer in
+   FACP. (FWTS message: "must not implement the ACPI FACS table")
+
+2. **ACPI_010 [CRITICAL]: RSDT must not exist** — we ship XSDT-only
+   (correct per BRS-I), but the RSDP still carries an RSDT pointer
+   (and fwts flags it). Fix: zero RSDP's RSDT address (0x00[16:20])
+   keeping XSDT. [VERIFIED against live table: RSDP rsdt_ptr
+   parse pending — confirm before fix]
+
+3. **HardwareIDNotUnique [HIGH]: EC0/EPR0/PWM0 collide** — EPR0
+   (atmel,24c02 EEPROM on I2C2), EC0 (cros-ec), and EC0.PWM0 all
+   carry PRP0001 + _UID 0. PRP0001 devices need UNIQUE (HID,UID)
+   pairs namespace-wide. Fix: distinct _UIDs (EPR0=1, PWM0=1 —
+   scoping under EC0 makes PWM0 unique only if EC0's own UID
+   differs; cleanest: EPR0 _UID 1, PWM0 stays 0 as EC0.PWM0 has
+   different parent... verify fwts matching scope: it compares
+   HID+UID globally for PRP0001).
+
+### SPEC-STRICT vs kernel-tolerant (our call to make)
+
+4. **Method_LPIBadSubElementType [HIGH]**: our _LPI state elements
+   [7][8] are integer 0 ("no residency/usage counter"); fwts (and
+   the RISC-V FFH spec examples) encode them as NULL GAS
+   ResourceTemplates: Register(SystemMemory, 0, 0, 0, 0). The
+   kernel skips 7/8 entirely (processor_idle.c: "elements[7,8]
+   skipped for now"). Fix: match the spec examples — zero-filled
+   GAS buffers for 7/8 (also covers the kernel's elem-9 name read;
+   verify count >= 10 stays).
+
+### fwts defects / hardware facts (waive with evidence)
+
+5. **sbbr_gsiv [CRITICAL]**: fwts only accepts ARM PL011 (0x08) or
+   IO-APIC (0x02) SPCR interrupt types; ours is 0x10 (RISC-V
+   PLIC/APLIC — the ACPI 6.5-specified value) + GSIV 42. The
+   console WORKS (boots on SPCR alone). fwts ARM-centrism.
+
+6. **RHCTProfileMissingExtensions [MEDIUM]**: silicon lacks the
+   RVA23U64/S64 sets (documented earlier — /proc/cpuinfo evidence).
+
+7. **LPISBITypeInvalid + LPICpuidleNoLatency [MEDIUM]**: documented
+   earlier (vendor RPMI idle-type encoding + sysfs attr name skew).
+
+8. **WakeAlarmNotTriggered2/3/4 [MEDIUM]**: "Cannot enable alarm
+   interrupts on /dev/rtc0" — the EFI RTC (rtc-efi) does not
+   support alarm IRQs. Hardware/driver limitation, not table
+   content. Waive or retest after a real RTC driver binds (if the
+   board has one behind the EC — check post-EC-bind).
+
+### Orphaned source finding (side effect of this audit)
+
+**Power.asl is not included in any DSDT build** — the P1
+power-resource votes (USB2/PCIE_PORTA/EMAC0 _ON/_OFF/_STA via PCC)
+never shipped. That's why the namespace has ZERO _STA objects and
+fwts's SBBR _STA probe (Test 41, MethodNotExist) fails: it walks
+all names ending in _STA and finds none. Investigate: was the
+power-resource namespace deliberately dropped at v12, or lost?
+The P1 gate ran through a different path (ESOS-side), so the
+firmware-side PCC power resources may be intentionally retired —
+but then Power.asl should be deleted or moved to an attic, not
+left as an unshipped trap.
