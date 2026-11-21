@@ -128,7 +128,7 @@
     {
       "name": "opensbi",
       "repository": "file:///home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic",
-      "revision": "b4152e0761ac1986dfd313876eaff8d7f63cd703",
+      "revision": "51a9d0f99d23aa00ad9d14c84874c4673d9559ac",
       "path": "opensbi",
       "patches": [],
       "note": "Vendored local snapshot: the spacemit K3 opensbi tree as staged during this project (no clean upstream identity survives \u2014 the tree predates the repo-qualification discipline). Pinned at the hardware-qualified v21g state: fw_dynamic sha256 2f14c5c85bf91e1c... (P0 batches, dispatch hoist, ENOTSUPP-fallback translation, 0x11000000 routing with the safe grant path). The repository field is a local absolute path \u2014 reproduction requires this workstation until the tree is published."

@@ -30,3 +30,23 @@ tree (no surviving clean upstream identity; see the component note):
 Future OpenSBI changes diff against the pinned commit and ship as
 numbered patches in this directory; the component revision advances
 with each qualified cycle.
+
+QUIET-DIAGNOSTIC FIX (the LPI-2 lesson, pin 51a9d0f9):
+
+The rpmi-hsm deny print fired from the idle path at cpuidle
+retry frequency; five harts printing every denial saturated the
+115200-baud console and took the network down (the first LPI-2
+flash, 2026-11-21). Rate-limited to ONCE PER HART: the error
+code returned to the caller is the durable signal; the console
+line is a boot-time aid. This is the transition-path serial
+rule applied to the print that predated it.
+
+--- a/lib/utils/hsm/fdt_hsm_rpmi.c  (addition)
+@@ rpmi_hsm_suspend
+ 	rc = __rpmi_hsm_suspend(type);
++	/* once per hart; further denials are silent */
++	{ static unsigned long reported;
++	  if (!(reported & (1UL << (current_hartid() % 64))) {
++	      reported |= ...;
++	      sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d (once; ...)",
++			 current_hartid(), type, rc); } }
