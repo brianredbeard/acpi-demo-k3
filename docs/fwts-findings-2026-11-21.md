@@ -187,3 +187,23 @@ namespace has no _STA objects because the PCC power resources
 that would carry them are deliberately unwired. That failure
 is a policy statement, not a defect — revisit only if SBBR
 _STA coverage becomes a requirement.
+
+## rhct2 QUALIFIED on hardware (2026-11-21, this boot)
+
+Live-table verification (decompiled /sys/firmware/acpi/tables/DSDT):
+- _LPI: 24 ten-element state packages (3 states x 8 CPUs), 48
+  NULL-GAS SystemMemory counter registers (2 per state) — the
+  RISC-V FFH spec-canonical form, exactly as built
+- PRP0001 _UIDs live: 0x40 0x41 0x50 0x60 One(EPR0) 0x71
+  Zero(EC0) 0x02(PWM0) 0x72 0x74 0x70 — all 11 distinct
+
+Regression gates: 17 clocks at truth rates, 3 LPI states
+(LPI-0/1/2), UFS at 491.52 MHz (true sys1clk), boot nominal
+(53.8s — the EC defer-wait still present, dies with the =y
+GPIO kernel cycle), cros_ec device tree present.
+
+The fwts binary was removed from the board mid-session (a
+source tree now occupies /root/fwts; the serial-console user
+is active). Acceptance was done by direct table verification —
+the same structural checks fwts performs, run against the
+live DSDT.
