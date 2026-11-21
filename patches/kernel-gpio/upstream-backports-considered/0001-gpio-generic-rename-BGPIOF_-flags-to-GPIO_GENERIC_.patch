@@ -1,0 +1,449 @@
+From 64f89f6e1f2b7f8f203d218a8c8d90922e1d4048 Mon Sep 17 00:00:00 2001
+From: Bartosz Golaszewski <bartosz.golaszewski@linaro.org>
+Date: Wed, 17 Sep 2025 10:54:05 +0200
+Subject: [PATCH] gpio: generic: rename BGPIOF_ flags to GPIO_GENERIC_
+
+Make the flags passed to gpio_generic_chip_init() use the same prefix as
+the rest of the modernized generic GPIO chip API.
+
+Link: https://lore.kernel.org/r/20250917-gpio-generic-flags-v1-1-69f51fee8c89@linaro.org
+Signed-off-by: Bartosz Golaszewski <bartosz.golaszewski@linaro.org>
+---
+ drivers/gpio/gpio-amdpt.c                 |  2 +-
+ drivers/gpio/gpio-brcmstb.c               |  2 +-
+ drivers/gpio/gpio-cadence.c               |  2 +-
+ drivers/gpio/gpio-ge.c                    |  2 +-
+ drivers/gpio/gpio-grgpio.c                |  2 +-
+ drivers/gpio/gpio-hisi.c                  |  3 ++-
+ drivers/gpio/gpio-hlwd.c                  |  2 +-
+ drivers/gpio/gpio-ixp4xx.c                |  2 +-
+ drivers/gpio/gpio-mmio.c                  | 28 +++++++++++------------
+ drivers/gpio/gpio-mpc8xxx.c               |  4 ++--
+ drivers/gpio/gpio-mt7621.c                |  2 +-
+ drivers/gpio/gpio-mxc.c                   |  2 +-
+ drivers/gpio/gpio-rda.c                   |  2 +-
+ drivers/gpio/gpio-realtek-otto.c          |  2 +-
+ drivers/gpio/gpio-sifive.c                |  2 +-
+ drivers/gpio/gpio-spacemit-k1.c           |  3 ++-
+ drivers/gpio/gpio-vf610.c                 |  4 ++--
+ drivers/pinctrl/nuvoton/pinctrl-npcm7xx.c |  2 +-
+ drivers/pinctrl/nuvoton/pinctrl-npcm8xx.c |  2 +-
+ drivers/pinctrl/nuvoton/pinctrl-wpcm450.c |  2 +-
+ drivers/pinctrl/stm32/pinctrl-stm32-hdp.c |  2 +-
+ include/linux/gpio/driver.h               | 18 +++++++--------
+ 22 files changed, 47 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/gpio/gpio-amdpt.c b/drivers/gpio/gpio-amdpt.c
+index bbaf42307bc3d7..8458a6949c65d3 100644
+--- a/drivers/gpio/gpio-amdpt.c
++++ b/drivers/gpio/gpio-amdpt.c
+@@ -94,7 +94,7 @@ static int pt_gpio_probe(struct platform_device *pdev)
+ 		.dat = pt_gpio->reg_base + PT_INPUTDATA_REG,
+ 		.set = pt_gpio->reg_base + PT_OUTPUTDATA_REG,
+ 		.dirout = pt_gpio->reg_base + PT_DIRECTION_REG,
+-		.flags = BGPIOF_READ_OUTPUT_REG_SET,
++		.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(&pt_gpio->chip, &config);
+diff --git a/drivers/gpio/gpio-brcmstb.c b/drivers/gpio/gpio-brcmstb.c
+index be3ff916e134a6..f40c9472588bc7 100644
+--- a/drivers/gpio/gpio-brcmstb.c
++++ b/drivers/gpio/gpio-brcmstb.c
+@@ -630,7 +630,7 @@ static int brcmstb_gpio_probe(struct platform_device *pdev)
+ 	 * else leave I/O in little endian mode.
+ 	 */
+ #if defined(CONFIG_MIPS) && defined(__BIG_ENDIAN)
+-	flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER;
++	flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER;
+ #endif
+ 
+ 	of_property_for_each_u32(np, "brcm,gpio-bank-widths", bank_width) {
+diff --git a/drivers/gpio/gpio-cadence.c b/drivers/gpio/gpio-cadence.c
+index c647953521c716..b75734ca22dd73 100644
+--- a/drivers/gpio/gpio-cadence.c
++++ b/drivers/gpio/gpio-cadence.c
+@@ -181,7 +181,7 @@ static int cdns_gpio_probe(struct platform_device *pdev)
+ 	config.dat = cgpio->regs + CDNS_GPIO_INPUT_VALUE;
+ 	config.set = cgpio->regs + CDNS_GPIO_OUTPUT_VALUE;
+ 	config.dirin = cgpio->regs + CDNS_GPIO_DIRECTION_MODE;
+-	config.flags = BGPIOF_READ_OUTPUT_REG_SET;
++	config.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET;
+ 
+ 	ret = gpio_generic_chip_init(&cgpio->gen_gc, &config);
+ 	if (ret) {
+diff --git a/drivers/gpio/gpio-ge.c b/drivers/gpio/gpio-ge.c
+index b5cbf27b8f4422..66bdff36eb615e 100644
+--- a/drivers/gpio/gpio-ge.c
++++ b/drivers/gpio/gpio-ge.c
+@@ -73,7 +73,7 @@ static int __init gef_gpio_probe(struct platform_device *pdev)
+ 		.dat = regs + GEF_GPIO_IN,
+ 		.set = regs + GEF_GPIO_OUT,
+ 		.dirin = regs + GEF_GPIO_DIRECT,
+-		.flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER,
++		.flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(chip, &config);
+diff --git a/drivers/gpio/gpio-grgpio.c b/drivers/gpio/gpio-grgpio.c
+index 5930f4c6f2b578..0c0f97fa14fc9d 100644
+--- a/drivers/gpio/gpio-grgpio.c
++++ b/drivers/gpio/gpio-grgpio.c
+@@ -359,7 +359,7 @@ static int grgpio_probe(struct platform_device *ofdev)
+ 		.dat = regs + GRGPIO_DATA,
+ 		.set = regs + GRGPIO_OUTPUT,
+ 		.dirout = regs + GRGPIO_DIR,
+-		.flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER,
++		.flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER,
+ 	};
+ 
+ 	gc = &priv->chip.gc;
+diff --git a/drivers/gpio/gpio-hisi.c b/drivers/gpio/gpio-hisi.c
+index d8c4ab02ceaef7..d26298c8351b71 100644
+--- a/drivers/gpio/gpio-hisi.c
++++ b/drivers/gpio/gpio-hisi.c
+@@ -300,7 +300,8 @@ static int hisi_gpio_probe(struct platform_device *pdev)
+ 		.clr = hisi_gpio->reg_base + HISI_GPIO_SWPORT_DR_CLR_WX,
+ 		.dirout = hisi_gpio->reg_base + HISI_GPIO_SWPORT_DDR_SET_WX,
+ 		.dirin = hisi_gpio->reg_base + HISI_GPIO_SWPORT_DDR_CLR_WX,
+-		.flags = BGPIOF_NO_SET_ON_INPUT | BGPIOF_UNREADABLE_REG_DIR,
++		.flags = GPIO_GENERIC_NO_SET_ON_INPUT |
++			 GPIO_GENERIC_UNREADABLE_REG_DIR,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(&hisi_gpio->chip, &config);
+diff --git a/drivers/gpio/gpio-hlwd.c b/drivers/gpio/gpio-hlwd.c
+index a395f87436ac4d..043ce5ef3b07e9 100644
+--- a/drivers/gpio/gpio-hlwd.c
++++ b/drivers/gpio/gpio-hlwd.c
+@@ -253,7 +253,7 @@ static int hlwd_gpio_probe(struct platform_device *pdev)
+ 		.dat = hlwd->regs + HW_GPIOB_IN,
+ 		.set = hlwd->regs + HW_GPIOB_OUT,
+ 		.dirout = hlwd->regs + HW_GPIOB_DIR,
+-		.flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER,
++		.flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER,
+ 	};
+ 
+ 	res = gpio_generic_chip_init(&hlwd->gpioc, &config);
+diff --git a/drivers/gpio/gpio-ixp4xx.c b/drivers/gpio/gpio-ixp4xx.c
+index 8a3b6b192288c8..f34d87869c8b04 100644
+--- a/drivers/gpio/gpio-ixp4xx.c
++++ b/drivers/gpio/gpio-ixp4xx.c
+@@ -289,7 +289,7 @@ static int ixp4xx_gpio_probe(struct platform_device *pdev)
+ 	 * for big endian.
+ 	 */
+ #if defined(CONFIG_CPU_BIG_ENDIAN)
+-	flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER;
++	flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER;
+ #else
+ 	flags = 0;
+ #endif
+diff --git a/drivers/gpio/gpio-mmio.c b/drivers/gpio/gpio-mmio.c
+index a3df14d672a92a..7d6dd36cf1aeff 100644
+--- a/drivers/gpio/gpio-mmio.c
++++ b/drivers/gpio/gpio-mmio.c
+@@ -554,7 +554,7 @@ static int bgpio_setup_io(struct gpio_generic_chip *chip,
+ 		chip->reg_set = cfg->set;
+ 		gc->set = bgpio_set_set;
+ 		gc->set_multiple = bgpio_set_multiple_set;
+-	} else if (cfg->flags & BGPIOF_NO_OUTPUT) {
++	} else if (cfg->flags & GPIO_GENERIC_NO_OUTPUT) {
+ 		gc->set = bgpio_set_none;
+ 		gc->set_multiple = NULL;
+ 	} else {
+@@ -562,8 +562,8 @@ static int bgpio_setup_io(struct gpio_generic_chip *chip,
+ 		gc->set_multiple = bgpio_set_multiple;
+ 	}
+ 
+-	if (!(cfg->flags & BGPIOF_UNREADABLE_REG_SET) &&
+-	    (cfg->flags & BGPIOF_READ_OUTPUT_REG_SET)) {
++	if (!(cfg->flags & GPIO_GENERIC_UNREADABLE_REG_SET) &&
++	    (cfg->flags & GPIO_GENERIC_READ_OUTPUT_REG_SET)) {
+ 		gc->get = bgpio_get_set;
+ 		if (!chip->be_bits)
+ 			gc->get_multiple = bgpio_get_set_multiple;
+@@ -593,19 +593,19 @@ static int bgpio_setup_direction(struct gpio_generic_chip *chip,
+ 	if (cfg->dirout || cfg->dirin) {
+ 		chip->reg_dir_out = cfg->dirout;
+ 		chip->reg_dir_in = cfg->dirin;
+-		if (cfg->flags & BGPIOF_NO_SET_ON_INPUT)
++		if (cfg->flags & GPIO_GENERIC_NO_SET_ON_INPUT)
+ 			gc->direction_output = bgpio_dir_out_dir_first;
+ 		else
+ 			gc->direction_output = bgpio_dir_out_val_first;
+ 		gc->direction_input = bgpio_dir_in;
+ 		gc->get_direction = bgpio_get_dir;
+ 	} else {
+-		if (cfg->flags & BGPIOF_NO_OUTPUT)
++		if (cfg->flags & GPIO_GENERIC_NO_OUTPUT)
+ 			gc->direction_output = bgpio_dir_out_err;
+ 		else
+ 			gc->direction_output = bgpio_simple_dir_out;
+ 
+-		if (cfg->flags & BGPIOF_NO_INPUT)
++		if (cfg->flags & GPIO_GENERIC_NO_INPUT)
+ 			gc->direction_input = bgpio_dir_in_err;
+ 		else
+ 			gc->direction_input = bgpio_simple_dir_in;
+@@ -654,7 +654,7 @@ int gpio_generic_chip_init(struct gpio_generic_chip *chip,
+ 	gc->label = dev_name(dev);
+ 	gc->base = -1;
+ 	gc->request = bgpio_request;
+-	chip->be_bits = !!(flags & BGPIOF_BIG_ENDIAN);
++	chip->be_bits = !!(flags & GPIO_GENERIC_BIG_ENDIAN);
+ 
+ 	ret = gpiochip_get_ngpios(gc, dev);
+ 	if (ret)
+@@ -665,7 +665,7 @@ int gpio_generic_chip_init(struct gpio_generic_chip *chip,
+ 		return ret;
+ 
+ 	ret = bgpio_setup_accessors(dev, chip,
+-				    flags & BGPIOF_BIG_ENDIAN_BYTE_ORDER);
++				    flags & GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -673,7 +673,7 @@ int gpio_generic_chip_init(struct gpio_generic_chip *chip,
+ 	if (ret)
+ 		return ret;
+ 
+-	if (flags & BGPIOF_PINCTRL_BACKEND) {
++	if (flags & GPIO_GENERIC_PINCTRL_BACKEND) {
+ 		chip->pinctrl = true;
+ 		/* Currently this callback is only used for pincontrol */
+ 		gc->free = gpiochip_generic_free;
+@@ -681,17 +681,17 @@ int gpio_generic_chip_init(struct gpio_generic_chip *chip,
+ 
+ 	chip->sdata = chip->read_reg(chip->reg_dat);
+ 	if (gc->set == bgpio_set_set &&
+-			!(flags & BGPIOF_UNREADABLE_REG_SET))
++			!(flags & GPIO_GENERIC_UNREADABLE_REG_SET))
+ 		chip->sdata = chip->read_reg(chip->reg_set);
+ 
+-	if (flags & BGPIOF_UNREADABLE_REG_DIR)
++	if (flags & GPIO_GENERIC_UNREADABLE_REG_DIR)
+ 		chip->dir_unreadable = true;
+ 
+ 	/*
+ 	 * Inspect hardware to find initial direction setting.
+ 	 */
+ 	if ((chip->reg_dir_out || chip->reg_dir_in) &&
+-	    !(flags & BGPIOF_UNREADABLE_REG_DIR)) {
++	    !(flags & GPIO_GENERIC_UNREADABLE_REG_DIR)) {
+ 		if (chip->reg_dir_out)
+ 			chip->sdir = chip->read_reg(chip->reg_dir_out);
+ 		else if (chip->reg_dir_in)
+@@ -787,10 +787,10 @@ static int bgpio_pdev_probe(struct platform_device *pdev)
+ 		return -ENOMEM;
+ 
+ 	if (device_is_big_endian(dev))
+-		flags |= BGPIOF_BIG_ENDIAN_BYTE_ORDER;
++		flags |= GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER;
+ 
+ 	if (device_property_read_bool(dev, "no-output"))
+-		flags |= BGPIOF_NO_OUTPUT;
++		flags |= GPIO_GENERIC_NO_OUTPUT;
+ 
+ 	config = (struct gpio_generic_chip_config) {
+ 		.dev = dev,
+diff --git a/drivers/gpio/gpio-mpc8xxx.c b/drivers/gpio/gpio-mpc8xxx.c
+index a2a83afb41bbb9..bfe828734ee1ba 100644
+--- a/drivers/gpio/gpio-mpc8xxx.c
++++ b/drivers/gpio/gpio-mpc8xxx.c
+@@ -350,13 +350,13 @@ static int mpc8xxx_probe(struct platform_device *pdev)
+ 		.sz = 4,
+ 		.dat = mpc8xxx_gc->regs + GPIO_DAT,
+ 		.dirout = mpc8xxx_gc->regs + GPIO_DIR,
+-		.flags = BGPIOF_BIG_ENDIAN
++		.flags = GPIO_GENERIC_BIG_ENDIAN
+ 	};
+ 
+ 	if (device_property_read_bool(dev, "little-endian")) {
+ 		dev_dbg(dev, "GPIO registers are LITTLE endian\n");
+ 	} else {
+-		config.flags |= BGPIOF_BIG_ENDIAN_BYTE_ORDER;
++		config.flags |= GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER;
+ 		dev_dbg(dev, "GPIO registers are BIG endian\n");
+ 	}
+ 
+diff --git a/drivers/gpio/gpio-mt7621.c b/drivers/gpio/gpio-mt7621.c
+index e7bb9b2cd6cf32..91230be5158790 100644
+--- a/drivers/gpio/gpio-mt7621.c
++++ b/drivers/gpio/gpio-mt7621.c
+@@ -242,7 +242,7 @@ mediatek_gpio_bank_probe(struct device *dev, int bank)
+ 		.set = set,
+ 		.clr = ctrl,
+ 		.dirout = diro,
+-		.flags = BGPIOF_NO_SET_ON_INPUT,
++		.flags = GPIO_GENERIC_NO_SET_ON_INPUT,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(&rg->chip, &config);
+diff --git a/drivers/gpio/gpio-mxc.c b/drivers/gpio/gpio-mxc.c
+index 433cbadc3a4cc6..52060b3ec7458a 100644
+--- a/drivers/gpio/gpio-mxc.c
++++ b/drivers/gpio/gpio-mxc.c
+@@ -481,7 +481,7 @@ static int mxc_gpio_probe(struct platform_device *pdev)
+ 	config.dat = port->base + GPIO_PSR;
+ 	config.set = port->base + GPIO_DR;
+ 	config.dirout = port->base + GPIO_GDIR;
+-	config.flags = BGPIOF_READ_OUTPUT_REG_SET;
++	config.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET;
+ 
+ 	err = gpio_generic_chip_init(&port->gen_gc, &config);
+ 	if (err)
+diff --git a/drivers/gpio/gpio-rda.c b/drivers/gpio/gpio-rda.c
+index fb479d13eb01a4..7bbc6f0ce4c8a7 100644
+--- a/drivers/gpio/gpio-rda.c
++++ b/drivers/gpio/gpio-rda.c
+@@ -245,7 +245,7 @@ static int rda_gpio_probe(struct platform_device *pdev)
+ 		.clr = rda_gpio->base + RDA_GPIO_CLR,
+ 		.dirout = rda_gpio->base + RDA_GPIO_OEN_SET_OUT,
+ 		.dirin = rda_gpio->base + RDA_GPIO_OEN_SET_IN,
+-		.flags = BGPIOF_READ_OUTPUT_REG_SET,
++		.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(&rda_gpio->chip, &config);
+diff --git a/drivers/gpio/gpio-realtek-otto.c b/drivers/gpio/gpio-realtek-otto.c
+index 37b4f73771e651..de527f4fc6c2ad 100644
+--- a/drivers/gpio/gpio-realtek-otto.c
++++ b/drivers/gpio/gpio-realtek-otto.c
+@@ -395,7 +395,7 @@ static int realtek_gpio_probe(struct platform_device *pdev)
+ 		ctrl->bank_write = realtek_gpio_bank_write;
+ 		ctrl->line_imr_pos = realtek_gpio_line_imr_pos;
+ 	} else {
+-		gen_gc_flags = BGPIOF_BIG_ENDIAN_BYTE_ORDER;
++		gen_gc_flags = GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER;
+ 		ctrl->bank_read = realtek_gpio_bank_read_swapped;
+ 		ctrl->bank_write = realtek_gpio_bank_write_swapped;
+ 		ctrl->line_imr_pos = realtek_gpio_line_imr_pos_swapped;
+diff --git a/drivers/gpio/gpio-sifive.c b/drivers/gpio/gpio-sifive.c
+index 2ced87ffd3bbf2..94ef2efbd14f57 100644
+--- a/drivers/gpio/gpio-sifive.c
++++ b/drivers/gpio/gpio-sifive.c
+@@ -223,7 +223,7 @@ static int sifive_gpio_probe(struct platform_device *pdev)
+ 		.set = chip->base + SIFIVE_GPIO_OUTPUT_VAL,
+ 		.dirout = chip->base + SIFIVE_GPIO_OUTPUT_EN,
+ 		.dirin = chip->base + SIFIVE_GPIO_INPUT_EN,
+-		.flags = BGPIOF_READ_OUTPUT_REG_SET,
++		.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET,
+ 	};
+ 
+ 	ret = gpio_generic_chip_init(&chip->gen_gc, &config);
+diff --git a/drivers/gpio/gpio-spacemit-k1.c b/drivers/gpio/gpio-spacemit-k1.c
+index a0af23f732819b..eb66a15c002fc3 100644
+--- a/drivers/gpio/gpio-spacemit-k1.c
++++ b/drivers/gpio/gpio-spacemit-k1.c
+@@ -197,7 +197,8 @@ static int spacemit_gpio_add_bank(struct spacemit_gpio *sg,
+ 		.clr = clr,
+ 		.dirout = dirout,
+ 		.dirin = dirin,
+-		.flags = BGPIOF_UNREADABLE_REG_SET | BGPIOF_UNREADABLE_REG_DIR,
++		.flags = GPIO_GENERIC_UNREADABLE_REG_SET |
++			 GPIO_GENERIC_UNREADABLE_REG_DIR,
+ 	};
+ 
+ 	/* This registers 32 GPIO lines per bank */
+diff --git a/drivers/gpio/gpio-vf610.c b/drivers/gpio/gpio-vf610.c
+index f3590db72b1412..aa8586d8a787f0 100644
+--- a/drivers/gpio/gpio-vf610.c
++++ b/drivers/gpio/gpio-vf610.c
+@@ -296,14 +296,14 @@ static int vf610_gpio_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	gc = &port->chip.gc;
+-	flags = BGPIOF_PINCTRL_BACKEND;
++	flags = GPIO_GENERIC_PINCTRL_BACKEND;
+ 	/*
+ 	 * We only read the output register for current value on output
+ 	 * lines if the direction register is available so we can switch
+ 	 * direction.
+ 	 */
+ 	if (port->sdata->have_paddr)
+-		flags |= BGPIOF_READ_OUTPUT_REG_SET;
++		flags |= GPIO_GENERIC_READ_OUTPUT_REG_SET;
+ 
+ 	config = (struct gpio_generic_chip_config) {
+ 		.dev = dev,
+diff --git a/drivers/pinctrl/nuvoton/pinctrl-npcm7xx.c b/drivers/pinctrl/nuvoton/pinctrl-npcm7xx.c
+index c2ca71ebb9736d..10765f19b48b61 100644
+--- a/drivers/pinctrl/nuvoton/pinctrl-npcm7xx.c
++++ b/drivers/pinctrl/nuvoton/pinctrl-npcm7xx.c
+@@ -1842,7 +1842,7 @@ static int npcm7xx_gpio_of(struct npcm7xx_pinctrl *pctrl)
+ 			.dat = pctrl->gpio_bank[id].base + NPCM7XX_GP_N_DIN,
+ 			.set = pctrl->gpio_bank[id].base + NPCM7XX_GP_N_DOUT,
+ 			.dirin = pctrl->gpio_bank[id].base + NPCM7XX_GP_N_IEM,
+-			.flags = BGPIOF_READ_OUTPUT_REG_SET,
++			.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET,
+ 		};
+ 
+ 		ret = gpio_generic_chip_init(&pctrl->gpio_bank[id].chip, &config);
+diff --git a/drivers/pinctrl/nuvoton/pinctrl-npcm8xx.c b/drivers/pinctrl/nuvoton/pinctrl-npcm8xx.c
+index 0f155a685bbae7..1005b464a46964 100644
+--- a/drivers/pinctrl/nuvoton/pinctrl-npcm8xx.c
++++ b/drivers/pinctrl/nuvoton/pinctrl-npcm8xx.c
+@@ -2335,7 +2335,7 @@ static int npcm8xx_gpio_fw(struct npcm8xx_pinctrl *pctrl)
+ 			.dat = pctrl->gpio_bank[id].base + NPCM8XX_GP_N_DIN,
+ 			.set = pctrl->gpio_bank[id].base + NPCM8XX_GP_N_DOUT,
+ 			.dirin = pctrl->gpio_bank[id].base + NPCM8XX_GP_N_IEM,
+-			.flags = BGPIOF_READ_OUTPUT_REG_SET,
++			.flags = GPIO_GENERIC_READ_OUTPUT_REG_SET,
+ 		};
+ 
+ 		ret = gpio_generic_chip_init(&pctrl->gpio_bank[id].chip, &config);
+diff --git a/drivers/pinctrl/nuvoton/pinctrl-wpcm450.c b/drivers/pinctrl/nuvoton/pinctrl-wpcm450.c
+index 4dd8a3daa83e44..c575949e42e67b 100644
+--- a/drivers/pinctrl/nuvoton/pinctrl-wpcm450.c
++++ b/drivers/pinctrl/nuvoton/pinctrl-wpcm450.c
+@@ -1061,7 +1061,7 @@ static int wpcm450_gpio_register(struct platform_device *pdev,
+ 			set = pctrl->gpio_base + bank->dataout;
+ 			dirout = pctrl->gpio_base + bank->cfg0;
+ 		} else {
+-			flags = BGPIOF_NO_OUTPUT;
++			flags = GPIO_GENERIC_NO_OUTPUT;
+ 		}
+ 
+ 		config = (typeof(config)){
+diff --git a/drivers/pinctrl/stm32/pinctrl-stm32-hdp.c b/drivers/pinctrl/stm32/pinctrl-stm32-hdp.c
+index dea49b9aabf2ae..971959a75b0c29 100644
+--- a/drivers/pinctrl/stm32/pinctrl-stm32-hdp.c
++++ b/drivers/pinctrl/stm32/pinctrl-stm32-hdp.c
+@@ -648,7 +648,7 @@ static int stm32_hdp_probe(struct platform_device *pdev)
+ 		.dat = hdp->base + HDP_GPOVAL,
+ 		.set = hdp->base + HDP_GPOSET,
+ 		.clr = hdp->base + HDP_GPOCLR,
+-		.flags = BGPIOF_NO_INPUT,
++		.flags = GPIO_GENERIC_NO_INPUT,
+ 	};
+ 
+ 	err = gpio_generic_chip_init(&hdp->gpio_chip, &config);
+diff --git a/include/linux/gpio/driver.h b/include/linux/gpio/driver.h
+index 9b14fd20f13eee..e62622e42cad37 100644
+--- a/include/linux/gpio/driver.h
++++ b/include/linux/gpio/driver.h
+@@ -684,15 +684,15 @@ int gpiochip_populate_parent_fwspec_fourcell(struct gpio_chip *gc,
+ 
+ #endif /* CONFIG_IRQ_DOMAIN_HIERARCHY */
+ 
+-#define BGPIOF_BIG_ENDIAN		BIT(0)
+-#define BGPIOF_UNREADABLE_REG_SET	BIT(1) /* reg_set is unreadable */
+-#define BGPIOF_UNREADABLE_REG_DIR	BIT(2) /* reg_dir is unreadable */
+-#define BGPIOF_BIG_ENDIAN_BYTE_ORDER	BIT(3)
+-#define BGPIOF_READ_OUTPUT_REG_SET	BIT(4) /* reg_set stores output value */
+-#define BGPIOF_NO_OUTPUT		BIT(5) /* only input */
+-#define BGPIOF_NO_SET_ON_INPUT		BIT(6)
+-#define BGPIOF_PINCTRL_BACKEND		BIT(7) /* Call pinctrl direction setters */
+-#define BGPIOF_NO_INPUT			BIT(8) /* only output */
++#define GPIO_GENERIC_BIG_ENDIAN			BIT(0)
++#define GPIO_GENERIC_UNREADABLE_REG_SET		BIT(1) /* reg_set is unreadable */
++#define GPIO_GENERIC_UNREADABLE_REG_DIR		BIT(2) /* reg_dir is unreadable */
++#define GPIO_GENERIC_BIG_ENDIAN_BYTE_ORDER	BIT(3)
++#define GPIO_GENERIC_READ_OUTPUT_REG_SET	BIT(4) /* reg_set stores output value */
++#define GPIO_GENERIC_NO_OUTPUT			BIT(5) /* only input */
++#define GPIO_GENERIC_NO_SET_ON_INPUT		BIT(6)
++#define GPIO_GENERIC_PINCTRL_BACKEND		BIT(7) /* Call pinctrl direction setters */
++#define GPIO_GENERIC_NO_INPUT			BIT(8) /* only output */
+ 
+ #ifdef CONFIG_GPIOLIB_IRQCHIP
+ int gpiochip_irqchip_add_domain(struct gpio_chip *gc,
