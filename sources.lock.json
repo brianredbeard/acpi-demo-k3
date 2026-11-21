@@ -34,7 +34,7 @@
         },
         {
           "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
-          "sha256": "7ebfbd2466b7350348d155b7b7a02ffdab75df73e5fba4cabe6814ea08394961"
+          "sha256": "1382a00b9cc6d1abb8258e3cafc49f0b3cb474dc92eb393a447d7e568036415a"
         }
       ],
       "configs": [
