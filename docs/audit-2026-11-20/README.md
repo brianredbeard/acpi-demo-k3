@@ -1,14 +1,16 @@
 # K3 independent ACPI/UEFI audit — 2026-11-20
 
-**Release decision: HOLD.** The available implementation does not support a defensible claim of complete DT equivalence, generic upstream Linux interoperability, or hardware-qualified ACPI/UEFI compliance. This review found reproducible AML defects, incomplete clock-consumer and resource-ownership contracts, reliance on local Linux changes, runtime-service defects/risks, and a split between maintained source and locked release inputs. No new target hardware tests were executed. Historical successful boots are useful evidence for their particular configurations, not release qualification of either audited source state.
+> **Current-state amendment (9b95f32):** [Recovery amendment](RECOVERY-AMENDMENT.md) distinguishes reported v26 hardware recovery from pending P1 ESOS work. Current manifest validation fails and the repository suite has two errors; original PASS results below belong to d3daf37. ACPI/platform inputs are unchanged.
+
+**Release decision: HOLD.** The available implementation does not support a defensible claim of complete DT equivalence, generic upstream Linux interoperability, or hardware-qualified ACPI/UEFI compliance. This review found reproducible AML defects, incomplete clock-consumer and resource-ownership contracts, reliance on local Linux changes, runtime-service defects/risks, and a split between maintained source and locked release inputs. No target hardware tests were executed by this audit. The subsequent team-reported v26 recovery is incorporated separately; it does not qualify the pending P1 series. Historical successful boots are useful evidence for their particular configurations, not release qualification of either audited source state.
 
 This is an evidence-backed static audit and qualification package, **not a completed silicon compliance certification**. The inventories cover every node/property in the available flattened DT inputs, but many rows remain unresolved. The normative register is an applicability/closure register, not an exhaustive transcription of all specifications. Full historical bootloader modifications, exact target board revision, full deployed kernel source/configuration, immutable firmware image identity and installed tables remain unavailable or unattributed. Those limitations prevent completing the requested proof; they are explicit release blockers rather than silent exclusions.
 
-## What was audited
+## Original audited snapshot (retained)
 
 | Evidence | Identity / meaning |
 |---|---|
-| Integration repository | `main`, `d3daf37`; initial tree clean. Only audit artifacts added by this review. |
+| Integration repository | Original `d3daf37`; amendment reviews `9b95f32`. See the amendment for current validation failure and separately reported v26 recovery. |
 | Locked platforms | `8e686e13d9f76e9acc478fa03bf1ba74f06517a2` plus all twelve manifest patches, reconstructed under `/tmp/k3-independent-audit/platforms`. |
 | Maintained platforms | User committed UFS during review. Final clean HEAD `a2a647a5173ee10f837b6e18eadf2b7313e14f15`, parent `a56c27ff` restores `_LPI`. Both DSDTs compiled and tested separately. |
 | Export difference | Locked DSDT has 27 devices and no UFS/_LPI; maintained DSDT has 28 devices with UFS and `_LPI`. The commit is present; the integration manifest/export has not incorporated it. |
@@ -32,7 +34,7 @@ All path prefixes and line references in the subsystem reports identify the sour
 | C normative compliance | `standards.md`, `standards.csv` |
 | D dependencies | `clock-dependencies.csv`, `clocks.dot`, `dt-dependencies.csv`, `dt-dependencies.dot`, `clocks-drivers.md` |
 | E interrupts/MSI/PCI | `interrupt-routes.csv`, `interrupts.dot`, `interrupts-pcie.md` |
-| F hardware regression | `regression.csv`;54 procedures, hardware unexecuted; REG-29 offline AML subset executed |
+| F hardware regression | `regression.csv`;56 procedures; auditor hardware tests unexecuted, v26 team reports linked separately; REG-29 offline AML subset executed |
 | G defects / H proposed fixes | `findings.csv`, detailed subsystem reports, sequence below |
 | I continuous validation | `VALIDATION.md`, executable Python checks, retained command logs and fixed-table rebuild recipe |
 | UEFI boot/runtime | `uefi-runtime.md` |
@@ -86,4 +88,4 @@ No implementation code was changed.
 | Required I/O/DMA regression | **NOT TESTED** |
 | Deviations/test limitations documented | **PASS for this audit package**; product release waivers remain unapproved |
 
-The appropriate next milestone is closure of the source/ownership/interface findings and an attributable hardware qualification run. A clean compiler result and existing Linux login do not change this HOLD decision.
+The recovered v26 composition is the reported working rollback baseline; P1 promotion requires the new clock-service and verified-source gates. The appropriate next milestone is closure of the source/ownership/interface findings and an attributable hardware qualification run. A clean compiler result and existing Linux login do not change this HOLD decision.

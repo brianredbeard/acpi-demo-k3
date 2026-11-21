@@ -1,0 +1,73 @@
+EE...warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmp6_1kzepp/failed/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at ef6e107 base
+error: No valid patches in input (allow with "--allow-empty")
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpkynufnj9/snapshot/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 1609a03 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpjjdx_ufs/cached/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 1609a03 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpmienp_4e/nested/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 1609a03 base
+Cloning into '/tmp/tmpmienp_4e/nested/main/components/lite'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 1609a03 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+Cloning into '/tmp/tmpx2dyns0_/prepared/main'...
+warning: templates not found in /Users/bharrington/.config/git/template
+done.
+HEAD is now at 1609a03 base
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+.warning: templates not found in /Users/bharrington/.config/git/template
+..
+======================================================================
+ERROR: test_build_failure_record (test_build_esos.BuildTests.test_build_failure_record)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/tests/test_build_esos.py", line 65, in test_build_failure_record
+    self.exercise(fail=True)
+    ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/tests/test_build_esos.py", line 46, in exercise
+    build_esos.build(lock, root / 'out', tools / 'python', tools, 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/build_esos.py", line 33, in build
+    data = meta.validate(lock)
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/meta.py", line 58, in validate
+    raise ValueError(f'hash mismatch: {item["file"]}')
+ValueError: hash mismatch: patches/esos/0007-k3-domain-ownership-p1.patch
+
+======================================================================
+ERROR: test_build_order_and_evidence (test_build_esos.BuildTests.test_build_order_and_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/tests/test_build_esos.py", line 62, in test_build_order_and_evidence
+    self.exercise()
+    ~~~~~~~~~~~~~^^
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/tests/test_build_esos.py", line 48, in exercise
+    build_esos.build(lock, root / 'out', tools / 'python', tools, 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/build_esos.py", line 33, in build
+    data = meta.validate(lock)
+  File "/home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/acpi-demo-k3/meta.py", line 58, in validate
+    raise ValueError(f'hash mismatch: {item["file"]}')
+ValueError: hash mismatch: patches/esos/0007-k3-domain-ownership-p1.patch
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.973s
+
+FAILED (errors=2)

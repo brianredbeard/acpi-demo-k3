@@ -1,0 +1,8 @@
+{
+  "command": [
+    "python3",
+    "meta.py",
+    "validate"
+  ],
+  "exit_code": 1
+}

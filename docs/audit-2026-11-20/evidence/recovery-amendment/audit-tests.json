@@ -1,0 +1,13 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "docs/audit-2026-11-20",
+    "-p",
+    "test_*.py"
+  ],
+  "exit_code": 0
+}

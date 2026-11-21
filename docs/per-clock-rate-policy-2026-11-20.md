@@ -81,3 +81,56 @@ Evidence chain:
   every prior cycle skipped), then the rest of the regression.
   The clock-service registration in the P1 patch series is the
   prime suspect; the specific hunk is not yet identified.
+
+## Patch walk results (2026-11-21): 0005 is the clock-service killer
+
+Walk step 1 (v12-proven 0001-0004 + 0005 only, via build_esos.py,
+one variable): the RPMI transport dies at boot (shmem-mbox -12,
+MPXY unavailable, empty Linux clock tree, deny probe never
+reaches firmware). IDENTICAL signature to every v20+ failure.
+
+CONCLUSION: patch 0005 (the CCU transposed-field fix) is the
+patch that has broken the clock service — and the whole RPMI
+transport — since v20. It was never hardware-verified before
+landing in the v20 manifest (the v20 cycle checked deny+UFS,
+both of which pass without the clock service, and never the
+clock tree).
+
+Static analysis so far: the macro swap (axi_clk from
+DIV_FC_MUX_GATE to the gate-less DIV_FC_MUX) and the field
+swaps compile cleanly and are structurally sound on host mocks
+(the initializer repro shows identical shape, NULL-gate handled
+by the framework's 'if (!gate)' guards). The kill is in the
+RUNTIME init walk of the changed tables — root cause not yet
+identified; reproducing the CCU init walk on the host (mocked
+framework, real tables) is the identified test gap.
+
+THE TEST GAP (the reason this shipped broken): the host harness
+covers the service callbacks, the ownership model, and the build
+— nothing executes the CCU driver init against the patched clock
+tables. That is the exact layer 0005 changed.
+
+## Verified-on-hardware state after the walk (the honest P1/P2 ledger)
+
+P0 (all hardware-qualified, live on the v26 recovery image):
+- OpenSBI explicit dispatch, genuine type-0 WFI, error
+  propagation, rejection semantics — v16 cycle
+- _LPI (WFI + SBI_WFI states) — v18 cycle
+- UFS with true sys1clk (clocks resolve: zero fallback
+  warnings) + the RPMI clock service itself (0001-0004) — v12
+  composition, re-verified on v26
+
+P1 (host-qualified; NOT in the flashed firmware):
+- The ownership model + sequencer + policy (patches 0007
+  content + the policy): 64-assertion locked-source suite
+- The RPMI-routed gate (OpenSBI 0x11000000 routing): hardware-
+  exercised in the v21-v23 cycles but only alongside the broken
+  0005; re-qualification requires the 0005 fix first
+- Patches 0005/0006: NOT hardware-verified; 0005 kills the boot
+
+P2: unstarted (device-domain ops, CPPC backend, EC coordination,
+system suspend) — all blocked on the P1 re-landing.
+
+RECOVERY: the board runs v26 (v12 vendor-equivalent ESOS with
+patches 0001-0004 + v21g OpenSBI + v19 EDK2) — clocks at truth
+rates, full regression green, reboot clean.

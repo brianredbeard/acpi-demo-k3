@@ -12,5 +12,7 @@
     "NOT_APPLICABLE_robustness": 2
   },
   "hardware_tests_executed": 0,
-  "release_decision": "HOLD"
+  "release_decision": "HOLD",
+  "scope": "Original d3daf37 audit; historical results retained",
+  "current_amendment": "recovery-amendment/summary.json"
 }

@@ -1,0 +1,104 @@
+{
+    "schema": 1,
+    "release": "pico-acpi-v26-recovery-20261121",
+    "board": "pico-itx",
+    "boot_prefix_sha256": [
+        "e39b5183df97975be468b236e18db2e2fb8d9f7a81b1da76422ea5b0955c0c1e",
+        "6db83f854c56634c8712d48aedbce9b5ed53086d76ec05bf0e79d1a9d853065c"
+    ],
+    "distribution_status": "local-development; firmware redistribution review pending",
+    "installer_qualification": "host simulations only; combined installer hardware test pending",
+    "firmware_qualification": "RECOVERY: vendor v12 ESOS + v21g OpenSBI + v19 EDK2. The v14-v16-era proven composition with the newest qualified OpenSBI/EDK2.",
+    "files": {
+        "fsbl": {
+            "path": "payloads/fsbl.bin",
+            "size": 475136,
+            "sha256": "92a754f8d214971ca2ac81aa2592a636de70725879e803c1b23067eb3738bfbb"
+        },
+        "agent": {
+            "path": "payloads/agent.bin",
+            "size": 819578,
+            "sha256": "c191a2d0e294e02a43cc9a5349a9fbefab7d91e0ea8de6248c63725513cd3446"
+        },
+        "esos": {
+            "path": "payloads/esos.bin",
+            "size": 473475,
+            "sha256": "37533b27df72792152d01cff949e170d26946ab98e4b4128edd0532ff82b8fc4"
+        },
+        "opensbi": {
+            "path": "payloads/opensbi.bin",
+            "size": 393216,
+            "sha256": "537d30d776e385e4bed87e2f4cbeaa5cd3a2dd781dfa3e3b2632a364928a2293"
+        },
+        "edk2": {
+            "path": "payloads/edk2.bin",
+            "size": 3248128,
+            "sha256": "5a148ed6cba479ede2944764c2478f4fb5a919fe3c989c57b7727e527e06e4bb"
+        }
+    },
+    "provenance": {
+        "v26-recovery.json": {
+            "path": "provenance/v26-recovery.json",
+            "sha256": "c79de82d83d9a228ea5f70d5435afabe96bc19d732d86614a9e75fc16f03de9e"
+        },
+        "opensbi-provenance.json": {
+            "path": "provenance/opensbi-provenance.json",
+            "sha256": "c86f9cc8dc4e80880d41071034b136a7bf3808467538c70bb2e7f6479bc216ec"
+        },
+        "esos-v10-packager.py": {
+            "path": "provenance/esos-v10-packager.py",
+            "sha256": "cd5dd99db35dd8084fdc3069822b0bf9e58e526afcf697f71699f54514f53b2f"
+        },
+        "esos-reset-handoff.patch": {
+            "path": "provenance/esos-reset-handoff.patch",
+            "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
+        },
+        "esos-qualification.json": {
+            "path": "provenance/esos-qualification.json",
+            "sha256": "9d53473c6039f81658983c2a70778d90c9f7f7d4af1cab5b3812a43a452e152c"
+        },
+        "esos-license.txt": {
+            "path": "provenance/esos-license.txt",
+            "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        },
+        "edk2-v9-changes.diff": {
+            "path": "provenance/edk2-v9-changes.diff",
+            "sha256": "44d07401e6465f6bf3a492902c1b097a25afc40b050923cd44bcb10acd934372"
+        },
+        "edk2-source-head.txt": {
+            "path": "provenance/edk2-source-head.txt",
+            "sha256": "127daaf113888d260ccc135426fec93e1911ea7c6eecb0ed61da40d0c1140baa"
+        },
+        "edk2-reset-library.patch": {
+            "path": "provenance/edk2-reset-library.patch",
+            "sha256": "78c8cb96640e7bcc86692129dad546046396bfe02878ef8f406ea51239b8201a"
+        },
+        "edk2-qualification.json": {
+            "path": "provenance/edk2-qualification.json",
+            "sha256": "0c6d96e89306c2f5abd556f5c1ee1342f041e428a963be640303e244286ad8ba"
+        },
+        "edk2-platforms-license.txt": {
+            "path": "provenance/edk2-platforms-license.txt",
+            "sha256": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80"
+        },
+        "edk2-maintained-series.patch": {
+            "path": "provenance/edk2-maintained-series.patch",
+            "sha256": "501e40b18df2cc46cd018e60059574aa06cc55e17525b1d0491b6190750f550a"
+        },
+        "edk2-license.txt": {
+            "path": "provenance/edk2-license.txt",
+            "sha256": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80"
+        },
+        "edk2-flash-verification.json": {
+            "path": "provenance/edk2-flash-verification.json",
+            "sha256": "227a0e6d37d074bfa87f8ded8bbad8d9711c7f8ad7970b904fc62c00e371cce8"
+        },
+        "edk2-build-manifest.json": {
+            "path": "provenance/edk2-build-manifest.json",
+            "sha256": "3df33f8fe9b5a1b7b92c3fc7fe2e1a0e98d2b9fbf5f3465dd5a688e7ad2baee8"
+        }
+    },
+    "fsbl_region_sha256": [
+        "28ee8f3965353a5865fc4e77d1741e432d2932743aa4a8de32a5f2dab9e917f5"
+    ]
+}

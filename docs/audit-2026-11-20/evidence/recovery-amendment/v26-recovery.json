@@ -1,0 +1,9 @@
+{
+  "cycle": "pico-acpi-v26-recovery-20261121",
+  "feature": "RECOVERY: return ESOS to the proven vendor v12 image",
+  "esos": "the v12 vendor image (sha256 37533b27...): the ONLY ESOS proven to serve the RPMI clock service on this board. Every ESOS build since v20 (the P1 patch series via build_esos.py AND every hand build) has served a dead/broken clock service — the v20 'working' cycle never actually verified the clock tree (deny+UFS both pass without it; UFS throughput does not depend on the RPMI clocks).",
+  "opensbi": "v21g (2f14c5c8): the P0-qualified binary — this composition (v12 ESOS + rebuilt OpenSBI) is the v14-v16 era combination, hardware-proven INCLUDING working clocks (the v16 boot-health check verified ufs_aclk 491.52MHz).",
+  "edk2": "v19 (5a148ed6): _LPI + UFS0.",
+  "test_plan": "1) Clock tree: the full consumer set at truth rates. 2) Full regression: deny (via the suspend gate? NO — the 0x11000000 routing requires the ESOS-side idle-state in the rcpu dtb which v12 lacks: expect ENOTSUPP/-2 from the routing's advertised-type check, which is CORRECT), P0 rejections, type-0, _LPI, UFS, reboot. 3) From this known-good base, the P1 work re-lands ONE CHANGE AT A TIME with the clock tree checked after each.",
+  "rollback": "this IS the rollback"
+}

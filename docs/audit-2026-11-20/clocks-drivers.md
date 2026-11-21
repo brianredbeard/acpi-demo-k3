@@ -1,5 +1,7 @@
 # Clock, reset, PHY, supply and Linux consumer audit — 2026-11-20
 
+> **Current-state amendment (9b95f32):** [Recovery amendment](RECOVERY-AMENDMENT.md) distinguishes reported v26 hardware recovery from pending P1 ESOS work. Current manifest validation fails and the repository suite has two errors; original PASS results below belong to d3daf37. ACPI/platform inputs are unchanged.
+
 This is a source audit, not a new hardware qualification. The pinned firmware publishes twelve physical RPMI clocks and one legacy stub. Publishing them does not wire them into the existing ACPI drivers. Most enabled ACPI peripherals still inherit firmware clock/reset/PHY state. The maintained firmware now includes UFS0, but the locked patch export still lacks it. This is an export lag, not missing maintained implementation.
 
 ## Source identity and scope
@@ -104,7 +106,7 @@ The locked DSDT contains no `_PR0`, `_PR3`, or inclusion of `Power.asl`. The nei
 
 The Pico DT explicitly declares always-on AUX 3.3 V and 5 V rails (`DT:k3-pico-itx.dts:37-50`), PMIC inputs/regulators (`:150-245`), QSPI supply (`:326`), PCIe supplies and combo-PHY lanes (`:368-395`), USB hub supply (`:417`), and USB PHY/role dependencies (`:421-483`). These have no equivalent rail/controller namespace in the pinned DSDT. Firmware-held supply state may be sufficient for boot, but actual voltage, wake retention and suspend/resume behavior remain unverified. The ledger preserves these missing dependencies rather than assuming a clock alone is enough.
 
-## Historical results and required qualification
+## Historical results and required qualification (updated by recovery amendment)
 
 `docs/rpmi-clock-qualification-2026-11-20.md` reports 13 enumerated clocks and hardware readback for an earlier qualified configuration. `docs/per-clock-rate-policy-2026-11-20.md:5-16` explicitly says v21f-v23 used an under-patched tree and UFS successes tolerated fallback. Its hardware-results section remains a placeholder. These are historical statements, not live evidence from this audit, and cannot certify the pinned build or dirty v24 policy.
 
@@ -193,3 +195,5 @@ python3 docs/audit-2026-11-20/clock_inventory.py \
 ```
 
 Use `--out` for an alternative output directory. ESOS and EDK roots must be reconstructed at the identities above; this script does not fetch/apply patches. The macro parser handles this audited source syntax, not arbitrary C preprocessing. It inventories candidate parents and raw DT declarations, not active gates or flattened status. For resolved DT relationships and effective board-node coverage, use the coordinating audit's `dt-dependencies.csv` (flattened Pico/COM graph); the raw clock ledger intentionally retains source definitions and their line numbers.
+
+The latest committed post-mortem supersedes the initial missing-patches/hand-build causal explanation: it reports clock-service failure since v20 and recovery with v12 ESOS. Thus neither UFS throughput nor a denied suspend licenses a clock-service PASS. The original thirteen-ID source graph is retained; the recovered seventeen-entry runtime clock tree needs names/IDs and consumer evidence before reconciliation. CLK-01 through CLK-06 remain source/interface findings, not assertions that the recovered board currently fails. See CLK-07 and REL-03/04 in the amendment.

@@ -1,0 +1,29 @@
+{
+  "reviewed_head": "9b95f32db905b47650b331c154c378dd2bc04aee",
+  "original_audit_head": "d3daf3750450cb42601294173203907c3e1e25eb",
+  "release_decision": "HOLD",
+  "recovery_hardware": "Team reports v26 success; no auditor hardware execution",
+  "bundle_manifest_entries_checked": 20,
+  "bundle_hash_status": "PASS",
+  "manifest_status": "FAIL",
+  "repository_tests": {
+    "run": 17,
+    "errors": 2,
+    "status": "FAIL"
+  },
+  "audit_tool_tests": {
+    "run": 7,
+    "status": "PASS"
+  },
+  "counts": {
+    "findings.csv": 23,
+    "regression.csv": 56
+  },
+  "original_inventory_scope": "Original DT/platform/ESOS declaration snapshots retained; not regenerated as recovered-v26 topology",
+  "new_findings": [
+    "REL-03",
+    "REL-04",
+    "CLK-07"
+  ],
+  "no_implementation_changes": true
+}

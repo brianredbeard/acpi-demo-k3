@@ -40,5 +40,7 @@
     "base": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
     "manifest_sha256": "a0ab30f9d02d739482812bc6304af11c960c3c12b6fc92416b15e30cc12dda7b",
     "patches": "all twelve manifest patches applied successfully"
-  }
+  },
+  "scope": "Original d3daf37 audit; historical results retained",
+  "current_amendment": "recovery-amendment/summary.json"
 }

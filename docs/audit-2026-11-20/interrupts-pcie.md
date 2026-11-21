@@ -1,5 +1,7 @@
 # Independent interrupt and PCIe audit — 2026-11-20
 
+> **Current-state amendment (9b95f32):** [Recovery amendment](RECOVERY-AMENDMENT.md) distinguishes reported v26 hardware recovery from pending P1 ESOS work. Current manifest validation fails and the repository suite has two errors; original PASS results below belong to d3daf37. ACPI/platform inputs are unchanged.
+
 Scope: static reconstructed shipping sources, DT, Linux consumers, manufacturer documentation, and already-recorded boot evidence. No hardware writes or new boot tests were performed. Severity denotes potential effect; confidence denotes evidential certainty, not hardware qualification.
 
 ## Source identities and notation

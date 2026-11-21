@@ -1,0 +1,16 @@
+{
+  "integration_head": "9b95f32db905b47650b331c154c378dd2bc04aee",
+  "manifest_sha256": "a0ab30f9d02d739482812bc6304af11c960c3c12b6fc92416b15e30cc12dda7b",
+  "patch0007": {
+    "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
+    "sha256": "7ebfbd2466b7350348d155b7b7a02ffdab75df73e5fba4cabe6814ea08394961",
+    "actual_sha256": "6c4bcf3ce26866ba21ce8a2c746876ebe5172f4bb3149cb7c0783cdc88abe897"
+  },
+  "maintained_platforms_head": "a2a647a5173ee10f837b6e18eadf2b7313e14f15",
+  "cached_fixture_manifest_sha256": "a0ab30f9d02d739482812bc6304af11c960c3c12b6fc92416b15e30cc12dda7b",
+  "cached_fixture_patch0007": {
+    "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
+    "sha256": "7ebfbd2466b7350348d155b7b7a02ffdab75df73e5fba4cabe6814ea08394961"
+  },
+  "fixture_policy": "test_k3_domain_ownership.py:build_fixture reuses existing C file without revalidating current manifest/patch hashes"
+}

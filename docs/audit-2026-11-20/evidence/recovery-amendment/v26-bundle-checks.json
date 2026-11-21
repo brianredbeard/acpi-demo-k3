@@ -1,0 +1,182 @@
+[
+  {
+    "group": "files",
+    "name": "fsbl",
+    "path": "/tmp/pico-acpi-v26/payloads/fsbl.bin",
+    "expected": "92a754f8d214971ca2ac81aa2592a636de70725879e803c1b23067eb3738bfbb",
+    "actual": "92a754f8d214971ca2ac81aa2592a636de70725879e803c1b23067eb3738bfbb",
+    "hash_match": true,
+    "size": 475136
+  },
+  {
+    "group": "files",
+    "name": "agent",
+    "path": "/tmp/pico-acpi-v26/payloads/agent.bin",
+    "expected": "c191a2d0e294e02a43cc9a5349a9fbefab7d91e0ea8de6248c63725513cd3446",
+    "actual": "c191a2d0e294e02a43cc9a5349a9fbefab7d91e0ea8de6248c63725513cd3446",
+    "hash_match": true,
+    "size": 819578
+  },
+  {
+    "group": "files",
+    "name": "esos",
+    "path": "/tmp/pico-acpi-v26/payloads/esos.bin",
+    "expected": "37533b27df72792152d01cff949e170d26946ab98e4b4128edd0532ff82b8fc4",
+    "actual": "37533b27df72792152d01cff949e170d26946ab98e4b4128edd0532ff82b8fc4",
+    "hash_match": true,
+    "size": 473475
+  },
+  {
+    "group": "files",
+    "name": "opensbi",
+    "path": "/tmp/pico-acpi-v26/payloads/opensbi.bin",
+    "expected": "537d30d776e385e4bed87e2f4cbeaa5cd3a2dd781dfa3e3b2632a364928a2293",
+    "actual": "537d30d776e385e4bed87e2f4cbeaa5cd3a2dd781dfa3e3b2632a364928a2293",
+    "hash_match": true,
+    "size": 393216
+  },
+  {
+    "group": "files",
+    "name": "edk2",
+    "path": "/tmp/pico-acpi-v26/payloads/edk2.bin",
+    "expected": "5a148ed6cba479ede2944764c2478f4fb5a919fe3c989c57b7727e527e06e4bb",
+    "actual": "5a148ed6cba479ede2944764c2478f4fb5a919fe3c989c57b7727e527e06e4bb",
+    "hash_match": true,
+    "size": 3248128
+  },
+  {
+    "group": "provenance",
+    "name": "v26-recovery.json",
+    "path": "/tmp/pico-acpi-v26/provenance/v26-recovery.json",
+    "expected": "c79de82d83d9a228ea5f70d5435afabe96bc19d732d86614a9e75fc16f03de9e",
+    "actual": "c79de82d83d9a228ea5f70d5435afabe96bc19d732d86614a9e75fc16f03de9e",
+    "hash_match": true,
+    "size": 1287
+  },
+  {
+    "group": "provenance",
+    "name": "opensbi-provenance.json",
+    "path": "/tmp/pico-acpi-v26/provenance/opensbi-provenance.json",
+    "expected": "c86f9cc8dc4e80880d41071034b136a7bf3808467538c70bb2e7f6479bc216ec",
+    "actual": "c86f9cc8dc4e80880d41071034b136a7bf3808467538c70bb2e7f6479bc216ec",
+    "hash_match": true,
+    "size": 1010
+  },
+  {
+    "group": "provenance",
+    "name": "esos-v10-packager.py",
+    "path": "/tmp/pico-acpi-v26/provenance/esos-v10-packager.py",
+    "expected": "cd5dd99db35dd8084fdc3069822b0bf9e58e526afcf697f71699f54514f53b2f",
+    "actual": "cd5dd99db35dd8084fdc3069822b0bf9e58e526afcf697f71699f54514f53b2f",
+    "hash_match": true,
+    "size": 4809
+  },
+  {
+    "group": "provenance",
+    "name": "esos-reset-handoff.patch",
+    "path": "/tmp/pico-acpi-v26/provenance/esos-reset-handoff.patch",
+    "expected": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65",
+    "actual": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65",
+    "hash_match": true,
+    "size": 26309
+  },
+  {
+    "group": "provenance",
+    "name": "esos-qualification.json",
+    "path": "/tmp/pico-acpi-v26/provenance/esos-qualification.json",
+    "expected": "9d53473c6039f81658983c2a70778d90c9f7f7d4af1cab5b3812a43a452e152c",
+    "actual": "9d53473c6039f81658983c2a70778d90c9f7f7d4af1cab5b3812a43a452e152c",
+    "hash_match": true,
+    "size": 7022
+  },
+  {
+    "group": "provenance",
+    "name": "esos-license.txt",
+    "path": "/tmp/pico-acpi-v26/provenance/esos-license.txt",
+    "expected": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "actual": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "hash_match": true,
+    "size": 11357
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-v9-changes.diff",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-v9-changes.diff",
+    "expected": "44d07401e6465f6bf3a492902c1b097a25afc40b050923cd44bcb10acd934372",
+    "actual": "44d07401e6465f6bf3a492902c1b097a25afc40b050923cd44bcb10acd934372",
+    "hash_match": true,
+    "size": 210200
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-source-head.txt",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-source-head.txt",
+    "expected": "127daaf113888d260ccc135426fec93e1911ea7c6eecb0ed61da40d0c1140baa",
+    "actual": "127daaf113888d260ccc135426fec93e1911ea7c6eecb0ed61da40d0c1140baa",
+    "hash_match": true,
+    "size": 41
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-reset-library.patch",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-reset-library.patch",
+    "expected": "78c8cb96640e7bcc86692129dad546046396bfe02878ef8f406ea51239b8201a",
+    "actual": "78c8cb96640e7bcc86692129dad546046396bfe02878ef8f406ea51239b8201a",
+    "hash_match": true,
+    "size": 5051
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-qualification.json",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-qualification.json",
+    "expected": "0c6d96e89306c2f5abd556f5c1ee1342f041e428a963be640303e244286ad8ba",
+    "actual": "0c6d96e89306c2f5abd556f5c1ee1342f041e428a963be640303e244286ad8ba",
+    "hash_match": true,
+    "size": 1028
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-platforms-license.txt",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-platforms-license.txt",
+    "expected": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+    "actual": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+    "hash_match": true,
+    "size": 2732
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-maintained-series.patch",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-maintained-series.patch",
+    "expected": "501e40b18df2cc46cd018e60059574aa06cc55e17525b1d0491b6190750f550a",
+    "actual": "501e40b18df2cc46cd018e60059574aa06cc55e17525b1d0491b6190750f550a",
+    "hash_match": true,
+    "size": 271751
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-license.txt",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-license.txt",
+    "expected": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+    "actual": "50ce20c9cfdb0e19ee34fe0a51fc0afe961f743697b068359ab2f862b494df80",
+    "hash_match": true,
+    "size": 2732
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-flash-verification.json",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-flash-verification.json",
+    "expected": "227a0e6d37d074bfa87f8ded8bbad8d9711c7f8ad7970b904fc62c00e371cce8",
+    "actual": "227a0e6d37d074bfa87f8ded8bbad8d9711c7f8ad7970b904fc62c00e371cce8",
+    "hash_match": true,
+    "size": 500
+  },
+  {
+    "group": "provenance",
+    "name": "edk2-build-manifest.json",
+    "path": "/tmp/pico-acpi-v26/provenance/edk2-build-manifest.json",
+    "expected": "3df33f8fe9b5a1b7b92c3fc7fe2e1a0e98d2b9fbf5f3465dd5a688e7ad2baee8",
+    "actual": "3df33f8fe9b5a1b7b92c3fc7fe2e1a0e98d2b9fbf5f3465dd5a688e7ad2baee8",
+    "hash_match": true,
+    "size": 2028
+  }
+]

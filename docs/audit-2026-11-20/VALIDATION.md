@@ -1,8 +1,10 @@
 # Executed validation and continuous qualification
 
-All commands below run from the integration repository root. Hardware procedures are in `regression.csv`; none were executed in this audit. Tools operate on copied tables or reconstructed source, not live controller registers.
+> **Current-state amendment (9b95f32):** [Recovery amendment](RECOVERY-AMENDMENT.md) distinguishes reported v26 hardware recovery from pending P1 ESOS work. Current manifest validation fails and the repository suite has two errors; original PASS results below belong to d3daf37. ACPI/platform inputs are unchanged.
 
-## Executed host results
+All commands below run from the integration repository root. At amended HEAD the first manifest check fails; do not proceed to build or flash around it. Fresh amendment logs are under evidence/recovery-amendment/. Hardware procedures are in `regression.csv`; none were executed in this audit. Tools operate on copied tables or reconstructed source, not live controller registers.
+
+## Original executed host results (d3daf37)
 
 | Command / check | Actual result | Evidence / limit |
 |---|---|---|

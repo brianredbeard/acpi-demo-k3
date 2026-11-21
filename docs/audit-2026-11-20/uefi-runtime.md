@@ -1,5 +1,7 @@
 # UEFI boot, runtime and memory ownership audit
 
+> **Current-state amendment (9b95f32):** [Recovery amendment](RECOVERY-AMENDMENT.md) distinguishes reported v26 hardware recovery from pending P1 ESOS work. Current manifest validation fails and the repository suite has two errors; original PASS results below belong to d3daf37. ACPI/platform inputs are unchanged.
+
 Date: 2026-11-20. This review performed source inspection only: no firmware deployment, board reset, variable write, disk write or SBI invocation. Every board regression remains NOT TESTED or BLOCKED. The coordinating audit subsequently executed the REG-29 offline AML subset; its FAIL and narrow PASS results are recorded in aml-results.json. Existing qualification claims are not results of this audit.
 
 Source roots: `P=/tmp/k3-independent-audit/platforms` is the canonical reconstruction of the integration series; `C=../edk2` is the neighboring vendored core files. Git lookup returns `0dbb43a7303de574dc3e98ddae7666b68cf664e0` from the enclosing K3-Ubuntu-Images repository, **not an EDK2 source revision**. C has neither an established upstream revision nor a manifest pin. The parent audit additionally identified maintained platforms HEAD `a2a647a5` (UFS addition) with parent `a56c27ff` (_LPI restoration); neither addition is in integration HEAD `d3daf37`'s twelve-patch reconstruction. Results below concern P+C unless explicitly noted. No booted binary is proven to match either state.

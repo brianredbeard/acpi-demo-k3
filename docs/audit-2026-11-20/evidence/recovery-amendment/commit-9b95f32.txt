@@ -1,0 +1,24 @@
+commit 9b95f32db905b47650b331c154c378dd2bc04aee
+Author:     Brian 'redbeard' Harrington <redbeard@dead-city.org>
+AuthorDate: Fri Nov 20 18:04:27 2026 -0800
+Commit:     Brian 'redbeard' Harrington <redbeard@dead-city.org>
+CommitDate: Fri Nov 20 18:04:27 2026 -0800
+
+    v26 recovery complete: board restored to the proven composition; clock-service breakage isolated to the P1 ESOS patch content
+    
+    The recovery (v12 vendor ESOS + v21g OpenSBI + v19 EDK2 — the
+    v14-v16 era composition): 17 clocks at truth rates (ufs_aclk
+    491.52MHz), ZERO UFS fallback warnings (clocks resolve for the
+    first time since v19), full regression green (P0/type-0/_LPI/
+    UFS 673MB/s/zero lockups), reboot clean.
+    
+    The post-mortem: the clock service has been dead since v20 (the
+    first P1 flash) — every cycle from v20-v23 verified deny+UFS,
+    which pass without the clock service, and never checked the
+    clock tree. The v24 arc's bisects were chasing a breakage older
+    than every suspect they tested. The breakage is in the P1 patch
+    series' clock-service registration (specific hunk unidentified).
+    
+    The P1 work stays committed in the repo (audit-fixed model +
+    sequencer + policy, 64-assertion locked-source suite); it re-
+    lands only via the one-patch-one-flash-one-clock-check protocol.
