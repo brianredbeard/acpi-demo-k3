@@ -119,3 +119,22 @@ SmbiosTlvOverrideDxe); PCD fallbacks carry deterministic
 build constants; arbitrary values only where no TLV source
 exists — never for hardware-truth fields (type/size/speed),
 which are corrected against the datasheet.
+
+## rhct4 acceptance + rhct5 (units fix) + the fastboot tool
+
+rhct4 verified live: LPDDR5 (0x23), 6400 MT/s, SMBIOS 3.7.0,
+all structures, regression green (17 clocks, 3 LPI, UFS).
+One residual: Size read 16 TiB — the ExtendedSize units are
+FIXED MB per spec 3.2 (bit31 is reserved-0, not a unit
+selector); my KB-unit assumption was wrong. Verified against
+the dmidecode 3.6 reader source. rhct5 = 16384 MB, staged +
+inspect-gated.
+
+Also landed (dd5b8ff): k3-enter-fastboot — the vendor's
+no-button path (ESOS sysreset LISTEN_ADDR 0xc087c000 /
+FLAG_FASTBOOT 0x1 -> PMIC nonvolatile flag -> BootROM USB).
+/dev/mem is STRICT_DEMEM-blocked, so the write goes through a
+one-shot kernel module (k3fb.ko, built against dbg1, deployed
+to /usr/local/lib on the board; wrapper at
+/usr/local/bin/k3-enter-fastboot). Source packaged in
+tools/k3-fastboot/.
