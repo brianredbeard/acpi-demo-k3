@@ -155,3 +155,50 @@ Round 4 acceptance: module loads at initrd time (~2-3s,
 dmesg "gpio_spacemit_k1: loading out-of-tree module" early),
 EC first probe binds (zero -517), kernel time back to ~12s
 (no deferred-wait block), clocks/LPI/UFS regression green.
+
+## Rounds 3-4: the dracut fight, and the cpio-append solution
+
+Round 3 verified set default worked (menu stars "K3 dbg1") but
+the module still loaded at 31.9s. Round 3's "add_drivers
+silently ignored" claim was itself unverified: unmkinitramfs
+does not exist on this Fedora-family board (Debian-only) and
+the zcat|cpio probe was reading only the early-cpio segment —
+the initrd is [plain early_cpio][zstd main archive], and zstd
+reads from byte 0 stop at the plain prologue. The 05:28 and
+05:48 dracut images genuinely lacked the module (verified by
+correct segment-aware listing: 852 .ko in main stream, zero
+gpio-spacemit).
+
+dracut-install works when invoked with the explicit kerneldir
+(-D /tmp/insttest --kerneldir /lib/modules/6.12.0-dbg1 -m
+gpio_spacemit_k1 installs both the .ko and its gpio-generic
+dep) — the dracut run itself produced no gpio lines in any
+log. Rather than keep fighting dracut's module machinery, the
+fix is now structural:
+
+THE INITRD APPEND (round 4, current image):
+  image = [dracut zstd archive][plain cpio append]
+The kernel's documented initramfs format supports exactly
+this concatenation. The append carries:
+  - gpio-spacemit-k1.ko + gpio-generic.ko (with depmod'd
+    modules.alias/dep/softdep overlay — the host db had NO
+    alias entries for this out-of-tree module until depmod
+    was run; that is also why udev coldplug loaded it so
+    late — it was loading via a manual rule, not modalias)
+  - sbin/modprobe -> usr/bin/kmod symlink (kmod is
+    multi-call; the initrd ships only usr/bin/kmod and
+    modprobe@.service which execs /sbin/modprobe)
+  - gpio-spacemit-early.service: sysinit.target.wants
+    oneshot, Before=systemd-udevd.service, ExecStart=
+    /sbin/modprobe -b gpio_spacemit_k1
+
+Also found and fixed while in here: the initrd carried an AMD
+x86 microcode early_cpio (~300KB AuthenticAMD.bin) — dracut's
+01-dist.conf early_microcode="yes" with /usr/lib/firmware/
+amd-ucode present. Meaningless on riscv64; disabled via
+/etc/dracut.conf.d/41-no-x86-microcode.conf (early_microcode
+="no") for future dracut runs.
+
+Round 5 acceptance: gpio_spacemit_k1 loads BEFORE udevd
+coldplug (sub-3s), EC first probe binds, kernel time back to
+~12s, initrd <11s, clocks 17, LPI 3 states.
