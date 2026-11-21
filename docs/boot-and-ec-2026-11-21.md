@@ -280,3 +280,32 @@ stops editing the gpioy entry, or the verification is handed
 over as a procedure (select "K3 dbg1 GPIO built-in (EC
 fix)" UNEDITED, let it boot, observe: EC at ~2s, no
 poweroff, login).
+
+## EC VERIFICATION COMPLETE (2026-11-21, final)
+
+The gpioy boot with all fixes in place:
+  [0.14s] spacemit-gpio: 128 pins (first probe wave)
+  [2.02s] cros_ec_espi: Chrome EC device REGISTERED
+  [0]     -517 defer lines
+  [3min+] soak: no poweroff, system healthy
+  Regression: 17 clocks, 3 LPI states, UFS true sys1clk,
+  /dev/cros_ec live.
+
+The boot that finally worked: vmlinuz-dbg1-gpioy (GPIO built-
+in, uname 6.12.0-dbg1-dbg1 — the double LOCALVERSION from
+building over an already-suffixed tree) + the module tree
+deployed under the kernel's real uname + the iscsi MODULE
+(not drivers) omitted from the initrd + the clean root=
+cmdline.
+
+The EC GpioInt arc (P2 item 3 diagnostic -> the fix):
+- Root cause: built-in EC consumer vs modular GPIO provider
+  — the defer window cannot bridge initramfs->udev
+- Fix: CONFIG_GPIO_SPACEMIT_K1=y + the immutable-irqchip +
+  quiesce patch (patches/kernel-gpio/, downstream-acpi
+  series, upstream-audited: nothing functionally missing,
+  two treewide commits deliberately not backported)
+- Boot side-effects fixed along the way: the initrd network
+  fossil (40s->10.6s), GRUB cleanup, SPCR console
+- The EC coordination boundary rescoped (Linux owns the EC;
+  ESOS gates EC-dependent domains + wake sources)
