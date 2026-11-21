@@ -38,7 +38,7 @@
         },
         {
           "file": "patches/esos/0008-ccu-k3-rate-change-policy.patch",
-          "sha256": "d3fdd4e6bb5800ed30628a047d18d91e7969176fb520d449c69c648d233a468c"
+          "sha256": "68dc9e5e482f0aca8fe6d8ea88b18b2d35ecaadfc122ee647e5585b3de048d3f"
         }
       ],
       "configs": [

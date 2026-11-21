@@ -147,7 +147,8 @@ struct clk_ops {
 };
 struct clk_init_data { const char *name; const struct clk_ops *ops; };
 struct clk_core { const char *name; const struct clk_ops *ops; };
-struct clk_hw { const struct clk_init_data *init; struct clk_core *core; };
+struct clk_hw { const struct clk_init_data *init; struct clk_core *core;     struct clk *clk;
+};
 static int stub_set_rate(void *hw, unsigned long r, unsigned long p){ (void)hw;(void)r;(void)p; return 0; }
 static int twsi_is_enabled_shim(void *hw){ (void)hw; return twsi.enabled; }
 static int sdh_is_enabled_shim(void *hw){ (void)hw; return sdh.enabled; }
@@ -212,11 +213,17 @@ int main(void){
     require(!strcmp(cfg.clk_data[0].name, "rproc_clk"), "id 0 stays the legacy stub");
     /* set_state contract */
     count=0; events[0]=0;
+    /* 0008 policy: twsi starts enabled (shim models firmware-boot
+     * state) — an enable-when-enabled is SUCCESS WITHOUT touching
+     * the hardware (idempotent gate) */
     require(spacemit_set_state(NULL, 1, RPMI_CLK_STATE_ENABLED)==RPMI_SUCCESS, "twsi0 enable succeeds");
-    require(twsi.enabled && events[0]=='E', "enable goes through clk_prepare_enable");
+    require(twsi.enabled && events[0]==0, "idempotent enable: no hardware call when already enabled");
     count=0; events[0]=0;
     require(spacemit_set_state(NULL, 1, RPMI_CLK_STATE_DISABLED)==RPMI_SUCCESS, "twsi0 disable succeeds");
     require(!twsi.enabled && events[0]=='D', "disable goes through clk_disable_unprepare");
+    count=0; events[0]=0;
+    require(spacemit_set_state(NULL, 1, RPMI_CLK_STATE_ENABLED)==RPMI_SUCCESS, "re-enable succeeds");
+    require(twsi.enabled && events[0]=='E', "enable after disable goes through clk_prepare_enable");
     require(spacemit_set_state(NULL, 13, RPMI_CLK_STATE_ENABLED)==RPMI_ERR_INVALID_PARAM,
             "out-of-range id rejected before hardware");
     require(spacemit_set_state(NULL, 0, RPMI_CLK_STATE_ENABLED)==RPMI_SUCCESS,
@@ -236,6 +243,8 @@ int main(void){
      * guarded; a NULL dereference here faults the controller. */
     { enum rpmi_clock_state st; rpmi_uint64_t rate;
       twsi.enabled = 1; reported_rate = 31400000;
+      /* 0008 policy: rate changes require allowlist qualification */
+      k3_clk_policies[1].rate_policy = K3_CLK_RATE_ALLOWED;
       require(spacemit_get_state_and_rate(NULL, 1, &st, &rate)==RPMI_SUCCESS, "state read ok");
       require(st==RPMI_CLK_STATE_ENABLED, "state read from hardware gate");
       /* gate readback is REAL: flip the hardware bit, read again */
@@ -326,6 +335,22 @@ int main(void){
       require(cfg.clk_data[9].clock_rate_array != arr,
               "placeholder array replaced");
     }
+    /* 0008 policy contract: a LOCKED clock's set_rate is DENIED
+     * even though the capability exists (allowlist gate) */
+    {
+        extern struct clk sdh;
+        rpmi_uint64_t nr2 = 0;
+        /* sdh (id 2) is gate-only: capability check rejects first */
+        require(spacemit_set_rate(NULL, 2, RPMI_CLK_RATE_MATCH_PLATFORM,
+                                  24000000, &nr2)==RPMI_ERR_NOTSUPP,
+                "gate-only clock: capability rejection precedes policy");
+        /* twsi (id 1) with capability but LOCKED policy -> DENIED */
+        k3_clk_policies[1].rate_policy = K3_CLK_RATE_LOCKED;
+        require(spacemit_set_rate(NULL, 1, RPMI_CLK_RATE_MATCH_PLATFORM,
+                                  24000000, &nr2)==RPMI_ERR_DENIED,
+                "locked clock: rate change denied by policy");
+        k3_clk_policies[1].rate_policy = K3_CLK_RATE_ALLOWED;
+    }
     printf("%s: %d checks, %d failures\n", failed ? "FAILED" : "PASS", checks, failed);
     return failed != 0;
 }
@@ -353,12 +378,24 @@ class RpmiClockServiceTests(unittest.TestCase):
                             'static enum rpmi_error spacemit_set_state(void *priv')
         callbacks = extract(source, 'static enum rpmi_error spacemit_set_state(void *priv',
                             '\nstatic struct rpmi_clock_platform_ops')
+        policy_mocks = (
+            '/* 0008 harness mocks: the parent-index lookup (the real one lives\n'
+            ' * in the unlinked clk-provider unit). The REAL shared-parent check\n'
+            ' * is extracted with the callbacks — it uses this mock. */\n'
+            'static struct clk_hw *clk_hw_get_parent_by_index(struct clk_hw *hw, unsigned int i)\n'
+            '{ (void)hw; (void)i; return 0; }\n'
+        )
         entries = ('static struct k3_rpmi_clk_entry { struct clk *clk; rpmi_uint64_t rate; rt_bool_t was_unresolved; } k3_rpmi_clks[13];\n'
                    'static rpmi_uint64_t k3_rpmi_unresolved_rate;\n'
-                   'static struct rpmi_clock_data k3_os0_clk_data[13];\n')
+                   'static struct rpmi_clock_data k3_os0_clk_data[13];\n'
+                   '/* 0008 policy symbols (values asserted by the policy tests) */\n'
+                   'enum k3_clk_rate_policy { K3_CLK_RATE_LOCKED = 0, K3_CLK_RATE_ALLOWED };\n'
+                   'struct k3_clk_policy_entry { enum k3_clk_rate_policy rate_policy; rt_bool_t boot_enabled; };\n'
+                   'static struct k3_clk_policy_entry k3_clk_policies[13];\n'
+                   'static const enum k3_clk_rate_policy k3_clk_rate_allowlist[13];\n')
 
         program = (COMMON + '\n' + ids_header.replace('#include <', '//#include <') + '\n'
-                   + entries + resolve + init_func + callbacks + TESTS)
+                   + policy_mocks + entries + resolve + init_func + callbacks + TESTS)
 
         with tempfile.TemporaryDirectory(prefix='k3-clk-test-') as tmp:
             c = Path(tmp) / 'test.c'
