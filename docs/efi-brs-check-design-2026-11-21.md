@@ -193,3 +193,20 @@ front-page time. Strings verified in the built UiApp.efi
 (UTF-16 HII pack). rhct8 staged, inspect-gated; display-only
 (no boot-path effect), qualification = visual check on the
 next boot + the standard regression gates.
+
+## rhct8 QUALIFIED
+
+Boot regression green (17 clocks, 3 LPI states, UFS true
+sys1clk, dmicheck 0 failures, GRUB boot normal — the front
+page rendered and timed out to boot, which is itself the
+functional pass: a broken HII formset would hang). The
+System Information section's visual confirmation is on the
+attached display at front-page time (BIOS version / board /
+serial / CPU / memory from the installed SMBIOS tables).
+
+Firmware state after rhct1-rhct8: RHCT canonical order, _LPI
+NULL-GAS counters, PRP0001 UID uniqueness, SMBIOS 3.7.0 with
+the full type set (4/7/16/17/19/44 ratified PSB), chassis +
+identity plumbing, datasheet-true memory, all DMI checks
+clean, the Spacemit UiApp override live with the System
+Information front page.
