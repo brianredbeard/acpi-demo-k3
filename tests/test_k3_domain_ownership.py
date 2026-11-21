@@ -65,6 +65,7 @@ typedef unsigned int rt_uint32_t; typedef unsigned long rt_ubase_t;
 #define RT_EPERM 1
 #define RT_ETIMEOUT 110
 #define RT_EINTR 4
+#define RT_EIO 5
 #define RT_ENOMEM 12
 #define RT_WAITING_NO 0
 #define RT_NULL NULL
@@ -102,6 +103,7 @@ static rt_err_t rt_sem_take(void *s, rt_ubase_t t) {
 }
 /* test access to the current cluster-0 domain state (declared in the model) */
 extern struct k3_cluster_domain *k3_test_domain(int c);
+
 static rt_err_t rt_sem_release(void *s) { mock_sem *m = s; m->count++; return RT_EOK; }
 
 #define RT_IPC_FLAG_FIFO 0
@@ -121,7 +123,20 @@ static void require(int cond, const char *what){
 }
 
 static void inject_during_wait(void); /* fwd: defined after main */
+
+/* ---- sequencer hw-ops mock (fault injection at every step) -------- */
+static int mock_m2_enable_ct, mock_m2_disable_ct;
+static int mock_m2_enable_rc;          /* nonzero = inject failure */
+static int mock_stopped;               /* cores_all_stopped result */
+static rt_bool_t mock_cores_all_stopped(int c) { (void)c; return mock_stopped; }
+static int mock_m2_enable(int c) { (void)c; mock_m2_enable_ct++; return mock_m2_enable_rc; }
+static int mock_m2_disable(int c) { (void)c; mock_m2_disable_ct++; return 0; }
+static const struct k3_domain_hw_ops mock_ops = {
+    .m2_enable = mock_m2_enable, .m2_disable = mock_m2_disable,
+    .cores_all_stopped = mock_cores_all_stopped,
+};
 static void release_enter_sem_during_wait(void); /* fwd */
+static void m2_enter_isr_c1_during_wait(void); /* fwd */
 
 int main(void){
     struct k3_cluster_domain *d;
@@ -229,6 +244,76 @@ int main(void){
     require(k3_domain_note_wake(0, K3_CONSUMER_DMA) == 0, "timer wake noted");
     require(k3_domain_note_wake(0, K3_CONSUMER_DISPLAY) == 0, "other wake noted");
 
+    /* ---- SEQUENCER (P1: quiescence + domain sequencing) ------------- */
+    {
+        struct k3_cluster_domain *c1;
+
+        k3_domain_set_hw_ops(&mock_ops);
+        /* fresh domain on cluster 1 for the sequencer tests */
+        require(k3_domain_init(1) == 0, "seq: cluster 1 init");
+        require(k3_domain_qualify(1) == 0, "seq: cluster 1 qualified");
+
+        /* provider holds it: not quiesced */
+        require(k3_domain_consumer_acquire(1, K3_CONSUMER_X100_AP) == 0,
+                "seq: provider holds C1");
+        mock_stopped = 1;   /* even with cores stopped */
+        require(k3_domain_cluster_quiesced(1) == RT_FALSE,
+                "seq: held domain not quiesced");
+        require(k3_domain_provider_release(1) == 0,
+                "seq: no release while held+stopped (provider contract)");
+
+        /* provider release on all-stopped */
+        require(k3_domain_consumer_release(1, K3_CONSUMER_X100_AP) == 0,
+                "seq: provider releases");
+        require(k3_domain_cluster_quiesced(1) == RT_TRUE,
+                "seq: released+stopped -> quiesced");
+
+        /* FAIL AT ENABLE: hardware refuses; state returns ACTIVE */
+        mock_m2_enable_rc = -1; mock_m2_enable_ct = 0; mock_m2_disable_ct = 0;
+        require(k3_domain_commit_sleep(1, 1) == -RT_EIO,
+                "seq: enable failure aborts");
+        c1 = k3_test_domain(1);
+        require(c1->state == K3_DOMAIN_ACTIVE, "seq: enable-fail -> ACTIVE");
+        require(mock_m2_disable_ct == 0, "seq: enable-fail disables nothing");
+
+        /* FAIL AT WAIT (timeout): disable runs; state ACTIVE */
+        mock_m2_enable_rc = 0;
+        require(k3_domain_commit_sleep(1, 1) == -RT_ETIMEOUT,
+                "seq: M2 wait timeout aborts");
+        c1 = k3_test_domain(1);
+        require(c1->state == K3_DOMAIN_ACTIVE, "seq: timeout -> ACTIVE");
+        require(mock_m2_disable_ct == 1, "seq: timeout cleared the enable");
+        require(c1->stats.aborted_entry >= 2, "seq: aborts counted");
+
+        /* SUCCESS PATH: the hardware M2-enter fires mid-wait (the
+         * full ISR drives the ENTERING_WAIT release) */
+        mock_m2_enable_ct = 0;
+        mid_wait_hook = m2_enter_isr_c1_during_wait;
+        require(k3_domain_commit_sleep(1, 1) == 0,
+                "seq: M2-enter within window -> ASLEEP");
+        c1 = k3_test_domain(1);
+        require(c1->state == K3_DOMAIN_ASLEEP, "seq: committed entry ASLEEP");
+        require(mock_m2_enable_ct == 1, "seq: enable ran once");
+
+        /* WAKE RESTORE: M2-exit clears authorization + returns ACTIVE
+         * + re-acquires the provider */
+        mock_m2_disable_ct = 0;
+        k3_domain_m2_exit_isr(1);
+        c1 = k3_test_domain(1);
+        require(c1->state == K3_DOMAIN_ACTIVE, "seq: wake -> ACTIVE");
+        require(mock_m2_disable_ct == 1, "seq: wake cleared the enable");
+        require(c1->consumers[K3_CONSUMER_X100_AP] == 1,
+                "seq: wake re-acquired the provider");
+        require(k3_domain_cluster_quiesced(1) == RT_FALSE,
+                "seq: held again after wake");
+
+        /* unmanaged cluster (no hw ops) never quiesces */
+        k3_domain_set_hw_ops(&k3_domain_hw_nops);
+        require(k3_domain_cluster_quiesced(1) == RT_FALSE,
+                "seq: no hw ops -> not quiesced");
+        k3_domain_set_hw_ops(&mock_ops);
+    }
+
     printf("%s: %d checks, %d failures\n", failed ? "FAILED" : "PASS", checks, failed);
     return failed != 0;
 }
@@ -243,6 +328,12 @@ static void inject_during_wait(void){
  * request is blocked in rt_sem_take (a legitimate grant) */
 static void release_enter_sem_during_wait(void){
     k3_domain_m2_enter_release(0);
+}
+
+/* mid-wait M2-enter for the SEQUENCER test (cluster 1): the full ISR
+ * (drives the ENTERING_WAIT release so commit_sleep completes) */
+static void m2_enter_isr_c1_during_wait(void){
+    k3_domain_m2_enter_isr(1);
 }
 '''
 

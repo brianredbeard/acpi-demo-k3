@@ -1,5 +1,5 @@
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
-index 221acf09c..8f35bd28b 100644
+index 221acf09c..3fafc5247 100644
 --- a/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_hsm.c
 @@ -11,6 +11,7 @@
@@ -167,7 +167,130 @@ index 221acf09c..8f35bd28b 100644
  	/* assert corex */
  	spacemit_assert_corex(config->bootcore_index);
  
-@@ -196,6 +296,21 @@ static rt_int32_t _k3_os0_hsm_init(void *priv)
+@@ -174,6 +274,122 @@ static void spacemit_m2_enter_exit(int vector, void *param)
+ 	rt_sem_release(config->cm2_ext_sem);
+ }
+ 
++/*
++ * ---- rcpu hardware ops for the domain sequencer -------------------
++ *
++ * PMU/M2 register implementations injected into k3_domain_commit_sleep
++ * (the model itself stays host-testable). Register contract:
++ *   m2_enable/disable : clusterx_m2_lp_ctrl bit0 (rcpu_ctrl_clx_m2_lp_en)
++ *   cores_all_stopped : every core of the cluster has its IDLE_CFG
++ *                       pwrdwn vote set (the cores vote themselves via
++ *                       their own hart-stop path; this only READS)
++ */
++static volatile unsigned int *clx_m2_ctl(rpmi_uint32_t cluster_id)
++{
++	switch (cluster_id) {
++	case 0: return (volatile unsigned int *)AP_C0_M2_INT_EN_REG;
++	case 1: return (volatile unsigned int *)AP_C1_M2_INT_EN_REG;
++	case 2: return (volatile unsigned int *)AP_C2_M2_INT_EN_REG;
++	case 3: return (volatile unsigned int *)AP_C3_M2_INT_EN_REG;
++	default: return RT_NULL;
++	}
++}
++
++/* per-core IDLE_CFG (the AP-side vote registers, rcpu-readable) */
++static volatile unsigned int *core_idle_cfg(rpmi_uint32_t hart_index)
++{
++	/*
++	 * PMU_CAP_COREx_IDLE_CFG — the authoritative map from the AP-side
++	 * vote function (k3.h): cores 0-3 = cluster 0, cores 4-7 = cluster 1.
++	 * This only READS the votes the cores place via their own hart-stop
++	 * path; the rcpu never writes these registers.
++	 */
++	static const rt_uint32_t base[8] = {
++		0xD4282800 + 0x124, 0xD4282800 + 0x128,	/* C0: core0,1 */
++		0xD4282800 + 0x160, 0xD4282800 + 0x164,	/* C0: core2,3 */
++		0xD4282800 + 0x304, 0xD4282800 + 0x308,	/* C1: core4,5 */
++		0xD4282800 + 0x30C, 0xD4282800 + 0x310,	/* C1: core6,7 */
++	};
++
++	if (hart_index >= 8)
++		return RT_NULL;
++	return (volatile unsigned int *)base[hart_index];
++}
++
++static int k3_ops_m2_enable(int cluster)
++{
++	volatile unsigned int *ctl = clx_m2_ctl(cluster);
++	unsigned int v;
++
++	if (!ctl)
++		return -1;
++	v = readl((unsigned int *)ctl);
++	v |= (1 << 0);
++	writel(v, (unsigned int *)ctl);
++	return 0;
++}
++
++static int k3_ops_m2_disable(int cluster)
++{
++	volatile unsigned int *ctl = clx_m2_ctl(cluster);
++	unsigned int v;
++
++	if (!ctl)
++		return -1;
++	v = readl((unsigned int *)ctl);
++	v &= ~(1U << 0);
++	writel(v, (unsigned int *)ctl);
++	return 0;
++}
++
++static rt_bool_t k3_ops_cores_all_stopped(int cluster)
++{
++	int i;
++
++	/* X100 clusters: cores 0-3 (C0), 4-7 (C1) */
++	for (i = cluster * 4; i < (cluster + 1) * 4; i++) {
++		volatile unsigned int *cfg = core_idle_cfg(i);
++		unsigned int v;
++
++		if (!cfg)
++			return RT_FALSE;
++		v = readl((unsigned int *)cfg);
++		if (!(v & 0x2))		/* core_pwrdwn bit */
++			return RT_FALSE;
++	}
++	return RT_TRUE;
++}
++
++static const struct k3_domain_hw_ops k3_hsm_domain_hw_ops = {
++	.m2_enable = k3_ops_m2_enable,
++	.m2_disable = k3_ops_m2_disable,
++	.cores_all_stopped = k3_ops_cores_all_stopped,
++};
++
++/*
++ * The domain monitor: periodic quiescence observation + sequenced
++ * entry. When a qualified cluster's cores have all voted themselves
++ * down and no consumer holds it, the X100_AP provider releases and
++ * the ordered commit runs. Bounded at every step; failures leave the
++ * cluster ACTIVE with the M2 authorization cleared.
++ */
++static void k3_domain_monitor(void *priv)
++{
++	int cluster;
++
++	(void)priv;
++	for (;;) {
++		rt_thread_mdelay(100);
++		for (cluster = 0; cluster < 2; cluster++) {
++			/* X100 clusters only (C0/C1) */
++			if (k3_domain_provider_release(cluster) == 1)
++				k3_domain_commit_sleep(cluster, 100);
++		}
++	}
++}
++
++static rt_thread_t k3_monitor_tid;
++
+ static rt_int32_t _k3_os0_hsm_init(void *priv)
+ {
+ 	char *tmp;
+@@ -196,6 +412,30 @@ static rt_int32_t _k3_os0_hsm_init(void *priv)
  
  	rpmi_uint32_t cluster_id = CPU_TO_CLUSTER(config->bootcore_index);
  
@@ -186,15 +309,24 @@ index 221acf09c..8f35bd28b 100644
 +	if (cluster_id < 2)
 +		k3_domain_consumer_acquire(cluster_id, K3_CONSUMER_X100_AP);
 +
++	/* the sequencer's hardware ops + monitor thread: once only */
++	if (!k3_monitor_tid) {
++		k3_domain_set_hw_ops(&k3_hsm_domain_hw_ops);
++		k3_monitor_tid = rt_thread_create("k3dmn", k3_domain_monitor,
++						  RT_NULL, 2048, 15, 10);
++		if (k3_monitor_tid)
++			rt_thread_startup(k3_monitor_tid);
++	}
++
  	switch (cluster_id) {
  	case 0:
  		/* exit m2 */
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
 new file mode 100644
-index 000000000..1a78cd663
+index 000000000..ac5c78dc1
 --- /dev/null
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
-@@ -0,0 +1,462 @@
+@@ -0,0 +1,643 @@
 +/*
 + * K3 shared-domain ownership model and retained wake mechanism (P1).
 + * See k3_domain_ownership.h for the design contract.
@@ -336,6 +468,166 @@ index 000000000..1a78cd663
 +
 +	level = rt_hw_interrupt_disable();
 +	d->qualified = 1;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++/*
++ * ---- domain sequencing (P1: qualified domain sequencing) ----------
++ *
++ * The ordered cluster-M2 entry, executed ENTIRELY on the management
++ * core. The AP never places cluster votes (v21f hardware finding: a
++ * single hart voting cluster power on a busy cluster corrupts
++ * memory); the cores vote THEMSELVES down via their own hart-stop
++ * path, and this side only OBSERVES those votes and authorizes M2.
++ *
++ * Ordering (each step reversible at its documented failure point):
++ *   QUIESCE  state=COMMITTED — the suspend-prepare gate denies new
++ *            work for the cluster (enforced by the state machine)
++ *   ENABLE   clusterx_m2_lp_ctrl.rcpu_ctrl_clx_m2_lp_en = 1
++ *   WAIT     bounded on the M2-enter semaphore (the ISR transitions
++ *            the domain to ASLEEP on the hardware's own signal)
++ *   ABORT    on timeout: clear ENABLE; the cores own their votes, so
++ *            nothing else is unwound; state returns ACTIVE
++ *
++ * Hardware hooks are injected through k3_domain_hw_ops so the model
++ * stays testable on the host (fault injection at every step).
++ */
++const struct k3_domain_hw_ops k3_domain_hw_nops = {
++	.m2_enable = 0,
++	.m2_disable = 0,
++	.cores_all_stopped = 0,
++};
++
++static const struct k3_domain_hw_ops *hw_ops = &k3_domain_hw_nops;
++
++void k3_domain_set_hw_ops(const struct k3_domain_hw_ops *ops)
++{
++	if (ops)
++		hw_ops = ops;
++	else
++		hw_ops = &k3_domain_hw_nops;
++}
++
++int k3_domain_commit_sleep(int cluster, int timeout_ms)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++	rt_base_t level;
++	rt_err_t wait;
++
++	if (!d)
++		return -RT_EINVAL;
++
++	level = rt_hw_interrupt_disable();
++	if (d->state != K3_DOMAIN_ACTIVE) {
++		rt_hw_interrupt_enable(level);
++		return -RT_EBUSY;
++	}
++	/* QUIESCE: the state change itself — the prepare gate and the
++	 * eligibility check deny new work from this point */
++	d->state = K3_DOMAIN_ENTERING_WAIT;
++	rt_hw_interrupt_enable(level);
++
++	/* ENABLE: authorize the cluster M2 (rcpu-controlled) */
++	if (hw_ops->m2_enable && hw_ops->m2_enable(cluster)) {
++		level = rt_hw_interrupt_disable();
++		d->state = K3_DOMAIN_ACTIVE;
++		d->stats.aborted_entry++;
++		rt_hw_interrupt_enable(level);
++		return -RT_EIO;
++	}
++
++	/* WAIT (bounded): the hardware M2-enter interrupt drives ASLEEP */
++	wait = rt_sem_take(d->m2_enter_sem,
++			   timeout_ms > 0 ?
++			   rt_tick_from_millisecond(timeout_ms) :
++			   RT_WAITING_NO);
++	if (wait != RT_EOK) {
++		/* ABORT: clear the enable; the cores own their votes */
++		if (hw_ops->m2_disable)
++			hw_ops->m2_disable(cluster);
++		level = rt_hw_interrupt_disable();
++		d->state = K3_DOMAIN_ACTIVE;
++		d->stats.aborted_entry++;
++		rt_hw_interrupt_enable(level);
++		return -RT_ETIMEOUT;
++	}
++
++	level = rt_hw_interrupt_disable();
++	if (d->state != K3_DOMAIN_ENTERING_WAIT) {
++		/* unexpected state at wake (e.g. an abort raced): undo */
++		rt_hw_interrupt_enable(level);
++		if (hw_ops->m2_disable)
++			hw_ops->m2_disable(cluster);
++		k3_domain_abort_sleep(cluster);
++		return -RT_EINTR;
++	}
++	d->state = K3_DOMAIN_ASLEEP;
++	rt_hw_interrupt_enable(level);
++	return 0;
++}
++
++/*
++ * Core-state observation: the AP cores vote themselves down through
++ * their own hart-stop path (per-core IDLE_CFG pwrdwn bits in the
++ * PMU). The provider releases the cluster's X100_AP ownership when
++ * every core is observed stopped, and re-acquires on any wake.
++ */
++rt_bool_t k3_domain_cluster_quiesced(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++	rt_bool_t quiesced;
++	int i;
++
++	if (!d)
++		return RT_FALSE;
++
++	quiesced = d->qualified && (d->state == K3_DOMAIN_ACTIVE);
++	if (quiesced)
++		for (i = 0; i < K3_CONSUMER_CLASS_COUNT; i++)
++			if (d->consumers[i])
++				quiesced = RT_FALSE;
++	if (!quiesced)
++		return RT_FALSE;
++
++	if (!hw_ops->cores_all_stopped)
++		return RT_FALSE;	/* unmanaged cluster: never quiesced */
++
++	return hw_ops->cores_all_stopped(cluster);
++}
++
++/*
++ * Provider dynamics for the X100_AP class: release when the whole
++ * cluster is observed stopped; re-acquire on wake. Returns 1 when
++ * the release happened.
++ */
++int k3_domain_provider_release(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++	rt_base_t level;
++
++	if (!d)
++		return -RT_EINVAL;
++	if (!k3_domain_cluster_quiesced(cluster))
++		return 0;
++
++	level = rt_hw_interrupt_disable();
++	if (d->consumers[K3_CONSUMER_X100_AP])
++		d->consumers[K3_CONSUMER_X100_AP]--;
++	rt_hw_interrupt_enable(level);
++	return 1;
++}
++
++int k3_domain_provider_reacquire(int cluster)
++{
++	struct k3_cluster_domain *d = dom(cluster);
++	rt_base_t level;
++
++	if (!d)
++		return -RT_EINVAL;
++
++	level = rt_hw_interrupt_disable();
++	d->consumers[K3_CONSUMER_X100_AP]++;
 +	rt_hw_interrupt_enable(level);
 +	return 0;
 +}
@@ -556,7 +848,19 @@ index 000000000..1a78cd663
 +	d->stats.m2_enter_count++;
 +
 +	level = rt_hw_interrupt_disable();
++	if (d->state == K3_DOMAIN_ENTERING_WAIT) {
++		/*
++		 * The hardware M2-enter for a commit_sleep in flight:
++		 * wake the sequencer (its bounded take returns) — the
++		 * ASLEEP transition happens under the sequencer's own
++		 * state check, keeping a single owner of the commit.
++		 */
++		rt_hw_interrupt_enable(level);
++		rt_sem_release(d->m2_enter_sem);
++		return;
++	}
 +	if (d->state == K3_DOMAIN_ENTERING) {
++		/* legacy request path: the direct transition stays */
 +		d->hw_mp_state = 0;	/* observed on entry */
 +		d->state = K3_DOMAIN_ASLEEP;
 +	}
@@ -581,13 +885,22 @@ index 000000000..1a78cd663
 +
 +	d->stats.m2_exit_count++;
 +
++	/* WAKE RESTORE: the rcpu-side M2 authorization clears first */
++	if (hw_ops->m2_disable)
++		hw_ops->m2_disable(cluster);
++
 +	level = rt_hw_interrupt_disable();
 +	if ((d->state == K3_DOMAIN_ASLEEP) ||
 +	    (d->state == K3_DOMAIN_COMMITTED) ||
++	    (d->state == K3_DOMAIN_ENTERING_WAIT) ||
 +	    (d->state == K3_DOMAIN_RESTORING)) {
 +		d->state = K3_DOMAIN_ACTIVE;
-+		/* consumers re-acquire as they resume; none survive the
-+		 * sleep by construction (eligibility required zero) */
++		/*
++		 * Provider re-acquire: any core waking re-opens the
++		 * cluster to AP ownership. The count is re-held by the
++		 * provider (the class contract: one aggregate owner).
++		 */
++		d->consumers[K3_CONSUMER_X100_AP]++;
 +	}
 +	rt_hw_interrupt_enable(level);
 +
@@ -659,10 +972,10 @@ index 000000000..1a78cd663
 +#endif
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
 new file mode 100644
-index 000000000..d5f3aff23
+index 000000000..7d0435ccd
 --- /dev/null
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,161 @@
 +/*
 + * K3 shared-domain ownership model and retained wake mechanism (P1).
 + *
@@ -724,6 +1037,7 @@ index 000000000..d5f3aff23
 +	K3_DOMAIN_ACTIVE = 0,
 +	K3_DOMAIN_ENTERING,
 +	K3_DOMAIN_COMMITTED,
++	K3_DOMAIN_ENTERING_WAIT,	/* commit_sleep waiting on the M2 enter */
 +	K3_DOMAIN_ASLEEP,
 +	K3_DOMAIN_RESTORING,
 +	K3_DOMAIN_ABORTED,
@@ -789,6 +1103,23 @@ index 000000000..d5f3aff23
 +
 +/* Retained-counter hook for a bounded M2 handshake timeout in the ISR. */
 +void k3_domain_note_hw_timeout(int cluster);
++/*
++ * Hardware operations injected into the domain sequencer (host tests
++ * inject faults here; the rcpu registers the PMU/M2 implementations).
++ */
++struct k3_domain_hw_ops {
++	int (*m2_enable)(int cluster);
++	int (*m2_disable)(int cluster);
++	rt_bool_t (*cores_all_stopped)(int cluster);
++};
++extern const struct k3_domain_hw_ops k3_domain_hw_nops;
++void k3_domain_set_hw_ops(const struct k3_domain_hw_ops *ops);
++
++/* Domain sequencing (P1): the ordered, abortable cluster-M2 entry. */
++int k3_domain_commit_sleep(int cluster, int timeout_ms);
++rt_bool_t k3_domain_cluster_quiesced(int cluster);
++int k3_domain_provider_release(int cluster);
++int k3_domain_provider_reacquire(int cluster);
 +
 +/*
 + * State machine + wake. Bounded waits only: timeout_ms <= 0 means
