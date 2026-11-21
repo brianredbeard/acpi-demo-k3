@@ -84,3 +84,20 @@ K3BrsCheckDxe (Silicon/Spacemit/K3/Drivers/): DXE_DRIVER,
 2. Then the check driver + host tests
 3. Then one flash cycle: fix + check together (the check's
    first live run IS the qualification)
+
+## SMBIOS fixes IMPLEMENTED (rhct3, inspect-gated)
+
+edk2-platforms 294228c0: version 3.7.0 (PcdSmbiosVersion),
+Type 4 per hart, Type 7 (PPTT cache topology: 8xL1I 8xL1D
+64KB + 2xL2 4MB), Type 16/17/19 (16GB LPDDR, extended size
+fields), Type 44 per Type4 with the RISC-V PSB + ISA string,
+chassis type 0x11 (the .dec-default-0 bug), full string PCD
+fallbacks. Built clean; markers verified in the FD.
+
+Bundle /tmp/pico-acpi-rhct3: single variable (edk2 payload)
+on rhct2-qualified base, inspect-gate PASSED.
+
+Acceptance: fresh fwts dmicheck — BrsiSmbiosVersion,
+SbbrSmbiosNoStruct (4/7/16/17/19), DMIValueOutOfRange,
+DMISerialNumber all GONE; BrsiSmbiosNoStruct reduced to the
+three absent-hardware items (IPMI/Redfish/TPM, waived).
