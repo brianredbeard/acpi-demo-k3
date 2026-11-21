@@ -152,3 +152,26 @@ The P1 gate ran through a different path (ESOS-side), so the
 firmware-side PCC power resources may be intentionally retired —
 but then Power.asl should be deleted or moved to an attic, not
 left as an unshipped trap.
+
+## rhct2 bundle (the two real firmware fixes)
+
+Staged at /tmp/pico-acpi-rhct2, inspect-gate PASSED. DSDT-only
+variables on rhct1-qualified base (edk2-platforms daf8e6e8):
+
+1. _LPI counter elements [7][8]: integer 0 -> NULL GAS
+   Register(SystemMemory,0,0,0,0) per the RISC-V FFH spec
+   examples. Kernel behavior unchanged (elements skipped;
+   [9] name read unaffected). Decompile-verified in the built
+   AML: 10-element packages with the GAS buffers.
+2. PRP0001 _UID dedup: EPR0 0->1, EC0.PWM0 0->2 (EC0 keeps
+   0). All 12 PRP0001 devices now unique. Binding untouched
+   (PRP0001 matching is via _DSD compatible).
+
+Expected on flash: Method_LPIBadSubElementType and
+HardwareIDNotUnique GONE from a fresh per-boot fwts run.
+Everything else per the verdict table (fwts defects remain
+until upstream filing; profile = silicon waiver).
+
+fwts operational rule (learned the hard way, twice): always
+run with -r results-<fresh-name>.log and NEVER grep across
+appended multi-boot results.
