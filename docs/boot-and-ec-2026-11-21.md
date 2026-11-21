@@ -251,3 +251,32 @@ Then one more gpioy boot verifies clean (the EC bind at
 COROLLARY: the EC power-key theory is RETRACTED — the EC
 event stream was innocent; my own leftover unit was the
 trigger. The EC fix stands unconditionally proven.
+
+## gpioy EC-verification status: BLOCKED by console contention
+
+State: the gpioy kernel + its matching module set
+(/lib/modules/6.12.0-dbg1-gpioy, 4.8GB, deployed) + the
+iscsi-omitted initrd (402MB, built 12:04 — existence on disk
+unconfirmed after the boot loops) + the clean entry
+(root=UUID only, pointing at initramfs-6.12.0-dbg1-gpioy.img).
+
+Every captured gpioy boot shows a cmdline WITH
+clk_ignore_unused — which MY entry does not carry. The boot
+that ran was edited at the GRUB console (an active second
+operator has been editing entries, logging in at the serial
+console, and building fwts throughout this session). The
+dracut iscsi FATAL fires on those edited boots (the
+module-ABI story was also real for the OLD initrd — both
+fixed — but the edited-boot cmdline persists).
+
+Meanwhile the reset path wedges intermittently (RPMI
+controller magic=0 during SRST after rapid poweroff cycles)
+— recovered by cold power cycles via the Kauf plug (20s
+off verified 0.0W).
+
+TO COMPLETE the EC verification, the console operator and
+this automation must not race: either the console session
+stops editing the gpioy entry, or the verification is handed
+over as a procedure (select "K3 dbg1 GPIO built-in (EC
+fix)" UNEDITED, let it boot, observe: EC at ~2s, no
+poweroff, login).
