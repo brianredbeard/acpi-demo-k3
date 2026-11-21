@@ -1,0 +1,196 @@
+--- a/drivers/ufs/host/ufs-spacemit.c
++++ b/drivers/ufs/host/ufs-spacemit.c
+@@ -6,7 +6,9 @@
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
++#include <linux/property.h>
+ #include <linux/iopoll.h>
++#include <linux/regmap.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+@@ -40,6 +42,13 @@
+ #define MPHY_RX_FSM_STATE	0xC1
+ #define MPHY_TX_FSM_STATE	0x41
+ 
++/*
++ * APMU UFS clk/res control (see drivers/clk/spacemit/ccu-k3.c and
++ * drivers/reset/spacemit/reset-spacemit-k3.c): gate BIT(1), reset
++ * BIT(0) with the reset asserted when the bit is LOW.
++ */
++#define APMU_UFS_RESET_MASK		BIT(0)
++
+ static int ufs_spacemit_dme_set(struct ufs_hba *hba,
+ 				const struct ufshcd_dme_attr_val *v, int n)
+ {
+@@ -430,6 +439,112 @@
+ 	hba->quirks |= UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8;
+ }
+ 
++/*
++ * ACPI (PRP0001) path. dev->of_node is NULL under ACPI, so
++ * ufshcd_pltfrm_init()'s of_property_* parsing produces an empty clock
++ * list and ufs_spacemit_init()'s DT reset lookup fails. This path
++ * builds the same hba state from _DSD properties and the RPMI-served
++ * clocks (registered by clk-rpmi with con_id == clock name).
++ */
++static const struct {
++	const char *list_name;
++	const char *rpmi_name;
++} ufs_acpi_clocks[] = {
++	{ "axi", "ufs_aclk" },
++	{ "ref", "ufs_refclk" },
++};
++
++static void ufs_spacemit_acpi_init(struct ufs_hba *hba)
++{
++	struct device *dev = hba->dev;
++	struct ufs_clk_info *clki;
++	struct clk *clk;
++	unsigned long rate;
++
++	/* lanes-per-direction (ufshcd core default is 2) */
++	device_property_read_u32(dev, "lanes-per-direction",
++				 &hba->lanes_per_direction);
++	/* ufshcd core default is 2 lanes per direction */
++	if (!hba->lanes_per_direction)
++		hba->lanes_per_direction = 2;
++
++	for (unsigned int i = 0; i < ARRAY_SIZE(ufs_acpi_clocks); i++) {
++		clk = clk_get(dev, ufs_acpi_clocks[i].rpmi_name);
++		if (IS_ERR(clk)) {
++			/*
++			 * Miss here means sys1clk falls back to the
++			 * 409.6 MHz constant — 20% off the real rate.
++			 * Loud on purpose.
++			 */
++			dev_info(dev, "clock %s not resolved (ret %ld); %s-rate timing will use the fallback constant\n",
++				 ufs_acpi_clocks[i].rpmi_name, PTR_ERR(clk),
++				 ufs_acpi_clocks[i].list_name);
++			continue;
++		}
++		if (clk_prepare_enable(clk)) {
++			clk_put(clk);
++			continue;
++		}
++		rate = clk_get_rate(clk);
++		clki = devm_kzalloc(dev, sizeof(*clki), GFP_KERNEL);
++		if (!clki) {
++			clk_disable_unprepare(clk);
++			clk_put(clk);
++			continue;
++		}
++		clki->name = devm_kstrdup(dev, ufs_acpi_clocks[i].list_name,
++					  GFP_KERNEL);
++		clki->clk = clk;
++		clki->min_freq = rate;
++		clki->max_freq = rate;
++		list_add_tail(&clki->list, &hba->clk_list_head);
++	}
++}
++
++/*
++ * Map the APMU UFS clk/res control register from the _DSD property
++ * "spacemit,apmu-ufs-reg" (absolute address) and run the same
++ * assert/deassert sequence as the DT reset controller. Without the
++ * property the firmware-programmed reset state is kept (the firmware
++ * leaves the UFS reset deasserted).
++ */
++static int ufs_spacemit_acpi_reset(struct device *dev)
++{
++	struct regmap_config cfg = {
++		.reg_bits = 32,
++		.val_bits = 32,
++		.reg_stride = 4,
++	};
++	struct regmap *apmu;
++	void __iomem *base;
++	u32 reg = 0;
++	int ret;
++
++	device_property_read_u32(dev, "spacemit,apmu-ufs-reg", &reg);
++	if (!reg) {
++		dev_info(dev, "no spacemit,apmu-ufs-reg, keeping firmware reset state\n");
++		return 0;
++	}
++	base = devm_ioremap(dev, reg, 4);
++	if (!base)
++		return -ENOMEM;
++	apmu = devm_regmap_init_mmio(dev, base, &cfg);
++	if (IS_ERR(apmu))
++		return PTR_ERR(apmu);
++
++	/* reset asserted low: clear, pause, set */
++	ret = regmap_update_bits(apmu, 0, APMU_UFS_RESET_MASK, 0);
++	if (ret)
++		return ret;
++	usleep_range(10, 15);
++	ret = regmap_update_bits(apmu, 0, APMU_UFS_RESET_MASK,
++				 APMU_UFS_RESET_MASK);
++	if (ret)
++		return ret;
++	usleep_range(10, 15);
++	return 0;
++}
++
+ /**
+  * ufs_spacemit_init - init phy and prepare clk
+  * @hba: host controller instance
+@@ -440,6 +555,13 @@
+ 	struct ufs_spacemit_host *host;
+ 	struct reset_control *rst;
+ 
++	/*
++	 * Under ACPI the reset ran in the probe (or the firmware state
++	 * is kept): the DT reset lookup below would fail.
++	 */
++	if (!dev->of_node)
++		return 0;
++
+ 	host = devm_kzalloc(dev, sizeof(*host), GFP_KERNEL);
+ 	if (!host)
+ 		return -ENOMEM;
+@@ -620,8 +742,42 @@
+ };
+ MODULE_DEVICE_TABLE(of, ufs_spacemit_of_match);
+ 
++static int ufs_spacemit_probe_acpi(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct ufs_hba *hba;
++	void __iomem *mmio_base;
++	int irq, err;
++
++	mmio_base = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(mmio_base))
++		return PTR_ERR(mmio_base);
++
++	irq = platform_get_irq(pdev, 0);
++	if (irq < 0)
++		return irq;
++
++	err = ufs_spacemit_acpi_reset(dev);
++	if (err)
++		return dev_err_probe(dev, err, "APMU UFS reset failed\n");
++
++	err = ufshcd_alloc_host(dev, &hba);
++	if (err) {
++		dev_err(dev, "Allocation failed\n");
++		return err;
++	}
++
++	hba->vops = &ufs_hba_spacemit_vops;
++	ufs_spacemit_acpi_init(hba);
++
++	return ufshcd_init(hba, mmio_base, irq);
++}
++
+ static int ufs_spacemit_probe(struct platform_device *pdev)
+ {
++	if (!pdev->dev.of_node)
++		return ufs_spacemit_probe_acpi(pdev);
++
+ 	return ufshcd_pltfrm_init(pdev, &ufs_hba_spacemit_vops);
+ }
+ 
