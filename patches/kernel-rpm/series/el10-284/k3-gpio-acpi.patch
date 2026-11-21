@@ -1,5 +1,5 @@
 diff --git a/drivers/gpio/gpio-spacemit-k1.c b/drivers/gpio/gpio-spacemit-k1.c
-index 43c8282..4cf462a 100644
+index 43c8282..c2c5313 100644
 --- a/drivers/gpio/gpio-spacemit-k1.c
 +++ b/drivers/gpio/gpio-spacemit-k1.c
 @@ -7,6 +7,7 @@
@@ -10,15 +10,22 @@ index 43c8282..4cf462a 100644
  #include <linux/init.h>
  #include <linux/interrupt.h>
  #include <linux/io.h>
-@@ -266,6 +267,293 @@ static int spacemit_gpio_add_bank(struct spacemit_gpio *sg,
+@@ -59,6 +60,10 @@ struct spacemit_gpio {
+ 	struct device *dev;
+ 	const struct spacemit_gpio_data *data;
+ 	struct spacemit_gpio_bank sgb[SPACEMIT_NR_BANKS];
++	/* ACPI mode: single flat chip spanning all banks (the DT
++	 * path nests a gpio_generic_chip per sgb[] bank; under ACPI
++	 * one chip covers the flat 0..127 pin space) */
++	struct gpio_chip acpi_gc;
+ };
+ 
+ static u32 spacemit_gpio_read(struct spacemit_gpio_bank *gb,
+@@ -266,6 +271,293 @@ static int spacemit_gpio_add_bank(struct spacemit_gpio *sg,
  	return 0;
  }
  
-+struct gpio_chip acpi_gc;
-+	void __iomem *bank_regs[SPACEMIT_NR_BANKS];
-+		.flags = BGPIOF_UNREADABLE_REG_SET,
-+/*
-+ * ACPI mode: register a single gpiochip spanning all banks.
++/* ACPI mode: register a single gpiochip spanning all banks.
 + * ACPI GPIO pin number = bank * SPACEMIT_NR_GPIOS_PER_BANK + offset.
 + * This gives ACPI GpioInt/GpioIo consumers a flat 0..127 pin space,
 + * matching the DT 3-cell encoding <&gpio bank pin flags>.
@@ -31,7 +38,7 @@ index 43c8282..4cf462a 100644
 +	if (bank >= SPACEMIT_NR_BANKS)
 +		return NULL;
 +
-+	return sg->bank_regs[bank];
++	return sg->sgb[bank].base;
 +}
 +
 +static int spacemit_gpio_acpi_get(struct gpio_chip *gc, unsigned int pin)
@@ -93,7 +100,7 @@ index 43c8282..4cf462a 100644
 +}
 +
 +static int spacemit_gpio_acpi_direction_output(struct gpio_chip *gc,
-+						unsigned int pin, int val)
++					       unsigned int pin, int val)
 +{
 +	struct spacemit_gpio *sg = gpiochip_get_data(gc);
 +	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
@@ -209,8 +216,8 @@ index 43c8282..4cf462a 100644
 +	int bank, pin;
 +
 +	for (bank = 0; bank < SPACEMIT_NR_BANKS; bank++) {
-+		pending = readl(sg->bank_regs[bank] + regs[SPACEMIT_GEDR]);
-+		writel(pending, sg->bank_regs[bank] + regs[SPACEMIT_GEDR]);
++		pending = readl(sg->sgb[bank].base + regs[SPACEMIT_GEDR]);
++		writel(pending, sg->sgb[bank].base + regs[SPACEMIT_GEDR]);
 +
 +		for_each_set_bit(pin, &pending, SPACEMIT_NR_GPIOS_PER_BANK) {
 +			int gpio = bank * SPACEMIT_NR_GPIOS_PER_BANK + pin;
@@ -238,31 +245,35 @@ index 43c8282..4cf462a 100644
 +	.irq_mask	= spacemit_gpio_acpi_irq_mask,
 +	.irq_unmask	= spacemit_gpio_acpi_irq_unmask,
 +	.irq_set_type	= spacemit_gpio_acpi_irq_set_type,
-+	.flags		= IRQCHIP_MASK_ON_SUSPEND,
++	.flags		= IRQCHIP_MASK_ON_SUSPEND | IRQCHIP_IMMUTABLE,
 +};
-+
-+static const struct spacemit_gpio_data k3_gpio_data;
 +
 +static int spacemit_gpio_add_acpi_chip(struct spacemit_gpio *sg,
 +					void __iomem *regs, int irq)
 +{
 +	struct device *dev = sg->dev;
-+	struct gpio_chip *gc = &sg->acpi_gc;
++	struct gpio_chip *gc;
 +	struct gpio_irq_chip *girq;
 +	const unsigned int *offsets = sg->data->offsets;
 +	int i, ret;
 +
-+	/* Stash per-bank register bases for dispatch */
-+	for (i = 0; i < SPACEMIT_NR_BANKS; i++)
-+		sg->bank_regs[i] = regs + sg->data->bank_offsets[i];
++	/* Single flat chip: ACPI consumers address 0..127 */
++	gc = &sg->acpi_gc;
++
++	/* Populate the per-bank bases for dispatch (the DT path does
++	 * this per-bank in add_bank; the ACPI path does it up front) */
++	for (i = 0; i < SPACEMIT_NR_BANKS; i++) {
++		sg->sgb[i].base = regs + sg->data->bank_offsets[i];
++		sg->sgb[i].sg = sg;
++	}
 +
 +	/* Disable and clear all interrupts across banks */
 +	for (i = 0; i < SPACEMIT_NR_BANKS; i++) {
-+		writel(0, sg->bank_regs[i] + offsets[SPACEMIT_GAPMASK]);
-+		writel(0, sg->bank_regs[i] + offsets[SPACEMIT_GRER]);
-+		writel(0, sg->bank_regs[i] + offsets[SPACEMIT_GFER]);
-+		writel(0xffffffff, sg->bank_regs[i] + offsets[SPACEMIT_GCRER]);
-+		writel(0xffffffff, sg->bank_regs[i] + offsets[SPACEMIT_GCFER]);
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GAPMASK]);
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GRER]);
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GFER]);
++		writel(0xffffffff, sg->sgb[i].base + offsets[SPACEMIT_GCRER]);
++		writel(0xffffffff, sg->sgb[i].base + offsets[SPACEMIT_GCFER]);
 +	}
 +
 +	gc->label		= dev_name(dev);
@@ -304,7 +315,7 @@ index 43c8282..4cf462a 100644
  static int spacemit_gpio_probe(struct platform_device *pdev)
  {
  	struct device *dev = &pdev->dev;
-@@ -278,9 +566,21 @@ static int spacemit_gpio_probe(struct platform_device *pdev)
+@@ -278,9 +570,21 @@ static int spacemit_gpio_probe(struct platform_device *pdev)
  	if (!sg)
  		return -ENOMEM;
  
@@ -329,7 +340,7 @@ index 43c8282..4cf462a 100644
  
  	regs = devm_platform_ioremap_resource(pdev, 0);
  	if (IS_ERR(regs))
-@@ -292,6 +592,18 @@ static int spacemit_gpio_probe(struct platform_device *pdev)
+@@ -292,6 +596,18 @@ static int spacemit_gpio_probe(struct platform_device *pdev)
  
  	sg->dev	= dev;
  
