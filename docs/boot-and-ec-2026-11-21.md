@@ -97,3 +97,37 @@ Removed (all fossils of dev cycles):
 Principle: the firmware owns the platform description (DSDT,
 SPCR, MADT...); the kernel cmdline owns only what is genuinely
 per-boot policy (root, and the one deliberate defer timeout).
+
+## Round 2 results (measured, first verification boot)
+
+Boot: kernel 27.5s + initrd 10.6s + userspace 12.7s = 50.8s
+(was 66.8s). The initrd network fossil is GONE (40.0 -> 10.6s).
+
+The EC defer-timeout attempt MISSED: with
+driver_deferred_probe_timeout=30 the EC retry fired at 27.3s
+but the GPIO module (an out-of-tree .ko udev coldplug-loads)
+arrives at 31.9s — 4.6s too late. The cmdline route cannot
+win against a module that loads ~19s into userspace.
+
+Kernel time inflated 12.1 -> 27.5s: the kernel blocks on the
+deferred-probe wait (initcalls hold until the window expires)
+— the timeout trades kernel-time for the (failed) module wait.
+
+THE GRUB DEFAULT BUG (the panic): /etc/default/grub edits are
+inert without grub2-mkconfig — the live grub.cfg carries its
+own `set default=` (absent = entry 0 = the first BLS stock
+kernel). The stock 284 kernel + our firmware tables = NULL
+deref panic at 2.07s (initcall after PNP0C02 ECAM reserve).
+Recovered via serial-console menu navigation to "K3 dbg1".
+
+Fixes applied for round 3:
+- grub.cfg: `set default="K3 dbg1"` inserted directly (line 68)
+- /etc/dracut.conf.d/40-gpio.conf: add_drivers+="
+  gpio_spacemit_k1" — the module loads at initrd start
+  (~2-3s), inside ANY defer window; board-disk-local config,
+  no kernel-tree change (the multi-board objection holds)
+- driver_deferred_probe_timeout=30 retained (harmless; the
+  initrd module makes the first EC probe succeed outright)
+
+Round 3 acceptance: EC binds on first probe (no -517 at all),
+kernel time back to ~12s, initrd <11s, total <35s.
