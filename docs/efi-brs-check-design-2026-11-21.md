@@ -158,3 +158,19 @@ rhct6 staged, inspect-gated. The lesson recorded: when a
 structure's layout isn't in the SMBIOS spec proper, find the
 arch spec FIRST — the riscv-smbios repo was one search away
 the whole time.
+
+## rhct7 QUALIFIED: the SMBIOS/DMI class is CLOSED
+
+Fresh dmicheck on rhct7: ZERO failures (the absent-hardware
+IPMI/Redfish/TPM items appear only under the BRS-I flag set,
+which this invocation does not force; under the user's full
+suite they remain as the documented waiver). Type4 strings
+render (CPU0/SpacemiT/X100); regression green (17 clocks,
+UFS true sys1clk).
+
+The SMBIOS arc rhct1->rhct7: 3.6/7-structures/chassis-0x00 ->
+3.7.0 / Type 4x8 + 7x18 + 16/17/19 + 44x8 (ratified RISC-V
+v0.10 PSB with live CSR values) / chassis 0x11 / TLV+PCD
+identity / datasheet-true memory (LPDDR5 16GiB 6400) / all
+lengths, markers, and string areas conformant. Seven cycles,
+one variable each, every acceptance caught the next real bug.
