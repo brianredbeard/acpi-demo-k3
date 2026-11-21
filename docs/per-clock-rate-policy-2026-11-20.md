@@ -134,3 +134,31 @@ system suspend) — all blocked on the P1 re-landing.
 RECOVERY: the board runs v26 (v12 vendor-equivalent ESOS with
 patches 0001-0004 + v21g OpenSBI + v19 EDK2) — clocks at truth
 rates, full regression green, reboot clean.
+
+## Walk step A result + the string-table revelation (2026-11-21)
+
+Step A (the v12-era-COMMITTED 3-patch series through today's
+reproducible flow): DEAD clock service. The committed 6f1bb7e
+patches were never the working content.
+
+THE STRING-TABLE REVELATION: the SHIPPED v12 binary contains
+'rpmi-clk: CCU clock '%s' not found (id %d)' — a print that
+exists ONLY in the d032c00-revised patch 0003. The shipped v12
+already carried the d032c00 framework revision (the 'audited
+field fixes' in its qualification note). Therefore:
+
+- The framework revision is NOT the killer (v12 shipped with it)
+- No post-d032c00 commits touched 0002/0003 — the current series
+  0001-0006 IS the d032c00 state
+- walk5 (died) = d032c00 series MINUS 0006; v20 (died) = the full
+  series PLUS 0007
+
+STEP B (frwk2 = 0001-0006, the closest reconstruction of the
+shipped v12) discriminates the two remaining hypotheses:
+- BOOTS -> 0006 is REQUIRED alongside 0005 (the 0003 init-time
+  name lookup uses hw->init->name which is NULL after
+  registration — 0006 fixes exactly that; without it the
+  resolve-at-init fails and the service publishes dead clocks),
+  AND the v20 killer is patch 0007 (P1) independently
+- DIES -> the series is broken beyond 0006; diff frwk2 against
+  the shipped v12 binary for the remaining amendments
