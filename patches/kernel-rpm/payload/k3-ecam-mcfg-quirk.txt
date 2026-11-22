@@ -1,0 +1,42 @@
+# K3 ecam ghost-filter payload (semantic content, baseline-free)
+
+The MCFG quirk for SpacemiT K3 DW PCIe root complexes, for the next
+kernel cycle after 6.12.0-284.acpidebug.1 (closes audit item PCI-01 —
+the frozen 284 SRPM carries NO ecam quirk, while the live dbg1 kernel
+ran an untracked copy of this design).
+
+Problem: the K3 DesignWare root complexes do not filter type-0 config
+TLPs on their root bus. A generic ECAM read of any non-root-port
+devfn on bus 0 returns garbage instead of 0xffffffff, so ACPI PCI
+enumeration invents ghost devices. The DT path never sees this because
+pci-host-generic's pci_dw_valid_device() filters; ACPI needs the same
+filter as an MCFG fixup.
+
+Content (drivers/acpi/pci_mcfg.c, splice anchors not line numbers):
+
+1. k3_dw_ecam_map_bus(): reject any devfn != 0 on cfg->busr.start
+   (compare against busr.start, NOT hardcoded 0 — mirrors the DT
+   filter); everything else passes to pci_ecam_map_bus.
+2. k3_dw_ecam_ops: the ops wrapper
+   (.map_bus = k3_dw_ecam_map_bus, .read/.write = pci_ecam_*).
+3. Quirk entries gated on CONFIG_RISCV && CONFIG_PCI_SPACEMIT_K1:
+   {"SPMT  ", "K3      ", 1, seg, MCFG_BUS_ANY, &k3_dw_ecam_ops}
+   for seg in {0, 2, 4} — segment 0 (NVMe root), 2 (10G NIC),
+   4 (Wi-Fi); firmware MCFG in pico-acpi-rhct11-wifi describes all
+   three.
+
+OEM identity: the firmware MCFG header is OEM ID "SPMT  " /
+table ID "K3" / revision 1 (K3PlatformAcpi.h ACPI_HEADER macro).
+
+Design provenance: edk2-platforms/docs/k3-maintained-efi/
+acpi-status-2026-11-18.md §4 (v4 experiment, code-review corrections
+item 4); live log evidence "MCFG quirk: ... with k3_dw_ecam_ops" in
+docs/v15-phaseA-console-log.txt:50 (acpi-demo-k3).
+
+Also required in the same kernel cycle: CONFIG_RFKILL_GPIO=y (the
+WLEN/BTEN PRP0001 rfkill-gpio devices in the rhct11-wifi DSDT bind
+via of_match_table compatible "rfkill-gpio").
+
+NOT needed: r8169 patch (10ec:8127 in-tree, firmware file present on
+board rootfs); pcie-spacemit-k1 ACPI glue (EDK2 trains the links at
+pre-OS; the kernel only consumes MCFG).
