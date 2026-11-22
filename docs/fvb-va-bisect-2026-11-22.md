@@ -65,3 +65,36 @@ arriving).
   from a running system or FDL-hold power-on.
 - The `sg k3flash` group trick (session lacks the group after
   the k3flash group add — use /usr/bin/sg k3flash -c "...").
+
+## Update: v2 field result — ECAM ghost multiplication, NVMe lost at BDS
+
+rhct11-wifi-v2 boots (FVB fix holds) and the kernel sees
+0002/0004 devices — BUT:
+
+- The FIRMWARE's PciBus shows ghost multiplication on ALL
+  segments (NVMe 1DEE:5216 at fn 1B-1F; 10EC:8127 and 10EC:B852
+  duplicated across fn 00-1F): the 3-entry MCFG with bus 0-0xFF
+  declarations against 0x10000 compact ECAM windows makes the
+  firmware misdecode — reads wrap/alias.
+- NvmeDxe never binds → no NVMe block device at BDS → Boot0007
+  (redhat, HD(NVMe ESP)) unresolvable → BDS falls through to
+  Ubuntu (UFS). This is the "grub entries gone" regression —
+  the entries are intact; the NVMe vanished from firmware view.
+- rhct8 worked because its single-segment MCFG produced the
+  same ghosts on seg 0 but PciBus still assigned the root port
+  + NVMe (the k3_dw_ecam kernel quirk cleaned up the OS view).
+
+### Fix direction (next firmware cycle)
+
+Segments 2/4 must NOT get standard-MCFG entries against the
+compact 0x10000 windows. Options: (a) MCFG EndBus=0 only and
+accept bus-1 device access via the DSDT _CRS + kernel quirk
+path; (b) enlarge firmware ECAM windows to full 1MB/bus where
+the address map allows (seg 4's window region may have room);
+(c) drop the seg-2/4 MCFG entries entirely and let the DSDT
+_RESOURCES + the kernel's k3_dw_ecam quirk handle config
+access (matches how DT boots worked — the quirk IS the DT
+pcie-spacemit behavior ported). Option (c) is the lowest-risk:
+it restores rhct8's exact seg-0 MCFG and moves ALL multi-
+segment handling to the kernel quirk (already queued for the
+acpidebug kernel).
