@@ -27,12 +27,18 @@ DSDT = OUTPUT / "Dsdt" / "Dsdt.aml"
 
 IASL = "/usr/bin/iasl"
 
-# segment -> ECAM base address (MCFG entries + DSDT RESn consumers)
+# segment -> ECAM base address (DSDT _CRS/RESn consumers; seg 0 also in MCFG).
+# Segments 2/4 have NO MCFG entries by design: the platform's compact ECAM
+# windows misdecode under a multi-entry MCFG (ghost multiplication, NVMe
+# lost at BDS — docs/fvb-va-bisect-2026-11-22.md); the kernel k3_dw_ecam
+# quirk carries segments 2/4 config access.
 EXPECTED_SEGMENTS = {
     0: 0x1100000000,
     2: 0x1200000000,
     4: 0x12C0000000,
 }
+
+EXPECTED_MCFG_SEGMENTS = {0: 0x1100000000}
 
 # rfkill device -> (pin on \_SB.GPIO, name, type)
 EXPECTED_RFKILL = {
@@ -65,20 +71,20 @@ def decompile_dsdt(path):
 
 @unittest.skipUnless(MCFG.exists(), f"built MCFG not found: {MCFG}")
 class McfgSegmentTests(unittest.TestCase):
-    def test_three_entries(self):
+    def test_single_entry(self):
+        """Only segment 0 in MCFG — the compact-ECAM platform rule."""
         entries = parse_mcfg(MCFG)
-        self.assertEqual(len(entries), 3)
+        self.assertEqual(sorted(entries), [0])
 
     def test_segments_and_bases(self):
         entries = parse_mcfg(MCFG)
-        for seg, base in EXPECTED_SEGMENTS.items():
+        for seg, base in EXPECTED_MCFG_SEGMENTS.items():
             self.assertIn(seg, entries, f"segment {seg} missing from MCFG")
             self.assertEqual(entries[seg][0], base)
 
     def test_bus_ranges(self):
         for seg, (_, start, end) in parse_mcfg(MCFG).items():
             self.assertEqual((start, end), (0, 0xFF))
-
 
 @unittest.skipUnless(DSDT.exists() and Path(IASL).exists(),
                      f"built DSDT or iasl unavailable ({DSDT})")
