@@ -130,3 +130,20 @@ ranges. AML_020 deviation documented in-source.
 This also closes the arc: v3 (3-seg MCFG), v5 (+x2 pinning),
 v6 (+bus-0 ranges) all failed identically because none
 touched I/O. v4 (ports off) never reached the I/O requests.
+
+## Build defect: stale structured-PCD cache (v7 flash tested nothing)
+
+The first v7 flash failed to Ubuntu — but byte-level inspection of
+the flashed NOR's DXE PCD database showed Io.PciSize=0 and
+BusLimit=0xFF on segments 2/4: the Nov-20 cached PCD database
+(PcdValueInit + GlobalVar blob) survived three builds; the DSC
+edits never reached the image. The boot-menu 3s timeout and
+absent OOR lines in that boot were the OLD config's behavior
+under new code.
+
+DISCIPLINE (added to the loop): after any structured-PCD DSC
+change, wipe Build/<flavor> PcdValueInit + GlobalVar* (or the
+whole Build dir), rebuild, and VERIFY the values in
+DXEPcdDataBase.raw + the decompressed DXEFV before staging a
+flash. Never trust an incremental build for structured-PCD
+changes.
