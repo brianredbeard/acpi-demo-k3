@@ -1,0 +1,28 @@
+--- a/net/rfkill/rfkill-gpio.c
++++ b/net/rfkill/rfkill-gpio.c
+@@ -68,12 +68,22 @@
+ {
+ 	const struct acpi_device_id *id;
+ 
++	/*
++	 * Legacy GPS devices carry an ACPI ID whose driver_data
++	 * selects the rfkill type. A PRP0001 device instead
++	 * publishes name/type as _DSD properties (already read by
++	 * the caller via the unified property layer) — do not
++	 * reject it: register the GPIO mapping and let the
++	 * property-provided type stand. The board use is WLAN/BT
++	 * radio-disable lines with one named shutdown GPIO each
++	 * (rhct12 audit, GPIO change #3; preserves GPS bindings).
++	 */
+ 	id = acpi_match_device(dev->driver->acpi_match_table, dev);
+-	if (!id)
++	if (id)
++		rfkill->type = (unsigned)id->driver_data;
++	else if (!rfkill->type)
+ 		return -ENODEV;
+ 
+-	rfkill->type = (unsigned)id->driver_data;
+-
+ 	return devm_acpi_dev_add_driver_gpios(dev, acpi_rfkill_default_gpios);
+ }
+ 
