@@ -147,3 +147,36 @@ whole Build dir), rebuild, and VERIFY the values in
 DXEPcdDataBase.raw + the decompressed DXEFV before staging a
 flash. Never trust an incremental build for structured-PCD
 changes.
+
+## RESOLUTION — rhct12-wifi release candidate (2026-11-22)
+
+The wifi/10G boot-blocker arc is CLOSED. Hardware-verified fix
+stack (each layer found by its trace, fixed, and confirmed):
+
+1. I/O windows on segments 2/4 (392fc857) — the Realtek
+   endpoints' 256-byte I/O BARs need apertures.
+2. Full bus ranges restored (b25849e1) — bus-0 limits refuse
+   PciBusDxe's bus-1 allocation and kill all enumeration.
+3. PCD/DSDT windows aligned, PCI base 0 (2f7e4ef7).
+4. GCD I/O pre-registration (4ab33819) — translated host
+   addresses need GCD descriptors before AddIoSpace's
+   intersection.
+5. PcdIoAddressWidthMax 32→40 (6afa9ede) — the platform's GCD
+   I/O space was 32-bit; the windows at 0x1200010000+ are
+   37-bit. (SV39 note: GCD bookkeeping only; SV39 constrains
+   VAs, not PAs.)
+
+v11d (diagnostic) proved: all three endpoints enumerate
+(NVMe 1DEE:5216 seg0, RTL8127 10EC:8127 seg2, RTL8852BE
+10EC:B852 seg4 — first firmware enumeration of the NIC and
+Wi-Fi ever) and RHEL GRUB loads from NVMe.
+
+v12/rhct12-wifi (RELEASE, ff348957, edk2 sha 6bbaf411):
+booted, logged in, full regression green — kernel dbg1,
+NVMe 3 devices, EC registered, zero -517, 3 LPI states,
+fwts 47/0.
+
+Remaining for full wifi/10G function (kernel-side, staged
+for the acpidebug RPM): the k3_dw_ecam quirk for segs 2/4
+OS enumeration + CONFIG_RFKILL_GPIO for the radio-enable
+line.
