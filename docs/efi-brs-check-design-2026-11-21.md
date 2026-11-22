@@ -222,3 +222,16 @@ kernel-qualification and board-policy work, not DSDT edits.
 
 Acceptance: the K3BRSCHECK: PASS lines on the serial at boot
 + the full regression battery + a >60s soak.
+
+## Bundle persistence
+
+All /tmp-staged bundles moved to ~/bundles/ (persistent
+disk, inspect-gated from there): rhct1-10, p2q1, lpi2q, the
+revert targets, and the acpidebug kernel SRPM. /tmp is
+tmpfs — nothing in /tmp survives reboot. The rhct10 flash
+command becomes:
+
+  cd ~/Projects/fedora-k3-firmware && ./k3-firmware flash \
+    --bundle ~/bundles/pico-acpi-rhct10 --device usb:3-3.3 \
+    --board pico-itx \
+    --backup-dir ~/k3-backups/pico-acpi-rhct10-pre --yes
