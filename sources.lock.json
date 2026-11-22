@@ -1,149 +1,153 @@
 {
-  "schema": 1,
-  "project": "https://github.com/riseproject-dev/acpi-demo-k3",
-  "components": [
+ "schema": 1,
+ "project": "https://github.com/riseproject-dev/acpi-demo-k3",
+ "components": [
+  {
+   "name": "esos",
+   "repository": "https://github.com/spacemit-com/esos.git",
+   "revision": "e0b8d955bdc84957da3b7bba8c89e35ee0d27c2b",
+   "path": "esos",
+   "patches": [
     {
-      "name": "esos",
-      "repository": "https://github.com/spacemit-com/esos.git",
-      "revision": "e0b8d955bdc84957da3b7bba8c89e35ee0d27c2b",
-      "path": "esos",
-      "patches": [
-        {
-          "file": "patches/esos/0001-k3-reset-restore-owned-i2c-pins.patch",
-          "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
-        },
-        {
-          "file": "patches/esos/0002-ccu-apbc-base-and-clk-name-lookup.patch",
-          "sha256": "ba0483941a2183e09d55659ba078e965072fa8c021cb859a538e9bab25f847d2"
-        },
-        {
-          "file": "patches/esos/0003-rpmi-clk-wire-service-to-ccu.patch",
-          "sha256": "1316d3832eb188652b6776a3ec09296ece490a83b8e253e8686bf671ae7c0bbd"
-        },
-        {
-          "file": "patches/esos/0004-ccu-k3-port-RPMI-consumer-clocks.patch",
-          "sha256": "fde976b277cfc96f126bb103c8bc868543a6341051148f3d35b8054cdd707de4"
-        },
-        {
-          "file": "patches/esos/0005-ccu-k3-fix-transposed-fields.patch",
-          "sha256": "57bdd372cec710d72da1d5bd0e16d9248377d298b241fa635901b5c5e61f7e9b"
-        },
-        {
-          "file": "patches/esos/0006-ccu-k3-fix-name-lookup-after-regist.patch",
-          "sha256": "8688ee260fefcbbbc31f159d4ad1e2bdc67cc40b4f9094b080cb9ea5d941101d"
-        },
-        {
-          "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
-          "sha256": "1382a00b9cc6d1abb8258e3cafc49f0b3cb474dc92eb393a447d7e568036415a"
-        },
-        {
-          "file": "patches/esos/0008-ccu-k3-rate-change-policy.patch",
-          "sha256": "68dc9e5e482f0aca8fe6d8ea88b18b2d35ecaadfc122ee647e5585b3de048d3f"
-        },
-        {
-          "file": "patches/esos/0009-pmdomain-ownership-gate.patch",
-          "sha256": "c34dabfee3e171a1bbedf15e7c4279ce3b28f7e3be4684d698eebc08bf8b73cf"
-        },
-        {
-          "file": "patches/esos/0010-cppc-service-group.patch",
-          "sha256": "4a65cd6c15091057c5f72a1f4f527701bf90592ab570d36a922da40b88498f65"
-        },
-        {
-          "file": "patches/esos/0011-ownership-sticky-block-and-provider-release.patch",
-          "sha256": "9b72d3d4de5cc50894a9f479d74c338d36182aa331b365fce66d28db3fabe666"
-        }
-      ],
-      "configs": [
-        {
-          "file": "patches/esos/os0.config",
-          "sha256": "a9106239da42ac00b3daad5e6ad2a7c2c294a7a3ee3c9d75f7c6e782c04a8726"
-        },
-        {
-          "file": "patches/esos/lite.config",
-          "sha256": "0bd24d1d16258a2a9ed1303c1fae79bc9a4421071f14ab6dbffad6984c3f4cd1"
-        }
-      ],
-      "sparse_paths": [
-        "bsp/spacemit",
-        "components",
-        "include",
-        "libcpu/risc-v",
-        "src",
-        "tools"
-      ]
+     "file": "patches/esos/0001-k3-reset-restore-owned-i2c-pins.patch",
+     "sha256": "3820b2bc4a3da905048eed4f6eb67ed93cb33bda2d0db1d41c11e159f5cd7e65"
     },
     {
-      "name": "esos-lite",
-      "repository": "https://github.com/spacemit-com/esos-lite.git",
-      "revision": "1e166dbeaa55ea6a572c2dc9b567a16b29b3ea38",
-      "path": "esos/components/esos-lite",
-      "patches": []
+     "file": "patches/esos/0002-ccu-apbc-base-and-clk-name-lookup.patch",
+     "sha256": "ba0483941a2183e09d55659ba078e965072fa8c021cb859a538e9bab25f847d2"
     },
     {
-      "name": "edk2-platforms",
-      "repository": "https://github.com/brianredbeard/edk2-platforms.git",
-      "revision": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
-      "path": "edk2-platforms",
-      "patches": [
-        {
-          "file": "patches/edk2-platforms/0001-Platform-Spacemit-K3-ACPI-tables-for-Pico-ITX-bring-.patch",
-          "sha256": "3e0609b4f594fb1e09134cb44a6a88f7ea85cffc01ef64985d262fcb52dd2497"
-        },
-        {
-          "file": "patches/edk2-platforms/0002-Silicon-Spacemit-K3-ClockDxe-TSEN-ESPI-entries-and-c.patch",
-          "sha256": "d571cdff2d56bc680d460a6860357e1d12842553ce11c004a9aa008a04f952a8"
-        },
-        {
-          "file": "patches/edk2-platforms/0003-Silicon-Spacemit-K3-add-AcpiClockInitDxe-for-OS-visi.patch",
-          "sha256": "27ecb0211cdaf091098b9f88b4fd84d1eded96ee906e5d45fdae568f195571e3"
-        },
-        {
-          "file": "patches/edk2-platforms/0004-Platform-Spacemit-K3-MUSE-Pico-ACPI-build-config-and.patch",
-          "sha256": "5b6260712c58b96596db5c04dbc77d5357c3046ad497356a7b862815b8f564d9"
-        },
-        {
-          "file": "patches/edk2-platforms/0005-Silicon-Spacemit-K3-DwEqosDxe-leave-EMAC-clocks-enab.patch",
-          "sha256": "36dd8271a268b884d24c75ba5001757fe3fd28da19d3914b8af1f61617999027"
-        },
-        {
-          "file": "patches/edk2-platforms/0006-Silicon-Spacemit-extend-PCIe-bus-0-config-window.patch",
-          "sha256": "51e0ce10a89715768c0104a66079819b0c3e657dfa0508aa8785f85d54534ee6"
-        },
-        {
-          "file": "patches/edk2-platforms/0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch",
-          "sha256": "51acf570b402b04ab8d07f28f1fd360c4381e99eae1bb5df64b0b5f076b347d4"
-        },
-        {
-          "file": "patches/edk2-platforms/0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch",
-          "sha256": "c78372fc1de56db97b831b613e9a6e5b3dda15301efe629329e776bce02f665f"
-        },
-        {
-          "file": "patches/edk2-platforms/0009-Platform-Spacemit-K3-ACPI-6-6-conformance-fixes-for-t.patch",
-          "sha256": "6020c0281dbb0afc409a03953c640bc3414c9bdcf1747dd411d7779d212ad68e"
-        },
-        {
-          "file": "patches/edk2-platforms/0010-Platform-Spacemit-K3-DSDT-v12-promote-the-qualified.patch",
-          "sha256": "027032825e923b949617b298600ffa27d0dc89ff3b244ce1e6376c39da1c6075"
-        },
-        {
-          "file": "patches/edk2-platforms/0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch",
-          "sha256": "2488c6fa61d99c24a3db455f47c3a8037ee31bfb0e5ad70b28d14fa338838ac9"
-        },
-        {
-          "file": "patches/edk2-platforms/0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch",
-          "sha256": "c012284984fb4c8cdf651142c9bee32d425dea420ac34ad46276f5203852dfd2"
-        }
-      ],
-      "configs": [],
-      "sparse_paths": []
+     "file": "patches/esos/0003-rpmi-clk-wire-service-to-ccu.patch",
+     "sha256": "1316d3832eb188652b6776a3ec09296ece490a83b8e253e8686bf671ae7c0bbd"
     },
     {
-      "name": "opensbi",
-      "repository": "file:///home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic",
-      "revision": "51a9d0f99d23aa00ad9d14c84874c4673d9559ac",
-      "path": "opensbi",
-      "patches": [],
-      "note": "Vendored local snapshot: the spacemit K3 opensbi tree as staged during this project (no clean upstream identity survives \u2014 the tree predates the repo-qualification discipline). Pinned at the hardware-qualified v21g state: fw_dynamic sha256 2f14c5c85bf91e1c... (P0 batches, dispatch hoist, ENOTSUPP-fallback translation, 0x11000000 routing with the safe grant path). The repository field is a local absolute path \u2014 reproduction requires this workstation until the tree is published."
+     "file": "patches/esos/0004-ccu-k3-port-RPMI-consumer-clocks.patch",
+     "sha256": "fde976b277cfc96f126bb103c8bc868543a6341051148f3d35b8054cdd707de4"
+    },
+    {
+     "file": "patches/esos/0005-ccu-k3-fix-transposed-fields.patch",
+     "sha256": "57bdd372cec710d72da1d5bd0e16d9248377d298b241fa635901b5c5e61f7e9b"
+    },
+    {
+     "file": "patches/esos/0006-ccu-k3-fix-name-lookup-after-regist.patch",
+     "sha256": "8688ee260fefcbbbc31f159d4ad1e2bdc67cc40b4f9094b080cb9ea5d941101d"
+    },
+    {
+     "file": "patches/esos/0007-k3-domain-ownership-p1.patch",
+     "sha256": "1382a00b9cc6d1abb8258e3cafc49f0b3cb474dc92eb393a447d7e568036415a"
+    },
+    {
+     "file": "patches/esos/0008-ccu-k3-rate-change-policy.patch",
+     "sha256": "68dc9e5e482f0aca8fe6d8ea88b18b2d35ecaadfc122ee647e5585b3de048d3f"
+    },
+    {
+     "file": "patches/esos/0009-pmdomain-ownership-gate.patch",
+     "sha256": "c34dabfee3e171a1bbedf15e7c4279ce3b28f7e3be4684d698eebc08bf8b73cf"
+    },
+    {
+     "file": "patches/esos/0010-cppc-service-group.patch",
+     "sha256": "4a65cd6c15091057c5f72a1f4f527701bf90592ab570d36a922da40b88498f65"
+    },
+    {
+     "file": "patches/esos/0011-ownership-sticky-block-and-provider-release.patch",
+     "sha256": "9b72d3d4de5cc50894a9f479d74c338d36182aa331b365fce66d28db3fabe666"
     }
-  ]
+   ],
+   "configs": [
+    {
+     "file": "patches/esos/os0.config",
+     "sha256": "a9106239da42ac00b3daad5e6ad2a7c2c294a7a3ee3c9d75f7c6e782c04a8726"
+    },
+    {
+     "file": "patches/esos/lite.config",
+     "sha256": "0bd24d1d16258a2a9ed1303c1fae79bc9a4421071f14ab6dbffad6984c3f4cd1"
+    }
+   ],
+   "sparse_paths": [
+    "bsp/spacemit",
+    "components",
+    "include",
+    "libcpu/risc-v",
+    "src",
+    "tools"
+   ]
+  },
+  {
+   "name": "esos-lite",
+   "repository": "https://github.com/spacemit-com/esos-lite.git",
+   "revision": "1e166dbeaa55ea6a572c2dc9b567a16b29b3ea38",
+   "path": "esos/components/esos-lite",
+   "patches": []
+  },
+  {
+   "name": "edk2-platforms",
+   "repository": "https://github.com/brianredbeard/edk2-platforms.git",
+   "revision": "8e686e13d9f76e9acc478fa03bf1ba74f06517a2",
+   "path": "edk2-platforms",
+   "patches": [
+    {
+     "file": "patches/edk2-platforms/0001-Platform-Spacemit-K3-ACPI-tables-for-Pico-ITX-bring-.patch",
+     "sha256": "3e0609b4f594fb1e09134cb44a6a88f7ea85cffc01ef64985d262fcb52dd2497"
+    },
+    {
+     "file": "patches/edk2-platforms/0002-Silicon-Spacemit-K3-ClockDxe-TSEN-ESPI-entries-and-c.patch",
+     "sha256": "d571cdff2d56bc680d460a6860357e1d12842553ce11c004a9aa008a04f952a8"
+    },
+    {
+     "file": "patches/edk2-platforms/0003-Silicon-Spacemit-K3-add-AcpiClockInitDxe-for-OS-visi.patch",
+     "sha256": "27ecb0211cdaf091098b9f88b4fd84d1eded96ee906e5d45fdae568f195571e3"
+    },
+    {
+     "file": "patches/edk2-platforms/0004-Platform-Spacemit-K3-MUSE-Pico-ACPI-build-config-and.patch",
+     "sha256": "5b6260712c58b96596db5c04dbc77d5357c3046ad497356a7b862815b8f564d9"
+    },
+    {
+     "file": "patches/edk2-platforms/0005-Silicon-Spacemit-K3-DwEqosDxe-leave-EMAC-clocks-enab.patch",
+     "sha256": "36dd8271a268b884d24c75ba5001757fe3fd28da19d3914b8af1f61617999027"
+    },
+    {
+     "file": "patches/edk2-platforms/0006-Silicon-Spacemit-extend-PCIe-bus-0-config-window.patch",
+     "sha256": "51e0ce10a89715768c0104a66079819b0c3e657dfa0508aa8785f85d54534ee6"
+    },
+    {
+     "file": "patches/edk2-platforms/0007-Silicon-Spacemit-K3-ResetSystemLib-perform-resets-th.patch",
+     "sha256": "51acf570b402b04ab8d07f28f1fd360c4381e99eae1bb5df64b0b5f076b347d4"
+    },
+    {
+     "file": "patches/edk2-platforms/0008-Platform-Spacemit-K3-re-add-SPCR-and-declare-the-UAR.patch",
+     "sha256": "c78372fc1de56db97b831b613e9a6e5b3dda15301efe629329e776bce02f665f"
+    },
+    {
+     "file": "patches/edk2-platforms/0009-Platform-Spacemit-K3-ACPI-6-6-conformance-fixes-for-t.patch",
+     "sha256": "6020c0281dbb0afc409a03953c640bc3414c9bdcf1747dd411d7779d212ad68e"
+    },
+    {
+     "file": "patches/edk2-platforms/0010-Platform-Spacemit-K3-DSDT-v12-promote-the-qualified.patch",
+     "sha256": "027032825e923b949617b298600ffa27d0dc89ff3b244ce1e6376c39da1c6075"
+    },
+    {
+     "file": "patches/edk2-platforms/0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch",
+     "sha256": "2488c6fa61d99c24a3db455f47c3a8037ee31bfb0e5ad70b28d14fa338838ac9"
+    },
+    {
+     "file": "patches/edk2-platforms/0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch",
+     "sha256": "c012284984fb4c8cdf651142c9bee32d425dea420ac34ad46276f5203852dfd2"
+    },
+    {
+     "file": "patches/edk2-platforms/0013-K3-ACPI-PCIe-segments-2-4-Wi-Fi-10G-NIC-rfkill.patch",
+     "sha256": "e4152aa8d6c276169438429e851f7f5c9fca63702694f89b8969822df487d8e0"
+    }
+   ],
+   "configs": [],
+   "sparse_paths": []
+  },
+  {
+   "name": "opensbi",
+   "repository": "file:///home/bharring/Projects/K3-Ubuntu-Images/workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic",
+   "revision": "51a9d0f99d23aa00ad9d14c84874c4673d9559ac",
+   "path": "opensbi",
+   "patches": [],
+   "note": "Vendored local snapshot: the spacemit K3 opensbi tree as staged during this project (no clean upstream identity survives \u2014 the tree predates the repo-qualification discipline). Pinned at the hardware-qualified v21g state: fw_dynamic sha256 2f14c5c85bf91e1c... (P0 batches, dispatch hoist, ENOTSUPP-fallback translation, 0x11000000 routing with the safe grant path). The repository field is a local absolute path \u2014 reproduction requires this workstation until the tree is published."
+  }
+ ]
 }

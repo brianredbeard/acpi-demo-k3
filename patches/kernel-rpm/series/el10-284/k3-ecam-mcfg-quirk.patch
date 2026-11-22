@@ -1,0 +1,53 @@
+--- a/drivers/acpi/pci_mcfg.c
++++ b/drivers/acpi/pci_mcfg.c
+@@ -13,6 +13,33 @@
+ #include <linux/pci-acpi.h>
+ #include <linux/pci-ecam.h>
+ 
++/*
++ * SpacemiT K3 (Spacemit K1/MUSE-Pico, RISC-V): the DesignWare PCIe
++ * root complexes do not filter type-0 config TLPs on bus 0, so a
++ * standard ECAM read of any non-root-port devfn on bus 0 returns
++ * garbage (ghost devices) instead of 0xffffffff. Mirror the DT
++ * pci-host-generic pci_dw_valid_device() filter: only devfn 0 on the
++ * root bus is reachable; downstream buses enumerate normally.
++ */
++static void __iomem *k3_dw_ecam_map_bus(struct pci_bus *bus,
++					unsigned int devfn, int where)
++{
++	struct pci_config_window *cfg = bus->sysdata;
++
++	if (bus->number == cfg->busr.start && devfn)
++		return NULL;
++
++	return pci_ecam_map_bus(bus, devfn, where);
++}
++
++static const struct pci_ecam_ops k3_dw_ecam_ops = {
++	.pci_ops = {
++		.map_bus = k3_dw_ecam_map_bus,
++		.read = pci_ecam_read,
++		.write = pci_ecam_write,
++	}
++};
++
+ /* Structure to hold entries from the MCFG table */
+ struct mcfg_entry {
+ 	struct list_head	list;
+@@ -194,6 +221,16 @@
+ 	LOONGSON_ECAM_MCFG("\0", 7),
+ 	LOONGSON_ECAM_MCFG("LOONGSON", 7),
+ #endif /* LOONGARCH */
++
++#if defined(CONFIG_RISCV) && defined(CONFIG_PCI_SPACEMIT_K1)
++#define K3_DW_ECAM(seg) \
++	{ "SPMT  ", "K3      ", 1, seg, MCFG_BUS_ANY, &k3_dw_ecam_ops }
++
++	/* SpacemiT K3: DW ghost filter, all firmware-described segments */
++	K3_DW_ECAM(0),
++	K3_DW_ECAM(2),
++	K3_DW_ECAM(4),
++#endif
+ };
+ 
+ static char mcfg_oem_id[ACPI_OEM_ID_SIZE];

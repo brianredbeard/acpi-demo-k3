@@ -38,3 +38,55 @@ The firmware DSDT/MCFG describe only segment 0 (PCI0). Segments 2 (10G NIC) and 
 ### Blockers encountered
 - Both mock kernel BUILD trees (board + builder) were **scrubbed mid-investigation** by the live builds — I worked around it by extracting pristine 6.12.0-284 sources from the frozen SRPM (read-only, ~/bundles copy → /tmp/k3srpm). The acpidebug tree inspection (quirk presence in the *building* SRPM) was answered from the SRPM's kernel.spec + patches directly: **no ecam quirk is carried**.
 - No implementation, tests, build, bundle, patches, or commits were produced — the budget was consumed by the investigation breadth (builder tree scrub forcing re-derivation, plus the untracked-quirk provenance chase). All facts above are verified; the implementation plan is concrete and ready to execute from here.
+## Implementation results (2026-11-21, executed)
+
+All plan items landed; commit d313946d in edk2-platforms (patch 0013 in
+patches/edk2-platforms/, series + sources.lock.json updated, `meta.py
+validate` clean).
+
+1. **DSDT**: `PCI2`/`PCI4` added after PCI0 (PCI0 template + fa761952
+   PCI-03/04 shapes). `_SEG` 2/4, `_BBN 0`, `_CCA 0`, MEM/PREF64
+   producer windows + `_OSC` (MSI 0x10 / PCIeCapability 0x10, same
+   error-path semantics as PCI0), nested `RES2`/`RES4` (PNP0C02 ECAM
+   consumers) and `DBI2`/`DBI4` (PNP0C02, 4KB). `WLEN`/`BTEN`
+   rfkill-gpio devices: PRP0001 + compatible "rfkill-gpio", GpioIo
+   `\_SB.GPIO` pin 35/30, `_DSD` shutdown-gpios self-reference +
+   name/type ("rfkill-pcie-wlan"/"wlan", "rfkill-usb-bt"/"bluetooth").
+   *Verification detail (differs from the raw DTB numbers):* the DTB
+   seg-2 non-prefetchable range is cpu 0x1200110000 size 0x7FEF0000
+   with pci-side min 0x110000 — iasl requires translation + length ==
+   max - min + 1 on the PCI-side window, so the DSDT window is
+   Min 0x00110000 / Max 0x7FEFFFFF / Translation 0x1200000000 /
+   Length 0x7FDF0000 (identical cpu-side span, one page absorbed by
+   the alignment constraint). Seg 4 mirrors identically. iasl
+   compiles clean (0 errors/warnings/remarks) and the decompiled AML
+   verifies PCI2/PCI4/_SEG/RES/DBI/rfkill content.
+2. **Mcfg.aslc**: `Structures[3]` — seg 0 @ 0x1100000000, seg 2 @
+   0x1200000000, seg 4 @ 0x12C0000000, bus 0-0xFF each.
+3. **MUSE-Pico.dsc** DEFAULT SKU: `PcdPcieHostEnableMask|0x15`.
+4. **Tests**: `tests/test_acpi_pcie_segments.py` (12 tests) — MCFG
+   entry count/segments/bases/bus ranges parsed from the built
+   `Mcfg.acpi`; DSDT verified by iasl decompile (PCI2/PCI4/_SEG,
+   RES2/RES4 bases, DBI2/DBI4, WLEN/BTEN compatible/pins/properties);
+   iasl availability check. Full suite: 30 tests, green.
+5. **Build + bundle**: RELEASE build via build_edk2.py →
+   `~/bundles/pico-acpi-rhct11-wifi` (rhct10 payloads, only edk2.bin
+   replaced; provenance updated: source-head d313946d, build manifest,
+   qualification, regenerated series/v9 diffs, flash-verification
+   marked NOT FLASHED, machine-readable `content-deltas.json` listing
+   rhct10's inherited fixes + this cycle's). `k3-firmware inspect`
+   PASSES. NOT FLASHED.
+6. **Kernel next-cycle** (patches/kernel-rpm/): `payload/
+   k3-ecam-mcfg-quirk.txt` (semantic design) + `series/el10-284/
+   k3-ecam-mcfg-quirk.patch` (generated diff against pristine
+   /tmp/k3srpm 6.12.0-284, `patch -p1 --dry-run` clean) —
+   `k3_dw_ecam_map_bus` ghost filter (devfn != 0 on cfg->busr.start
+   rejected, mirroring the DT pci_dw_valid_device shape) +
+   `k3_dw_ecam_ops` + `{"SPMT  ","K3      ",1,seg,...}` entries for
+   segs 0/2/4 gated on CONFIG_RISCV && CONFIG_PCI_SPACEMIT_K1.
+   `CONFIG_RFKILL_GPIO=y` in series/el10-284/config-acpidebug. No
+   r8169 or pcie-spacemit-k1 ACPI glue patches (per design). These
+   are NOT yet in a built SRPM — they ride the next kernel cycle.
+
+Hardware validation pending: flash rhct11-wifi together with the next
+kernel build carrying the ecam quirk + rfkill-gpio config.

@@ -10,3 +10,4 @@
 0010-Platform-Spacemit-K3-DSDT-v12-promote-the-qualified.patch
 0011-K3-close-audit-findings-RHCT-ISA-OSC-mask-h.patch
 0012-Platform-Spacemit-K3-Cpu.asl-_LPI-first-cut-Tas.patch
+0013-K3-ACPI-PCIe-segments-2-4-Wi-Fi-10G-NIC-rfkill.patch

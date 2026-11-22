@@ -1,6 +1,6 @@
 # edk2-platforms K3 ACPI patch series
 
-Hardware-validated ACPI bring-up series for the Spacemit K3 MUSE-Pico (12
+Hardware-validated ACPI bring-up series for the Spacemit K3 MUSE-Pico (13
 patches). Qualified on flash through `pico-acpi-v12-20261120` (firmware DSDT
 complete, GRUB override retired); the `_LPI` cycle (0012) is in bring-up with
 its gate ledger in docs/v13-boot-checklist.md.
@@ -31,6 +31,8 @@ its gate ledger in docs/v13-boot-checklist.md.
 | `0010` DSDT v12 promotion | Full qualified peripheral set (GPIO/I2C2+EEPROM/eSPI+EC+PWM+fan/tsensor) + MPXY (`RSCV0005`) + RCLK (`riscv,rpmi-clock`) promoted from the experiment AML; ResourceConsumer on all device MMIO | **Hardware-qualified** on pico-acpi-v12 (2026-11-20): first boot with NO GRUB DSDT override — all peripherals bound from the firmware DSDT, MPXY mailbox 5 channels, clk-rpmi with real rates |
 | `0011` Audit fixes | RHCT ISA completion (full X100 HWCAP set), PCI `_OSC` support/control bitfield separation (MSI vs PCIeCapability), hart contract (8 X100 only), borrowed-ID docs (808622B7/AMZN0001), GMAC1/2 ClockDxe register retargeting, EnableClock zero-address failure semantics, comment corrections | **Hardware-qualified** on pico-acpi-v12: RHCT HWCAP full set live in `/proc/cpuinfo`; `_OSC` truthful mask live (`platform does not support [PCIeHotplug PME AER LTR DPC]`) |
 | `0012` platform `_OSC`; `_LPI` removed | `\_SB` `_OSC` PCLPI-only (2-DWORD contract, revision/UUID error paths). `_LPI` REMOVED: the deployed OpenSBI has no genuinely retentive path (type 0 = cluster power-down; CPU_NR hangs without the kernel timer-stop override). Restoration prerequisites tracked in the checklist + patches/opensbi/ | `_OSC` handshake **proven live** (`OS control mask [00000080]`); built DSDT verifies zero `_LPI` |
+
+| `0013` PCIe segments 2/4 + rfkill-gpio | PCI2/PCI4 root bridges (DTB windows, RES/DBI reservations), MCFG segs 0/2/4, WLEN/BTEN rfkill-gpio (GpioIo pins 35/30), DEFAULT SKU port mask 0x15 | iasl-clean (decompiled AML verified); tests/test_acpi_pcie_segments.py 12/12; RELEASE build; staged as pico-acpi-rhct11-wifi (inspect-gated, NOT FLASHED) — see docs/wifi-pcie-acpi-2026-11-22.md |
 
 ## Deliberately not in this series
 
