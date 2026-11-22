@@ -1,3 +1,5 @@
+diff --git a/drivers/ufs/host/ufs-spacemit.c b/drivers/ufs/host/ufs-spacemit.c
+index 65aeba3..491cc8d 100644
 --- a/drivers/ufs/host/ufs-spacemit.c
 +++ b/drivers/ufs/host/ufs-spacemit.c
 @@ -6,6 +6,8 @@
@@ -9,23 +11,7 @@
  #include <linux/iopoll.h>
  #include <linux/module.h>
  #include <linux/of.h>
-@@ -444,7 +446,14 @@
- 	if (!host)
- 		return -ENOMEM;
- 
--	rst = devm_reset_control_get_exclusive_deasserted(dev, NULL);
-+	/*
-+	 * Under ACPI the reset ran in the probe (or the firmware state
-+	 * is kept): the DT reset lookup below would fail.
-+	 */
-+	if (!dev->of_node)
-+		rst = NULL;
-+	else
-+		rst = devm_reset_control_get_exclusive_deasserted(dev, NULL);
- 	if (IS_ERR(rst))
- 		return dev_err_probe(dev, PTR_ERR(rst), "Failed to get reset control\n");
- 
-@@ -620,8 +629,143 @@
+@@ -620,6 +622,161 @@ static const struct of_device_id __maybe_unused ufs_spacemit_of_match[] = {
  };
  MODULE_DEVICE_TABLE(of, ufs_spacemit_of_match);
  
@@ -34,7 +20,7 @@
 + * drivers/reset/spacemit/reset-spacemit-k3.c): gate BIT(1), reset
 + * BIT(0) with the reset asserted when the bit is LOW.
 + */
-+#define APMU_UFS_RESET_MASK	BIT(0)
++#define APMU_UFS_RESET_MASK		BIT(0)
 +
 +/*
 + * ACPI (PRP0001) path. dev->of_node is NULL under ACPI, so
@@ -58,9 +44,21 @@
 +	struct clk *clk;
 +	unsigned long rate;
 +
++	/* lanes-per-direction (ufshcd core default is 2) */
++	device_property_read_u32(dev, "lanes-per-direction",
++				 &hba->lanes_per_direction);
++	/* ufshcd core default is 2 lanes per direction */
++	if (!hba->lanes_per_direction)
++		hba->lanes_per_direction = 2;
++
 +	for (unsigned int i = 0; i < ARRAY_SIZE(ufs_acpi_clocks); i++) {
 +		clk = clk_get(dev, ufs_acpi_clocks[i].rpmi_name);
 +		if (IS_ERR(clk)) {
++			/*
++			 * Miss here means sys1clk falls back to the
++			 * 409.6 MHz constant — 20% off the real rate.
++			 * Loud on purpose.
++			 */
 +			dev_info(dev, "clock %s not resolved (ret %ld); %s-rate timing will use the fallback constant\n",
 +				 ufs_acpi_clocks[i].rpmi_name, PTR_ERR(clk),
 +				 ufs_acpi_clocks[i].list_name);
@@ -130,6 +128,13 @@
 +	return 0;
 +}
 +
++	/*
++	 * Under ACPI the reset ran in the probe (or the firmware state
++	 * is kept): the DT reset lookup below would fail.
++	 */
++	if (!dev->of_node)
++		return 0;
++
 +static int ufs_spacemit_probe_acpi(struct platform_device *pdev)
 +{
 +	struct device *dev = &pdev->dev;
@@ -161,11 +166,10 @@
 +	return ufshcd_init(hba, mmio_base, irq);
 +}
 +
- static int ufs_spacemit_probe(struct platform_device *pdev)
- {
 +	if (!pdev->dev.of_node)
 +		return ufs_spacemit_probe_acpi(pdev);
 +
++
+ static int ufs_spacemit_probe(struct platform_device *pdev)
+ {
  	return ufshcd_pltfrm_init(pdev, &ufs_hba_spacemit_vops);
- }
- 
