@@ -98,3 +98,35 @@ pcie-spacemit behavior ported). Option (c) is the lowest-risk:
 it restores rhct8's exact seg-0 MCFG and moves ALL multi-
 segment handling to the kernel quirk (already queued for the
 acpidebug kernel).
+
+## FINAL ROOT CAUSE — I/O-BAR resource conflict (2026-11-22, v6ds2 full trace)
+
+The complete evidence chain from the unfiltered DEBUG trace
+(2.98 GB serial capture, /tmp/k3-serial-full.log):
+
+1. Ports C/E enable → links train on all three segments.
+2. PciBusDxe discovers exactly the real devices (root ports
+   [00|00|00] + endpoints [01|00|00]); the UEFI shell's 32
+   device-number aliases were DISPLAY-ONLY (shell scan vs
+   allocator scan difference).
+3. RTL8127 (seg 2) and RTL8852BE (seg 4) each request a
+   256-byte I/O BAR → 4 KiB bridge window needed.
+4. Every root bridge defined ZERO I/O aperture (BRS AML_020
+   "SHOULD NOT be defined" was followed literally).
+5. Both I/O allocations fail "Out Of Resource!" →
+   PciHostBridgeResourceConflict ×3 → roots torn down →
+   segment 0's successful NVMe memory allocation ROLLED BACK
+   → "Connect: PciRoot(0x0): Not Found" → no NVMe at BDS →
+   BDS falls through to UFS Ubuntu.
+6. Secondary defect observed: after the seg-2 rejection,
+   empty (zero-length) MMIO submission → repeated "Invalid
+   Parameter" retries — recovery-path noise, distinct from
+   the primary failure.
+
+FIX (v7, commit 392fc857): 1 MiB I/O windows on segs 2/4,
+PCD + DSDT QWordIo, mirroring the DT's pcie2_rc/pcie4_rc I/O
+ranges. AML_020 deviation documented in-source.
+
+This also closes the arc: v3 (3-seg MCFG), v5 (+x2 pinning),
+v6 (+bus-0 ranges) all failed identically because none
+touched I/O. v4 (ports off) never reached the I/O requests.
