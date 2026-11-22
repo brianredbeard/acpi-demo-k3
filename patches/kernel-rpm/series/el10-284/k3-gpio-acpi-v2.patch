@@ -1,0 +1,381 @@
+--- a/drivers/gpio/gpio-spacemit-k1.c
++++ b/drivers/gpio/gpio-spacemit-k1.c
+@@ -7,6 +7,7 @@
+ #include <linux/clk.h>
+ #include <linux/gpio/driver.h>
+ #include <linux/gpio/generic.h>
++#include <linux/acpi.h>
+ #include <linux/init.h>
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+@@ -59,6 +60,10 @@
+ 	struct device *dev;
+ 	const struct spacemit_gpio_data *data;
+ 	struct spacemit_gpio_bank sgb[SPACEMIT_NR_BANKS];
++	/* ACPI mode: single flat chip spanning all banks (the DT
++	 * path nests a gpio_generic_chip per sgb[] bank; under ACPI
++	 * one chip covers the flat 0..127 pin space) */
++	struct gpio_chip acpi_gc;
+ };
+ 
+ static u32 spacemit_gpio_read(struct spacemit_gpio_bank *gb,
+@@ -266,6 +271,293 @@
+ 	return 0;
+ }
+ 
++/* ACPI mode: register a single gpiochip spanning all banks.
++ * ACPI GPIO pin number = bank * SPACEMIT_NR_GPIOS_PER_BANK + offset.
++ * This gives ACPI GpioInt/GpioIo consumers a flat 0..127 pin space,
++ * matching the DT 3-cell encoding <&gpio bank pin flags>.
++ */
++static void __iomem *spacemit_gpio_acpi_pin_base(struct spacemit_gpio *sg,
++						 unsigned int pin)
++{
++	unsigned int bank = pin / SPACEMIT_NR_GPIOS_PER_BANK;
++
++	if (bank >= SPACEMIT_NR_BANKS)
++		return NULL;
++
++	return sg->sgb[bank].base;
++}
++
++static int spacemit_gpio_acpi_get(struct gpio_chip *gc, unsigned int pin)
++{
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++
++	if (!base)
++		return -EINVAL;
++
++	return !!(readl(base + regs[SPACEMIT_GPLR]) & BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK));
++}
++
++static void spacemit_gpio_acpi_set(struct gpio_chip *gc, unsigned int pin, int val)
++{
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++
++	if (!base)
++		return;
++
++	if (val)
++		writel(mask, base + regs[SPACEMIT_GPSR]);
++	else
++		writel(mask, base + regs[SPACEMIT_GPCR]);
++}
++
++static int spacemit_gpio_acpi_get_dir(struct gpio_chip *gc, unsigned int pin)
++{
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++
++	if (!base)
++		return -EINVAL;
++
++	/* 1 = input, 0 = output in the GPDR register */
++	if (readl(base + regs[SPACEMIT_GPDR]) & BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK))
++		return GPIO_LINE_DIRECTION_OUT;
++	return GPIO_LINE_DIRECTION_IN;
++}
++
++static int spacemit_gpio_acpi_direction_input(struct gpio_chip *gc,
++					       unsigned int pin)
++{
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++
++	if (!base)
++		return -EINVAL;
++
++	writel(mask, base + regs[SPACEMIT_GCDR]);
++	return 0;
++}
++
++static int spacemit_gpio_acpi_direction_output(struct gpio_chip *gc,
++					       unsigned int pin, int val)
++{
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++
++	if (!base)
++		return -EINVAL;
++
++	/* Set direction to output, then set value */
++	writel(mask, base + regs[SPACEMIT_GSDR]);
++	if (val)
++		writel(mask, base + regs[SPACEMIT_GPSR]);
++	else
++		writel(mask, base + regs[SPACEMIT_GPCR]);
++	return 0;
++}
++
++static void spacemit_gpio_acpi_irq_mask(struct irq_data *d)
++{
++	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	unsigned int pin = irqd_to_hwirq(d);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++	u32 val;
++
++	if (!base)
++		return;
++
++	val = readl(base + regs[SPACEMIT_GAPMASK]);
++	val &= ~mask;
++	writel(val, base + regs[SPACEMIT_GAPMASK]);
++}
++
++static void spacemit_gpio_acpi_irq_unmask(struct irq_data *d)
++{
++	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	unsigned int pin = irqd_to_hwirq(d);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++	u32 val;
++
++	if (!base)
++		return;
++
++	val = readl(base + regs[SPACEMIT_GAPMASK]);
++	val |= mask;
++	writel(val, base + regs[SPACEMIT_GAPMASK]);
++}
++
++static int spacemit_gpio_acpi_irq_set_type(struct irq_data *d, unsigned int type)
++{
++	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	unsigned int pin = irqd_to_hwirq(d);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++	u32 rising, falling;
++
++	if (!base)
++		return -EINVAL;
++
++	rising = readl(base + regs[SPACEMIT_GRER]);
++	falling = readl(base + regs[SPACEMIT_GFER]);
++
++	if (type & IRQ_TYPE_EDGE_RISING)
++		rising |= mask;
++	else
++		rising &= ~mask;
++
++	if (type & IRQ_TYPE_EDGE_FALLING)
++		falling |= mask;
++	else
++		falling &= ~mask;
++
++	writel(rising, base + regs[SPACEMIT_GRER]);
++	writel(falling, base + regs[SPACEMIT_GFER]);
++
++	if (type & IRQ_TYPE_EDGE_BOTH)
++		irq_set_handler_locked(d, handle_edge_irq);
++	else
++		irq_set_handler_locked(d, handle_level_irq);
++
++	return 0;
++}
++
++static void spacemit_gpio_acpi_irq_ack(struct irq_data *d)
++{
++	struct gpio_chip *gc = irq_data_get_irq_chip_data(d);
++	struct spacemit_gpio *sg = gpiochip_get_data(gc);
++	unsigned int pin = irqd_to_hwirq(d);
++	void __iomem *base = spacemit_gpio_acpi_pin_base(sg, pin);
++	const unsigned int *regs = sg->data->offsets;
++	u32 mask = BIT(pin % SPACEMIT_NR_GPIOS_PER_BANK);
++
++	if (!base)
++		return;
++
++	/* Clear edge detect status (W1C) */
++	writel(mask, base + regs[SPACEMIT_GEDR]);
++}
++
++static irqreturn_t spacemit_gpio_acpi_irq_handler(int irq, void *dev_id)
++{
++	struct spacemit_gpio *sg = dev_id;
++	const unsigned int *regs = sg->data->offsets;
++	unsigned long pending;
++	int bank, pin;
++
++	for (bank = 0; bank < SPACEMIT_NR_BANKS; bank++) {
++		pending = readl(sg->sgb[bank].base + regs[SPACEMIT_GEDR]);
++		writel(pending, sg->sgb[bank].base + regs[SPACEMIT_GEDR]);
++
++		for_each_set_bit(pin, &pending, SPACEMIT_NR_GPIOS_PER_BANK) {
++			int gpio = bank * SPACEMIT_NR_GPIOS_PER_BANK + pin;
++			int child = irq_find_mapping(sg->acpi_gc.irq.domain, gpio);
++
++			if (child > 0)
++				/*
++				 * The parent GSI is requested threaded, so
++				 * child GPIO IRQs are nested: dispatch via
++				 * handle_nested_irq(), which invokes the
++				 * child threaded handler. Dispatching the
++				 * primary path instead runs the nested
++				 * warning stub and drops the event.
++				 */
++				handle_nested_irq(child);
++		}
++	}
++
++	return IRQ_HANDLED;
++}
++
++static struct irq_chip spacemit_gpio_acpi_irq_chip = {
++	.name		= "spacemit-gpio-acpi",
++	.irq_ack	= spacemit_gpio_acpi_irq_ack,
++	.irq_mask	= spacemit_gpio_acpi_irq_mask,
++	.irq_unmask	= spacemit_gpio_acpi_irq_unmask,
++	.irq_set_type	= spacemit_gpio_acpi_irq_set_type,
++	.flags		= IRQCHIP_MASK_ON_SUSPEND | IRQCHIP_IMMUTABLE,
++};
++
++static int spacemit_gpio_add_acpi_chip(struct spacemit_gpio *sg,
++					void __iomem *regs, int irq)
++{
++	struct device *dev = sg->dev;
++	struct gpio_chip *gc;
++	struct gpio_irq_chip *girq;
++	const unsigned int *offsets = sg->data->offsets;
++	int i, ret;
++
++	/* Single flat chip: ACPI consumers address 0..127 */
++	gc = &sg->acpi_gc;
++
++	/* Populate the per-bank bases for dispatch (the DT path does
++	 * this per-bank in add_bank; the ACPI path does it up front) */
++	for (i = 0; i < SPACEMIT_NR_BANKS; i++) {
++		sg->sgb[i].base = regs + sg->data->bank_offsets[i];
++		sg->sgb[i].sg = sg;
++	}
++
++	/* Disable and clear all interrupts across banks */
++	for (i = 0; i < SPACEMIT_NR_BANKS; i++) {
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GAPMASK]);
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GRER]);
++		writel(0, sg->sgb[i].base + offsets[SPACEMIT_GFER]);
++		writel(0xffffffff, sg->sgb[i].base + offsets[SPACEMIT_GCRER]);
++		writel(0xffffffff, sg->sgb[i].base + offsets[SPACEMIT_GCFER]);
++	}
++
++	gc->label		= dev_name(dev);
++	gc->parent		= dev;
++	gc->ngpio		= SPACEMIT_NR_BANKS * SPACEMIT_NR_GPIOS_PER_BANK;
++	gc->base		= -1;
++	gc->get			= spacemit_gpio_acpi_get;
++	gc->set			= spacemit_gpio_acpi_set;
++	gc->get_direction	= spacemit_gpio_acpi_get_dir;
++	gc->direction_input	= spacemit_gpio_acpi_direction_input;
++	gc->direction_output	= spacemit_gpio_acpi_direction_output;
++	gc->request		= gpiochip_generic_request;
++	gc->free		= gpiochip_generic_free;
++	gc->can_sleep		= false;
++
++	girq = &gc->irq;
++	girq->chip = &spacemit_gpio_acpi_irq_chip;
++	girq->parent_handler = NULL;
++	girq->handler = handle_bad_irq;
++	girq->threaded = true;
++
++	ret = devm_request_threaded_irq(dev, irq, NULL,
++					spacemit_gpio_acpi_irq_handler,
++					IRQF_ONESHOT | IRQF_SHARED,
++					gc->label, sg);
++	if (ret < 0)
++		return dev_err_probe(dev, ret, "failed to register ACPI IRQ\n");
++
++	ret = devm_gpiochip_add_data(dev, gc, sg);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to add ACPI gpiochip\n");
++
++	dev_info(dev, "ACPI gpiochip: %d pins (4 banks x 32), pin = bank*32+offset\n",
++		 gc->ngpio);
++
++	return 0;
++}
++
+ static int spacemit_gpio_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -278,10 +570,43 @@
+ 	if (!sg)
+ 		return -ENOMEM;
+ 
+-	sg->data = of_device_get_match_data(dev);
+-	if (!sg->data)
+-		return dev_err_probe(dev, -EINVAL, "No available compatible data.");
++	sg->data = device_get_match_data(dev);
++	if (!sg->data) {
++		/*
++		 * PRP0001 under ACPI: the fwnode match-data path does not
++		 * resolve of_device_id .data for ACPI companions. Since
++		 * this driver reached probe via PRP0001 of_match_table,
++		 * the compatible already matched. Only the K3 has ACPI
++		 * support; use the K3 register layout.
++		 */
++		if (has_acpi_companion(dev))
++			sg->data = &k3_gpio_data;
++		else
++			return dev_err_probe(dev, -EINVAL,
++					     "No available compatible data.");
++	}
+ 
++	/*
++	 * Resource-extent validation (rhct12 audit, GPIO change #1):
++	 * bank 3 lives at offset 0x100 with 15 x 4-byte registers,
++	 * so the driver's highest access is 0x13C — a 0x100-byte
++	 * resource is undersized and only worked because page
++	 * rounding covered the overflow. Reject it loudly instead.
++	 */
++	{
++		struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++		resource_size_t sz;
++
++		if (!res)
++			return dev_err_probe(dev, -EINVAL, "missing MEM resource\n");
++
++		sz = resource_size(res);
++		if (sz < 0x140)
++			return dev_err_probe(dev, -EINVAL,
++					     "resource too small: need 0x140 bytes, got %pa\n",
++					     &sz);
++	}
++
+ 	regs = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(regs))
+ 		return PTR_ERR(regs);
+@@ -292,6 +617,18 @@
+ 
+ 	sg->dev	= dev;
+ 
++	if (has_acpi_companion(dev)) {
++		/*
++		 * Under ACPI there is no clock provider; firmware owns
++		 * the clocks and is expected to have enabled them.
++		 */
++		core_clk = devm_clk_get_optional_enabled(dev, "core");
++		bus_clk = devm_clk_get_optional_enabled(dev, "bus");
++		if (IS_ERR(core_clk) || IS_ERR(bus_clk))
++			return dev_err_probe(dev, -EINVAL, "clock get failed\n");
++		return spacemit_gpio_add_acpi_chip(sg, regs, irq);
++	}
++
+ 	core_clk = devm_clk_get_enabled(dev, "core");
+ 	if (IS_ERR(core_clk))
+ 		return dev_err_probe(dev, PTR_ERR(core_clk), "failed to get clock\n");

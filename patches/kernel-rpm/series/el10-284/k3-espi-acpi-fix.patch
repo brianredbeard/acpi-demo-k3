@@ -1,0 +1,115 @@
+--- a/drivers/bus/spacemit-k3-espi.c
++++ b/drivers/bus/spacemit-k3-espi.c
+@@ -12,6 +12,7 @@
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
++#include <linux/property.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/of.h>
+@@ -176,11 +177,15 @@
+ };
+ 
+ static bool spacemit_espi_property_enabled(struct device_node *np,
++					   struct device *dev,
+ 					   const char *name, bool default_value)
+ {
+-	if (of_find_property(np, name, NULL))
+-		return of_property_read_bool(np, name);
++	u32 val;
+ 
++	/* Unified layer: DT properties under DT, _DSD under ACPI. */
++	if (!device_property_read_u32(dev, name, &val))
++		return !!val;
++
+ 	return default_value;
+ }
+ 
+@@ -506,27 +511,39 @@
+ 	int ret;
+ 
+ 	espi->op_freq_mhz = SPACEMIT_ESPI_DEFAULT_FREQ_MHZ;
+-	of_property_read_u32(np, "operating-frequency", &espi->op_freq_mhz);
++	device_property_read_u32(dev, "operating-frequency", &espi->op_freq_mhz);
+ 
+ 	espi->watchdog_timeout = SPACEMIT_ESPI_DEFAULT_WDT;
+-	of_property_read_u32(np, "watchdog-timeout", &espi->watchdog_timeout);
++	device_property_read_u32(dev, "watchdog-timeout", &espi->watchdog_timeout);
+ 
+-	ret = of_range_to_resource(np, 0, &range);
+-	if (!ret)
+-		espi->pr_mem_base0 = lower_32_bits(range.start);
++	/*
++	 * Under ACPI (PRP0001) the device has no of_node: the DT helpers
++	 * above are NULL-safe no-ops, but of_range_to_resource() derefs
++	 * np via parser_init() -> of_n_addr_cells() and panics the boot
++	 * (6.12.0-284.acpidebug.1.el10 field result: spacemit_espi_parse_dt
++	 * -> of_range_to_resource -> of_n_addr_cells+0xa, badaddr 0x68).
++	 * The PR window bases are _DSD properties on this board
++	 * (pr-mem-base0/1); the unified property layer below resolves
++	 * them under ACPI and the DT properties under DT.
++	 */
++	if (np) {
++		ret = of_range_to_resource(np, 0, &range);
++		if (!ret)
++			espi->pr_mem_base0 = lower_32_bits(range.start);
++	}
+ 
+-	if (!of_property_read_u32(np, "pr-mem-base0", &value))
++	if (!device_property_read_u32(dev, "pr-mem-base0", &value))
+ 		espi->pr_mem_base0 = value;
+ 
+ 	if (!espi->pr_mem_base0)
+ 		dev_warn(dev, "missing PR memory base, shared window recovery may fail\n");
+ 
+-	if (!of_property_read_u32(np, "pr-mem-base1", &value))
++	if (!device_property_read_u32(dev, "pr-mem-base1", &value))
+ 		espi->pr_mem_base1 = value;
+ 	else if (espi->pr_mem_base0)
+ 		espi->pr_mem_base1 = espi->pr_mem_base0 + SZ_16M;
+ 
+-	if (!of_property_read_string(np, "io-mode", &str)) {
++	if (!device_property_read_string(dev, "io-mode", &str)) {
+ 		if (!strcmp(str, "quad"))
+ 			espi->io_mode = ESPI_GEN_IO_MODE_QUAD;
+ 		else if (!strcmp(str, "dual"))
+@@ -537,30 +554,30 @@
+ 		espi->io_mode = ESPI_GEN_IO_MODE_SINGLE;
+ 	}
+ 
+-	if (!of_property_read_string(np, "alert-mode", &str))
++	if (!device_property_read_string(dev, "alert-mode", &str))
+ 		espi->alert_pin_mode = !strcmp(str, "pin");
+ 	else
+ 		espi->alert_pin_mode = false;
+ 
+-	if (!of_property_read_string(np, "alert-type", &str))
++	if (!device_property_read_string(dev, "alert-type", &str))
+ 		espi->alert_open_drain = !strcmp(str, "open-drain");
+ 	else
+ 		espi->alert_open_drain = true;
+ 
+-	espi->crc_enable = spacemit_espi_property_enabled(np, "crc-enable", true);
+-	espi->enable_peri = spacemit_espi_property_enabled(np,
++	espi->crc_enable = spacemit_espi_property_enabled(np, dev, "crc-enable", true);
++	espi->enable_peri = spacemit_espi_property_enabled(np, dev,
+ 						"peripheral-channel-enable",
+ 						true);
+-	espi->enable_vwire = spacemit_espi_property_enabled(np,
++	espi->enable_vwire = spacemit_espi_property_enabled(np, dev,
+ 						"vwire-channel-enable",
+ 						true);
+-	espi->enable_oob = spacemit_espi_property_enabled(np,
++	espi->enable_oob = spacemit_espi_property_enabled(np, dev,
+ 						"oob-channel-enable",
+ 						true);
+-	espi->enable_flash = spacemit_espi_property_enabled(np,
++	espi->enable_flash = spacemit_espi_property_enabled(np, dev,
+ 						"flash-channel-enable",
+ 						true);
+-	espi->auto_gating = spacemit_espi_property_enabled(np,
++	espi->auto_gating = spacemit_espi_property_enabled(np, dev,
+ 						"auto-gating-enable",
+ 						true);
+ 
