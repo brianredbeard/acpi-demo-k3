@@ -40,7 +40,8 @@ struct k3_ecam_seg {
 	struct dw_pcie	pci;
 	struct dw_pcie_rp pp;
 	void __iomem	*dbi_base;
-	void __iomem	*cfg0_base;	/* 64 KiB config viewport */
+	void __iomem	*cfg0_base;	/* 64 KiB config viewport (VA) */
+	resource_size_t	cfg0_phys;	/* viewport base (physical) */
 	resource_size_t	cfg0_size;
 	void __iomem	*atu_base;
 };
@@ -79,7 +80,7 @@ static void __iomem *k3_ecam_child_map(struct k3_ecam_seg *seg,
 
 	atu.index = 0;
 	atu.type = type;
-	atu.parent_bus_addr = (u64)seg->cfg0_base;
+	atu.parent_bus_addr = (u64)seg->cfg0_phys;
 	atu.pci_addr = busdev;
 	atu.size = seg->cfg0_size;
 
@@ -151,8 +152,14 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	if (!seg)
 		return -ENOMEM;
 
-	/* The viewport: the config window's own mapping. */
+	/*
+	 * The viewport: the config window's own mapping (VA) for CPU
+	 * access, and its PHYSICAL base for iATU programming — the
+	 * controller's base registers take the bus address, not the
+	 * kernel VA (cfg->win is pci_remap_cfgspace() output).
+	 */
 	seg->cfg0_base = cfg->win;
+	seg->cfg0_phys = cfg->res.start;
 	seg->cfg0_size = resource_size(&cfg->res);
 
 	/* v1: silicon-fixed DBI/ATU (the DSDT reserves both; _CRS
@@ -161,7 +168,7 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	seg->dbi_base = devm_ioremap(dev, k3_seg_bases[i].dbi, SZ_4K);
 	if (!seg->dbi_base)
 		return -ENOMEM;
-	seg->atu_base = devm_ioremap(dev, k3_seg_bases[i].atu, SZ_64K);
+	seg->atu_base = devm_ioremap(dev, k3_seg_bases[i].atu, 0x3f20);
 	if (!seg->atu_base)
 		return -ENOMEM;
 
@@ -173,6 +180,21 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	seg->pci.dev = dev;
 	seg->pci.dbi_base = seg->dbi_base;
 	seg->pci.atu_base = seg->atu_base;
+	/*
+	 * Region geometry + unrolled iATU (DEFECTS 1+3): the EL10
+	 * prog_outbound_atu range check needs region_limit/align;
+	 * zero values fail EVERY child access (-EINVAL at the first
+	 * downstream read). The controller is unrolled (the archived
+	 * boot: 'iATU: unroll T, 16 ob, align 64K, limit 4G') and
+	 * dw_pcie_iatu_detect() would re-derive these — but its
+	 * scratch-probe clobbers live firmware windows, so set the
+	 * observed values directly. Window index 0 is the firmware's
+	 * config window; I/O and memory start at index 1 (preserved).
+	 */
+	dw_pcie_cap_set(&seg->pci, IATU_UNROLL);
+	seg->pci.region_align = SZ_64K;
+	seg->pci.region_limit = SZ_4G - 1;
+	seg->pci.num_ob_windows = 16;
 	seg->pci.num_ob_windows = 1;	/* single shared viewport */
 	seg->pp.va_cfg0_base = seg->cfg0_base;
 	seg->pp.cfg0_size = seg->cfg0_size;

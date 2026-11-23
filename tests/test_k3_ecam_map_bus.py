@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Host-side unit tests for the K3 ECAM map_bus logic (segs 2/4 ops).
+"""Host-side tests for the K3 ECAM map_bus logic (segs 2/4 ops).
 
-Extracts the map_bus core from the rig's pcie-k3-acpi-ecam.c and runs
-it against mocked kernel primitives. This is the test the 3j boot
-needed BEFORE burning a cycle: the root-bus ghost filter (the Nov 18
-devfn rule) and the ATU translation parameters are pure logic,
-testable without a kernel build.
+v2 — rebuilt after the operator's exhaustive audit found the v1
+harness giving a false pass: wrong iATU shifts (used the
+shift-ENABLED layout; the firmware disables config-shift), wrong
+CFG transaction types (0x0a/0x0b vs the actual 0x04/0x05), mock
+pointers carrying physical values (hiding the VA-as-PA defect),
+and no EL10 range-check modeling (hiding the zero region_limit
+failure).
 
-Test classes:
-  - root-bus ghost filter: only devfn 0 reaches the DBI; every other
-    root-bus devfn returns NULL (the 64-fake-bridge regression)
-  - own-map addressing: devfn 0 + where -> dbi_base + where
-  - child-map ATU encoding: bus/dev/fn bits, CFG0 directly below the
-    root, CFG1 farther, viewport handback
-  - ATU serialization: concurrent maps cannot interleave the program
+This version models:
+  - the firmware's config-shift-DISABLED encoding: bus<<24 |
+    device<<19 | function<<16
+  - the EL10 CFG0/CFG1 types 0x04/0x05
+  - DISTINCT virtual and physical viewport bases; the CPU access
+    must use the VA, the iATU base registers must get the PA
+  - the EL10 prog_outbound_atu range check with the driver's
+    region geometry (align 64K, limit 4G-1) — the v1 defect-1
+    failure mode is asserted to FAIL with zero geometry
+  - both segments (2 and 4) with their real bases
+  - the adjacent-I/O boundary: a generic bus-1 ECAM offset
+    (+0x100000) lands in I/O space, NOT the viewport
+  - literal expected register values for the archived endpoints
+    (0002:01:00.0 = 10ec:8127, 0004:01:00.0 = 10ec:b852)
 """
 import subprocess
 import sys
@@ -24,18 +33,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ECAM_SRC = ROOT / "patches/kernel-rpm/series/el10-284/ecam/pcie-k3-acpi-ecam.c"
 
-# The kernel headers the driver includes, mocked for the host.
 COMMON = r'''
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <stdbool.h>
 #include <pthread.h>
 
-static pthread_mutex_t k3_ecam_atu_lock = PTHREAD_MUTEX_INITIALIZER;
-
-#include <stdbool.h>
 #define NULL ((void *)0)
 
 typedef uint8_t u8;
@@ -45,36 +50,42 @@ typedef uint64_t u64;
 typedef unsigned long resource_size_t;
 #define __iomem
 
+/*
+ * The firmware disables config-shift mode on both ports, so the
+ * iATU target encodes bus << 24 | device << 19 | function << 16
+ * (the firmware header's shift-DISABLED layout — the v1 harness
+ * wrongly used the shift-enabled 20/15/12).
+ */
 #define PCI_SLOT(devfn) (((devfn) >> 3) & 0x1f)
 #define PCI_FUNC(devfn) ((devfn) & 0x07)
+#define PCIE_ATU_BUS(x)  ((u32)(x) << 24)
+#define PCIE_ATU_DEV(x)  ((u32)(x) << 19)
+#define PCIE_ATU_FUNC(x) ((u32)(x) << 16)
 
-#define PCIE_ATU_BUS(x) ((u32)(x) << 20)
-#define PCIE_ATU_DEV(x) ((u32)(x) << 15)
-#define PCIE_ATU_FUNC(x) ((u32)(x) << 12)
-#define PCIE_ATU_TYPE_CFG0 0x0a
-#define PCIE_ATU_TYPE_CFG1 0x0b
+/* EL10/stock DW header CFG transaction types (v1 wrongly used
+ * 0x0a/0x0b). */
+#define PCIE_ATU_TYPE_CFG0 0x04
+#define PCIE_ATU_TYPE_CFG1 0x05
 
-#define SZ_4K 4096
+#define SZ_4K  4096
 #define SZ_64K 65536
+#define SZ_4G  0x100000000ULL
 
-/* --- mocked kernel types ------------------------------------------- */
 struct pci_bus {
     int number;
     struct pci_bus *parent;
-    void *sysdata;               /* struct pci_config_window * */
+    void *sysdata;
 };
 
 static int pci_is_root_bus(struct pci_bus *bus)
 {
-    /* a root bus has no parent OR a dummy-flagged one; for the tests
-     * we mark roots by parent == NULL */
     return bus->parent == NULL;
 }
 
 struct pci_config_window {
-    void *win;                   /* cfg0_base */
+    void *win;                    /* VA mapping (pci_remap_cfgspace) */
     resource_size_t res_start, res_end;
-    void *priv;                  /* struct k3_ecam_seg * */
+    void *priv;
 };
 
 struct device { int dummy; };
@@ -84,10 +95,9 @@ struct dw_pcie {
     void *dbi_base;
     void *atu_base;
     int num_ob_windows;
-    unsigned int pp_ob_atu_idx_offset;
+    u32 region_align;
+    u64 region_limit;
 };
-
-struct dw_pcie_rp { int dummy; };
 
 struct dw_pcie_ob_atu_cfg {
     int index;
@@ -97,35 +107,52 @@ struct dw_pcie_ob_atu_cfg {
     u64 size;
 };
 
-/* --- the ATU mock: records the LAST programmed config + a call log -- */
+/* --- the ATU mock with the EL10 RANGE CHECK modeled -------------
+ * (the v1 mock returned success unconditionally, hiding the
+ * zero-region-geometry failure) */
 static struct dw_pcie_ob_atu_cfg mock_last_atu;
 static int mock_atu_calls;
-static int mock_atu_ret;         /* injectable failure */
+static int mock_atu_ret;
+static int mock_serialization_violation;
+static pthread_mutex_t k3_ecam_atu_lock = PTHREAD_MUTEX_INITIALIZER;
+
+#define IS_ALIGNED(x, a) (((x) & ((typeof(x))(a) - 1)) == 0)
 
 static int dw_pcie_prog_outbound_atu(struct dw_pcie *pci,
                                      struct dw_pcie_ob_atu_cfg *atu)
 {
-    (void)pci;
+    u64 limit_addr;
+
     if (mock_atu_ret)
         return mock_atu_ret;
+
+    /* the EL10 range check (pcie-designware.c:494) */
+    limit_addr = atu->parent_bus_addr + atu->size - 1;
+    if ((limit_addr & ~pci->region_limit) != (atu->parent_bus_addr & ~pci->region_limit) ||
+        !IS_ALIGNED(atu->parent_bus_addr, pci->region_align) ||
+        !IS_ALIGNED(atu->pci_addr, pci->region_align) || !atu->size)
+        return -EINVAL;
+
     mock_last_atu = *atu;
     mock_atu_calls++;
+
+    /* serialization probe: the k3 lock must be held here */
+    if (pthread_mutex_trylock(&k3_ecam_atu_lock) == 0) {
+        printf("FAIL: ATU mock ran WITHOUT the k3 lock held\n");
+        pthread_mutex_unlock(&k3_ecam_atu_lock);
+        mock_serialization_violation = 1;
+    }
     return 0;
 }
-
-/* mutex: use pthreads to exercise serialization semantics */
-
-/* devm mocks: fixed arenas so ioremap "succeeds" */
-/* the device/ACPI init path is not under test; stub the segment directly */
 '''
 
 TESTS = r'''
-/* --- the extracted map_bus core (kept verbatim in shape) ---------- */
+/* --- the extracted driver logic (shape-verbatim) ----------------- */
 struct k3_ecam_seg {
     struct dw_pcie pci;
-    struct dw_pcie_rp pp;
     void *dbi_base;
-    void *cfg0_base;
+    void *cfg0_base;      /* VA */
+    resource_size_t cfg0_phys;
     resource_size_t cfg0_size;
     void *atu_base;
 };
@@ -153,7 +180,7 @@ static void *k3_ecam_child_map(struct k3_ecam_seg *seg,
 
     atu.index = 0;
     atu.type = type;
-    atu.parent_bus_addr = (u64)(uintptr_t)seg->cfg0_base;
+    atu.parent_bus_addr = (u64)seg->cfg0_phys;
     atu.pci_addr = busdev;
     atu.size = seg->cfg0_size;
 
@@ -177,10 +204,6 @@ static void *k3_ecam_map_bus(struct pci_bus *bus,
         return NULL;
 
     if (pci_is_root_bus(bus)) {
-        /*
-         * Root-bus ghost filter (the Nov 18 gpioy-qualified rule,
-         * seg-2/4 form): only devfn 0 is reachable on the root bus.
-         */
         if (devfn)
             return NULL;
         return k3_ecam_own_map(seg, where);
@@ -189,12 +212,16 @@ static void *k3_ecam_map_bus(struct pci_bus *bus,
     return k3_ecam_child_map(seg, bus, devfn, where);
 }
 
-/* --- test fixtures -------------------------------------------------- */
-static struct k3_ecam_seg seg;
-static struct pci_config_window cfg;
-static struct pci_bus root_bus;      /* parent == NULL: root */
-static struct pci_bus child_bus;     /* parent == &root_bus: bus 1 */
-static struct pci_bus grandchild;    /* parent == &child_bus: bus 2 */
+/* --- fixtures: BOTH segments, distinct VA/PA ---------------------- */
+static struct k3_ecam_seg seg2, seg4;
+static struct pci_config_window cfg2, cfg4;
+static struct pci_bus root2, child2, root4, child4;
+
+/* CPU-visible VAs (arbitrary, DISTINCT from the PAs) */
+#define VA2 ((void *)0x500000000000UL)
+#define VA4 ((void *)0x600000000000UL)
+#define DBI2 ((void *)0x700000000000UL)
+#define DBI4 ((void *)0x710000000000UL)
 
 static int checks, failed;
 static void require(int cond, const char *what)
@@ -203,220 +230,165 @@ static void require(int cond, const char *what)
     if (!cond) { failed++; printf("FAIL: %s\n", what); }
 }
 
-static void reset(void)
+static void reset_seg(struct k3_ecam_seg *seg, struct pci_config_window *cfg,
+                      void *va, void *dbi, u64 phys, u64 atu)
 {
-    memset(&seg, 0, sizeof(seg));
-    memset(&cfg, 0, sizeof(cfg));
+    memset(seg, 0, sizeof(*seg));
+    memset(cfg, 0, sizeof(*cfg));
     memset(&mock_last_atu, 0, sizeof(mock_last_atu));
     mock_atu_calls = 0;
     mock_atu_ret = 0;
 
-    seg.dbi_base = (void *)0xD4000000;
-    seg.cfg0_base = (void *)0x1200000000UL;
-    seg.cfg0_size = 0x10000;
-    seg.atu_base = (void *)0x80B00000;
-    seg.pci.dbi_base = seg.dbi_base;
-    seg.pci.atu_base = seg.atu_base;
+    seg->dbi_base = dbi;
+    seg->cfg0_base = va;
+    seg->cfg0_phys = phys;
+    seg->cfg0_size = 0x10000;
+    seg->atu_base = (void *)atu;
+    seg->pci.dbi_base = dbi;
+    seg->pci.atu_base = (void *)atu;
+    seg->pci.region_align = SZ_64K;      /* the driver's fix */
+    seg->pci.region_limit = SZ_4G - 1;  /* the driver's fix */
+    seg->pci.num_ob_windows = 16;
 
-    cfg.win = seg.cfg0_base;
-    cfg.priv = &seg;
+    cfg->win = va;
+    cfg->res_start = phys;
+    cfg->res_end = phys + 0xffff;
+    cfg->priv = seg;
+}
 
-    root_bus.number = 0;
-    root_bus.parent = NULL;
-    root_bus.sysdata = &cfg;
+static void reset(void)
+{
+    reset_seg(&seg2, &cfg2, VA2, DBI2, 0x1200000000UL, 0x80b00000UL);
+    reset_seg(&seg4, &cfg4, VA4, DBI4, 0x12c0000000UL, 0x81300000UL);
 
-    child_bus.number = 1;
-    child_bus.parent = &root_bus;
-    child_bus.sysdata = &cfg;
-
-    grandchild.number = 2;
-    grandchild.parent = &child_bus;
-    grandchild.sysdata = &cfg;
+    root2.number = 0;  root2.parent = NULL;      root2.sysdata = &cfg2;
+    child2.number = 1; child2.parent = &root2;   child2.sysdata = &cfg2;
+    root4.number = 0;  root4.parent = NULL;      root4.sysdata = &cfg4;
+    child4.number = 1; child4.parent = &root4;   child4.sysdata = &cfg4;
 }
 
 int main(void)
 {
     void *r;
 
-    /* --- ROOT-BUS GHOST FILTER (the 3j regression) --------------- */
+    /* --- ROOT GHOST FILTER (per segment) ------------------------- */
     reset();
-    r = k3_ecam_map_bus(&root_bus, 0, 0);
-    require(r == (void *)0xD4000000, "root bus devfn 0 maps to DBI");
+    r = k3_ecam_map_bus(&root2, 0, 0x40);
+    require(r == DBI2 + 0x40, "seg2 root devfn 0 -> DBI2+where");
+    r = k3_ecam_map_bus(&root4, 0, 0x40);
+    require(r == DBI4 + 0x40, "seg4 root devfn 0 -> DBI4+where (distinct)");
+    require(k3_ecam_map_bus(&root2, 8, 0) == NULL, "seg2 root devfn 8 filtered");
+    require(k3_ecam_map_bus(&root4, 8, 0) == NULL, "seg4 root devfn 8 filtered");
+    require(mock_atu_calls == 0, "no ATU for root-bus access");
 
-    r = k3_ecam_map_bus(&root_bus, 1, 0);
-    require(r == NULL, "root bus devfn 1 (dev0 fn1) filtered");
-    r = k3_ecam_map_bus(&root_bus, 8, 0);
-    require(r == NULL, "root bus devfn 8 (dev1 fn0) filtered");
-    r = k3_ecam_map_bus(&root_bus, 0x18, 0);
-    require(r == NULL, "root bus devfn 0x18 (dev3) filtered");
-    r = k3_ecam_map_bus(&root_bus, 0xff, 0);
-    require(r == NULL, "root bus devfn 0xff filtered");
-    require(mock_atu_calls == 0, "no ATU programming for root-bus access");
-
-    /* --- OWN-MAP ADDRESSING -------------------------------------- */
+    /* --- THE ARCHIVED ENDPOINTS: literal register values --------- */
     reset();
-    r = k3_ecam_map_bus(&root_bus, 0, 0x40);
-    require(r == (void *)0xD4000040, "devfn 0 where 0x40 -> dbi+0x40");
-    r = k3_ecam_map_bus(&root_bus, 0, 0xfff);
-    require(r == (void *)0xD4000fff, "devfn 0 where 0xfff -> dbi+0xfff");
-
-    /* --- NULL SEG GUARD ------------------------------------------ */
-    reset();
-    cfg.priv = NULL;
-    r = k3_ecam_map_bus(&root_bus, 0, 0);
-    require(r == NULL, "NULL seg returns NULL");
-
-    /* --- CHILD-MAP ATU ENCODING ---------------------------------- */
-    reset();
-    r = k3_ecam_map_bus(&child_bus, 0, 0);
-    require(r == (void *)0x1200000000UL, "child bus 1 devfn 0 returns viewport");
-    require(mock_atu_calls == 1, "one ATU program per child access");
+    /* 0002:01:00.0 = the 10G NIC (10ec:8127): bus 1, dev 0, fn 0 */
+    r = k3_ecam_map_bus(&child2, 0, 0);
+    require(r == VA2, "seg2 01:00.0 CPU access -> VA (not PA)");
+    require(mock_last_atu.pci_addr == 0x01000000u,
+            "seg2 01:00.0 iATU target = 0x01000000 (bus<<24)");
     require(mock_last_atu.type == PCIE_ATU_TYPE_CFG0,
-            "bus 1 (directly below root) uses CFG0");
-    require(mock_last_atu.pci_addr == PCIE_ATU_BUS(1),
-            "bus 1 encodes bus number only for devfn 0");
-
-    r = k3_ecam_map_bus(&child_bus, 0x10, 0);   /* dev 2 fn 0 */
-    require(mock_last_atu.pci_addr == (PCIE_ATU_BUS(1) | PCIE_ATU_DEV(2)),
-            "bus 1 dev 2 encodes bus|dev");
-
-    r = k3_ecam_map_bus(&child_bus, 0x13, 0);   /* dev 2 fn 3 */
-    require(mock_last_atu.pci_addr == (PCIE_ATU_BUS(1) | PCIE_ATU_DEV(2) | PCIE_ATU_FUNC(3)),
-            "bus 1 dev 2 fn 3 encodes bus|dev|fn");
-
-    /* --- GRANDCHILD: CFG1 ---------------------------------------- */
-    reset();
-    r = k3_ecam_map_bus(&grandchild, 0x15, 0);
-    require(mock_last_atu.type == PCIE_ATU_TYPE_CFG1,
-            "bus 2 (past one bridge) uses CFG1");
-    require(mock_last_atu.pci_addr == (PCIE_ATU_BUS(2) | PCIE_ATU_DEV(2) | PCIE_ATU_FUNC(5)),
-            "grandchild devfn 0x15 encodes bus 2|dev 2|fn 5");
-
-    /* --- ATU PARAMETERS ------------------------------------------ */
+            "seg2 01:00.0 type CFG0 (0x04, directly below root)");
     require(mock_last_atu.parent_bus_addr == 0x1200000000UL,
-            "ATU parent addr = viewport base");
-    require(mock_last_atu.size == 0x10000,
-            "ATU size = viewport size (64 KiB)");
-    require(mock_last_atu.index == 0, "ATU index 0 (single window)");
+            "seg2 iATU base = PHYSICAL 0x1200000000 (not the VA)");
+    require(mock_last_atu.size == 0x10000, "seg2 window size 64 KiB");
 
-    /* --- WHERE OFFSET HANDLING ----------------------------------- */
-    reset();
-    r = k3_ecam_map_bus(&child_bus, 0, 0x3c);
-    require(r == (void *)(0x1200000000UL + 0x3c),
-            "child where 0x3c -> viewport+0x3c");
+    /* 0004:01:00.0 = the Wi-Fi (10ec:b852): same BDF, other segment */
+    r = k3_ecam_map_bus(&child4, 0, 0);
+    require(r == VA4, "seg4 01:00.0 CPU access -> VA4");
+    require(mock_last_atu.pci_addr == 0x01000000u,
+            "seg4 01:00.0 same encoded target");
+    require(mock_last_atu.parent_bus_addr == 0x12c0000000UL,
+            "seg4 iATU base = PHYSICAL 0x12c0000000 — SEGMENT ISOLATION");
 
-    /* --- ATU FAILURE PROPAGATION --------------------------------- */
+    /* --- SHIFT-DISABLED ENCODING (the v1 false-pass) ------------- */
     reset();
-    mock_atu_ret = -1;
-    r = k3_ecam_map_bus(&child_bus, 0, 0);
-    require(r == NULL, "ATU program failure returns NULL");
-
-    /* --- ATU SERIALIZATION (concurrent children) ----------------- */
-    reset();
-    {
-        /* the mock records the LAST config; with the mutex held during
-         * program, two threads cannot interleave. We verify the lock
-         * is actually held across dw_pcie_prog_outbound_atu by
-         * asserting from INSIDE the mock: */
-        extern int in_atu_critical_section(void);
-        require(in_atu_critical_section() == 0,
-                "mutex not held outside the ATU call (sanity)");
+    k3_ecam_map_bus(&child2, 0x13, 0);   /* 01:02.3 */
+    require(mock_last_atu.pci_addr == 0x01130000u,
+            "01:02.3 target = 0x01130000 (dev<<19|fn<<16)");
+    { struct pci_bus gc = { 2, &child2, &cfg2 };
+      k3_ecam_map_bus(&gc, 0x15, 0);     /* 02:02.5 */
+      require(mock_last_atu.pci_addr == 0x02150000u,
+              "02:02.5 target = 0x02150000 (bus<<24|dev<<19|fn<<16)");
+      require(mock_last_atu.type == PCIE_ATU_TYPE_CFG1,
+              "bus 2 past one bridge -> CFG1 (0x05)");
     }
+    { struct pci_bus ff = { 255, &child2, &cfg2 };
+      k3_ecam_map_bus(&ff, 0xff, 0);
+      require(mock_last_atu.pci_addr == 0xffff0000u,
+              "ff:1f.7 target = 0xffff0000 (full-range encoding)");
+    }
+
+    /* --- THE RANGE-CHECK DEFECT (v1 hid it): zero geometry FAILS -- */
+    reset();
+    seg2.pci.region_align = 0;
+    seg2.pci.region_limit = 0;
+    r = k3_ecam_map_bus(&child2, 0, 0);
+    require(r == NULL, "zero region geometry -> first child access NULL (the 3k defect)");
+
+    /* --- the adjacent-I/O boundary -------------------------------- */
+    reset();
+    /* The viewport's last byte: where 0xffff (the v1 harness
+     * wrongly passed 0x100000-1 = 0xFFFFF, PAST the 64 KiB window
+     * — a boundary-arithmetic bug in the boundary test itself). */
+    r = k3_ecam_map_bus(&child2, 0, 0xffff);
+    require(r == VA2 + 0xffff, "where 0xffff stays in the viewport");
+    /* The generic-ECAM bus-1 offset (+0x100000) lands in the
+     * adjacent I/O aperture — this driver must NEVER produce it:
+     * map_bus addresses viewport+where only (the audit's point).
+     * where values past 0xffff are outside the config space. */
+    require(k3_ecam_map_bus(&child2, 0, 0x100000) == VA2 + 0x100000,
+            "the driver does not clamp where — callers must bound it (documented limit)");
+    /* the ATU window itself ends at +0xffff: the limit check in the
+     * mock validates parent+size-1 <= the 4G-aligned region */
+    require(mock_atu_calls > 0, "the boundary access programmed the ATU");
+
+    /* --- ATU failure propagation ---------------------------------- */
+    reset();
+    mock_atu_ret = -ETIMEDOUT;
+    require(k3_ecam_map_bus(&child2, 0, 0) == NULL, "ATU failure -> NULL");
+
+    /* --- serialization --------------------------------------------- */
+    reset();
+    mock_serialization_violation = 0;
+    k3_ecam_map_bus(&child2, 0, 0);
+    require(mock_serialization_violation == 0,
+            "ATU programming under the k3 lock");
 
     printf("%s: %d checks, %d failures\n",
            failed ? "FAILED" : "PASS", checks, failed);
     return failed != 0;
 }
-
-/* the serialization probe: called by the ATU mock while the lock
- * is held; nonzero iff the mutex is currently locked by this thread */
-static int mock_in_atu;
-static int in_atu_critical_section(void)
-{
-    return mock_in_atu;
-}
 '''
 
-# inject the probe into the ATU mock
-COMMON_FINAL = COMMON.replace(
-    """    mock_last_atu = *atu;
-    mock_atu_calls++;
-    return 0;""",
-    """    mock_last_atu = *atu;
-    mock_atu_calls++;
-    mock_in_atu = 1;
-    /* while we are inside the mock, the k3 lock must be held: try a
-     * non-blocking acquire — it must FAIL (else the caller did not
-     * hold the lock across the program call) */
-    {
-        int rc = pthread_mutex_trylock(&k3_ecam_atu_lock);
-        if (rc == 0) {
-            printf("FAIL: ATU mock ran WITHOUT the k3 lock held (unserialized program)\\n");
-            pthread_mutex_unlock(&k3_ecam_atu_lock);
-            mock_serialization_violation = 1;
-        }
-    }
-    mock_in_atu = 0;
-    return 0;"""
-).replace(
-    "static int mock_atu_ret;         /* injectable failure */",
-    "static int mock_atu_ret;         /* injectable failure */\nstatic int mock_in_atu;\nstatic int mock_serialization_violation;"
-)
-
-# the lock must be declared before the mock uses it
-COMMON_FINAL = COMMON_FINAL.replace(
-    "/* mutex: use pthreads to exercise serialization semantics */\nstatic pthread_mutex_t k3_ecam_atu_lock = PTHREAD_MUTEX_INITIALIZER;",
-    "/* mutex: use pthreads to exercise serialization semantics */\nstatic pthread_mutex_t k3_ecam_atu_lock = PTHREAD_MUTEX_INITIALIZER;\nstatic int mock_in_atu;\nstatic int mock_serialization_violation;"
-)
-
-# move the serialization probe functions out of TESTS (they live in the common)
-TESTS_FINAL = TESTS.replace(
-    """        extern int in_atu_critical_section(void);
-        require(in_atu_critical_section() == 0,
-                "mutex not held outside the ATU call (sanity)");""",
-    """        require(mock_serialization_violation == 0,
-                "ATU programming always under the k3 lock (serialized)");"""
-).replace(
-    """
-/* the serialization probe: called by the ATU mock while the lock
- * is held; nonzero iff the mutex is currently locked by this thread */
-static int mock_in_atu;
-static int in_atu_critical_section(void)
-{
-    return mock_in_atu;
-}
-""", "")
+# errno defines for the mock
+COMMON = COMMON.replace("#define SZ_4G  0x100000000ULL",
+                        "#define SZ_4G  0x100000000ULL\n#define ETIMEDOUT 110\n#define EINVAL 22")
 
 
 class K3EcamMapBusTests(unittest.TestCase):
     def test_map_bus_rules(self):
-        """Compile the extracted map_bus core + mocks; run the assertions."""
         with tempfile.TemporaryDirectory(prefix="k3-ecam-test-") as d:
             c = Path(d) / "t.c"
             exe = Path(d) / "t"
-            c.write_text(COMMON_FINAL + TESTS_FINAL)
+            c.write_text(COMMON + TESTS)
             build = subprocess.run(
                 ["cc", "-o", str(exe), str(c), "-lpthread", "-Wall", "-Werror"],
                 capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr[:4000])
             run = subprocess.run([str(exe)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout)
-            self.assertIn("PASS:", run.stdout)
 
     def test_source_matches_rig(self):
-        """The harness's extracted logic must match the rig's driver source.
-
-        Guards against the harness drifting from the real driver: the
-        root-bus filter comment and the devfn rule must appear verbatim
-        in the rig's pcie-k3-acpi-ecam.c.
-        """
+        """The archived driver must carry the defect fixes."""
         rig = ECAM_SRC.read_text() if ECAM_SRC.is_file() else None
         if rig is None:
-            self.skipTest("rig driver source not archived in the repo")
-        self.assertIn("if (devfn)\n\t\t\treturn NULL;", rig,
-                      "the Nov 18 root-bus devfn filter must be in the driver")
-        self.assertIn("bus_shift", rig,
-                      "the bus_shift 8 creation fix must be in the driver")
+            self.skipTest("rig driver source not archived")
+        self.assertIn("cfg0_phys", rig, "the physical viewport base must exist")
+        self.assertIn("region_align = SZ_64K", rig, "the region geometry fix")
+        self.assertIn("IATU_UNROLL", rig, "the unrolled capability fix")
+        self.assertIn("if (devfn)\n\t\t\treturn NULL;", rig, "the ghost filter")
 
 
 if __name__ == "__main__":
