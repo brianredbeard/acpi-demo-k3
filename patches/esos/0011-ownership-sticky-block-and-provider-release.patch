@@ -1,6 +1,6 @@
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
---- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c	2026-11-21 10:15:15.959096572 -0800
-+++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c	2026-11-21 10:21:47.627197827 -0800
+--- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c
 @@ -14,6 +14,12 @@
  #include "k3_hsm.h"
  #include "k3_domain_ownership.h"
@@ -37,7 +37,39 @@ diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/d
  
  	level = rt_hw_interrupt_disable();
  	if (d->state != K3_DOMAIN_ACTIVE) {
-@@ -279,13 +297,27 @@
+@@ -194,6 +212,31 @@
+ 		rt_hw_interrupt_enable(level);
+ 		return -RT_EBUSY;
+ 	}
++	/*
++	 * Atomic holder recheck (rhct12 audit, ESOS 0011 hold): the
++	 * provider release (X100_AP) may drop ITS hold while other
++	 * classes still hold — e.g. DMA with one reference outstanding.
++	 * The state machine alone (ACTIVE) does not establish sleep
++	 * safety. Recheck every consumer count under the SAME interrupt
++	 * mask as the state change so an acquisition racing this path
++	 * either blocks on the ENTERING_WAIT gate or is visible here.
++	 */
++	{
++		int c;
++
++		for (c = 0; c < K3_CONSUMER_CLASS_COUNT; c++) {
++			if (d->consumers[c]) {
++				rt_hw_interrupt_enable(level);
++				d->stats.denied_entry++;
++				return -RT_EPERM;
++			}
++		}
++		if (!d->qualified) {
++			rt_hw_interrupt_enable(level);
++			d->stats.denied_entry++;
++			return -RT_EPERM;
++		}
++	}
+ 	/* QUIESCE: the state change itself — the prepare gate and the
+ 	 * eligibility check deny new work from this point */
+ 	d->state = K3_DOMAIN_ENTERING_WAIT;
+@@ -279,13 +322,27 @@
  
  	if (!d)
  		return -RT_EINVAL;
@@ -70,7 +102,7 @@ diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/d
  	return 1;
  }
  
-@@ -364,7 +396,12 @@
+@@ -364,7 +421,12 @@
  				eligible = RT_FALSE;
  		if (!eligible) {
  			rt_hw_interrupt_enable(level);
@@ -84,3 +116,14 @@ diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.c b/bsp/spacemit/d
  		}
  	}
  
+diff --git a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+--- a/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
++++ b/bsp/spacemit/drivers/rpmi/k3/k3_domain_ownership.h
+@@ -84,6 +84,7 @@
+ 	rt_uint32_t wake_timer;
+ 	rt_uint32_t wake_other;
+ 	rt_uint32_t aborted_entry;
++	rt_uint32_t denied_entry;	/* holder recheck / qualification denials */
+ 	rt_uint32_t stale_vote_rejected;
+ 	rt_uint32_t hw_handshake_timeouts;	/* audit fix 4 */
+ };

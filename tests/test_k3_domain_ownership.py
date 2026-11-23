@@ -116,6 +116,8 @@ static const struct k3_domain_hw_ops mock_ops = {
 };
 static void release_enter_sem_during_wait(void); /* fwd */
 static void m2_enter_isr_c1_during_wait(void); /* fwd */
+static void m2_enter_isr_c2_during_wait(void); /* fwd */
+static void inject_dma_during_wait(void); /* fwd: 0011 S3 */
 
 int main(void){
     struct k3_cluster_domain *d;
@@ -296,6 +298,83 @@ int main(void){
         require(k3_domain_cluster_quiesced(1) == RT_FALSE,
                 "seq: no hw ops -> not quiesced");
         k3_domain_set_hw_ops(&mock_ops);
+ 
+        /* ---- ESOS 0011 promotion scenarios (rhct12 audit) ------------ */
+        {
+            struct k3_cluster_domain *c2;
+
+            require(k3_domain_init(2) == 0, "0011: cluster 2 init");
+            require(k3_domain_qualify(2) == 0, "0011: cluster 2 qualified");
+            require(k3_domain_consumer_acquire(2, K3_CONSUMER_X100_AP) == 0,
+                    "0011: provider holds C2");
+            mock_stopped = 1;
+
+            /* SCENARIO 1 — AP-only: provider releases on all-stopped,
+             * no other class holds -> commit succeeds */
+            require(k3_domain_provider_release(2) == 1,
+                    "0011: S1 provider release");
+            mock_m2_enable_ct = 0;
+            mid_wait_hook = m2_enter_isr_c2_during_wait;
+            require(k3_domain_commit_sleep(2, 1) == 0,
+                    "0011: S1 AP-only commit -> ASLEEP");
+            c2 = k3_test_domain(2);
+            require(c2->state == K3_DOMAIN_ASLEEP, "0011: S1 ASLEEP");
+            require(mock_m2_enable_ct == 1, "0011: S1 enable ran once");
+            /* restore ACTIVE + provider hold for the next scenario
+             * (the exit ISR itself re-acquires the provider) */
+            k3_domain_m2_exit_isr(2);
+            require(k3_test_domain(2)->consumers[K3_CONSUMER_X100_AP] == 1,
+                    "0011: provider re-held by the exit ISR");
+
+            /* SCENARIO 2 — AP+DMA: provider released but DMA still
+             * holds one reference -> commit DENIED before the enable */
+            require(k3_domain_consumer_acquire(2, K3_CONSUMER_DMA) == 0,
+                    "0011: S2 DMA acquires");
+            require(k3_domain_provider_release(2) == 1,
+                    "0011: S2 provider release (DMA still holds)");
+            mock_m2_enable_ct = 0;
+            require(k3_domain_commit_sleep(2, 1) == -RT_EPERM,
+                    "0011: S2 commit denied with DMA hold");
+            c2 = k3_test_domain(2);
+            require(c2->state == K3_DOMAIN_ACTIVE, "0011: S2 stays ACTIVE");
+            require(mock_m2_enable_ct == 0, "0011: S2 M2 enable NOT invoked");
+            require(c2->stats.denied_entry == 1, "0011: S2 denial counted");
+            require(k3_domain_consumer_release(2, K3_CONSUMER_DMA) == 0,
+                    "0011: S2 DMA releases");
+
+            /* SCENARIO 3 — concurrent acquisition DURING the wait: the
+             * DMA hold lands mid-wait; the commit must not reach ASLEEP
+             * with the outstanding reference */
+            mid_wait_hook = inject_dma_during_wait;
+            mock_m2_enable_ct = 0;
+            {
+                int rc = k3_domain_commit_sleep(2, 1);
+
+                c2 = k3_test_domain(2);
+                require(c2->state != K3_DOMAIN_ASLEEP,
+                        "0011: S3 never ASLEEP with concurrent hold");
+                require(rc == -RT_ETIMEOUT || rc == -RT_EINTR || rc == -RT_EPERM,
+                        "0011: S3 aborts with a hold arriving mid-wait");
+                require(c2->state == K3_DOMAIN_ACTIVE ||
+                        c2->state == K3_DOMAIN_ABORTED,
+                        "0011: S3 normalizes away from ENTERING_WAIT");
+                require(k3_domain_consumer_release(2, K3_CONSUMER_DMA) == 0,
+                        "0011: S3 concurrent DMA releases");
+                while (k3_test_domain(2)->state == K3_DOMAIN_ABORTED)
+                    k3_domain_abort_sleep(2);
+            }
+
+            /* SCENARIO 4 — timeout with holds cleared: bounded wait
+             * expiry aborts, disables the enable, returns ACTIVE */
+            mock_m2_enable_ct = 0; mock_m2_disable_ct = 0;
+            require(k3_domain_commit_sleep(2, 1) == -RT_ETIMEOUT,
+                    "0011: S4 timeout aborts");
+            c2 = k3_test_domain(2);
+            require(c2->state == K3_DOMAIN_ACTIVE, "0011: S4 -> ACTIVE");
+            require(mock_m2_enable_ct == 1, "0011: S4 enable ran (then aborted)");
+            require(mock_m2_disable_ct == 1, "0011: S4 disable cleared it");
+            require(c2->stats.aborted_entry >= 1, "0011: S4 abort counted");
+        }
     }
 
     printf("%s: %d checks, %d failures\n", failed ? "FAILED" : "PASS", checks, failed);
@@ -306,6 +385,16 @@ int main(void){
  * request is blocked in rt_sem_take */
 static void inject_during_wait(void){
     k3_domain_consumer_acquire(0, K3_CONSUMER_DISPLAY);
+}
+
+/* 0011 S1: the full M2-enter ISR on cluster 2, releasing its semaphore */
+static void m2_enter_isr_c2_during_wait(void){
+    k3_domain_m2_enter_isr(2);
+}
+
+/* 0011 S3: a DMA consumer arrives while cluster 2 blocks in the wait */
+static void inject_dma_during_wait(void){
+    k3_domain_consumer_acquire(2, K3_CONSUMER_DMA);
 }
 
 /* mid-wait M2-enter: the ISR releases the semaphore while the
