@@ -28,7 +28,7 @@ index 6e0e8dc96..98e0b1d66 100644
  	group = rpmi_service_group_hsm_create(hsm);
  	if (!group) {
 diff --git a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
-index efbf3c41f..2c1e6da71 100644
+index efbf3c41f..f14b01570 100644
 --- a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
 +++ b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.c
 @@ -19,6 +19,7 @@ extern struct spacemit_rpmi_func rpmi_rtc_func;
@@ -47,29 +47,47 @@ index efbf3c41f..2c1e6da71 100644
  	{ .compatible = "k3-os0-rpmi-pwrkey", .data = (void *)&rpmi_pwrkey_func },
  	{ .compatible = "k3-os0-rpmi-msi", .data = (void *)&rpmi_msi_func },
  	{},
-diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
-index 732f11353..159e8d575 100644
---- a/bsp/spacemit/platform/rt24/k3.dtsi
-+++ b/bsp/spacemit/platform/rt24/k3.dtsi
-@@ -736,6 +736,12 @@
- 				status = "disabled";
- 			};
+@@ -55,6 +57,21 @@ static rt_int32_t spacemit_rpmi_get_config_from_dt(struct dtb_node *node, struct
  
-+			rpmi_cppc: rpmi-cppc@15 {
-+				compatible = "k3-os0-rpmi-cppc";
-+				reg = <0x0 0x0>;
-+				status = "okay";
-+			};
+ 	config->shmem_size = fdt32_to_cpu(*(uint32_t*)prop_data);
+ 
++	/* CPPC fastchannel region is optional (only when the CPPC
++	 * service is enabled); absent -> 0 and cppc registration
++	 * reports the missing region. */
++	{
++		rt_uint32_t fval[2] = {0, 0};
 +
- 			rpmi_pwrkey: rpmi-pwrkey@13 {
- 				compatible = "k3-os0-rpmi-pwrkey";
- 				reg = <0x0 0x0>;
++		dtb_node_read_u32_array(node, "fchan-base", fval, 2);
++		config->fchan_base = (((rt_uint64_t)fval[0]) << 32) | fval[1];
++		prop_data = dtb_node_get_property(node, "fchan-size", &prop_len);
++		if (prop_data)
++			config->fchan_size = fdt32_to_cpu(*(uint32_t*)prop_data);
++		else
++			config->fchan_size = 0;
++	}
++
+ 	prop_data = dtb_node_get_property(node, "slot-size", &prop_len);
+ 	if (!prop_data) {
+ 		rt_kprintf("%s:%d, get slot-size failed\n", __func__, __LINE__);
+diff --git a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.h b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.h
+index 8e95eb00f..b50696163 100644
+--- a/bsp/spacemit/drivers/rpmi/spacemit-rpmi.h
++++ b/bsp/spacemit/drivers/rpmi/spacemit-rpmi.h
+@@ -196,6 +196,8 @@ struct spacemit_multiple_os {
+ struct spacemit_rpmi_config {
+ 	rpmi_uintptr_t shmem_base;        /* Shared memory base address */
+ 	rpmi_uint32_t shmem_size;         /* Shared memory size */
++	rpmi_uintptr_t fchan_base;        /* CPPC fastchannel base (0 = absent) */
++	rpmi_uint32_t fchan_size;         /* CPPC fastchannel size */
+ 	rpmi_uint32_t slot_size;          /* Message slot size */
+ 	rpmi_uint32_t a2p_queue_size;     /* AP to RCPU queue size */
+ 	rpmi_uint32_t p2a_queue_size;     /* RCPU to AP queue size */
 diff --git a/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c b/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c
 new file mode 100644
-index 000000000..436551498
+index 000000000..62925889f
 --- /dev/null
 +++ b/bsp/spacemit/drivers/rpmi/k3/k3-os0_cppc.c
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,237 @@
 +/*
 + * K3 OS0 RPMI CPPC service driver.
 + *
@@ -103,6 +121,12 @@ index 000000000..436551498
 +
 +#define K3_CPPC_NOMINAL_PERF   2500
 +#define K3_CPPC_HART_COUNT     8
++/* Fastchannel record layout: per-hart 8-byte perf-request records
++ * first, then per-hart 8-byte perf-feedback records (RPMI CPPC
++ * fastchannel layout; union rpmi_cppc_perf_request_fastchan and
++ * struct rpmi_cppc_perf_feedback_fastchan are both 8 bytes). */
++#define K3_CPPC_FCHAN_PERF_REQUEST_OFF		0
++#define K3_CPPC_FCHAN_PERF_FEEDBACK_OFF		64
 +
 +struct k3_cppc_config {
 +	struct dtb_node *node;
@@ -245,11 +269,44 @@ index 000000000..436551498
 +		.nominal_freq = 2500,
 +	};
 +
-+	/* Fastchannel shmem is wired by the transport glue; the CPPC
-+	 * group requires the HSM for hart indexing. */
++	/*
++	 * Fastchannel region: a dedicated carve-out declared in the DTB
++	 * (fchan-base/fchan-size on the rpmi node). The constructor
++	 * rejects a NULL fastchannel shmem (rhct12 audit: the staged
++	 * form passed NULL and group creation failed at boot), so the
++	 * registration must wire a real region. Two records per hart
++	 * (perf-request then perf-feedback), 8 bytes each, 8-byte
++	 * aligned; 8 harts -> 128 bytes each, 256 bytes total.
++	 */
++	struct spacemit_rpmi_config *cfg = (struct spacemit_rpmi_config *)con;
++	struct rpmi_shmem *fchan_shmem;
++	char *fchan_name;
++
++	if (!cfg->fchan_base || !cfg->fchan_size) {
++		rt_kprintf("%s: cppc fastchannel region not declared in DTB\n",
++			   __func__);
++		return -RT_EINVAL;
++	}
++
++	fchan_name = rt_calloc(1, 32);
++	if (!fchan_name)
++		return -RT_ENOMEM;
++	rt_snprintf(fchan_name, 32, "rpmi_cppc_fchan");
++
++	fchan_shmem = rpmi_shmem_create(fchan_name, cfg->fchan_base,
++					cfg->fchan_size,
++					&rpmi_shmem_simple_noncoherent_ops,
++					NULL);
++	if (!fchan_shmem) {
++		rt_kprintf("%s: create cppc fastchannel shmem failed\n", __func__);
++		return -RT_EINVAL;
++	}
++
 +	group = rpmi_service_group_cppc_create(spacemit_rpmi_get_hsm_ctx(), &regs,
 +					       RPMI_CPPC_PASSIVE_MODE,
-+					       NULL, 0, 0,
++					       fchan_shmem,
++					       K3_CPPC_FCHAN_PERF_REQUEST_OFF,
++					       K3_CPPC_FCHAN_PERF_FEEDBACK_OFF,
 +					       &k3_os0_cppc_pops, NULL);
 +	if (!group) {
 +		rt_kprintf("Failed to create cppc service group\n");
@@ -268,3 +325,44 @@ index 000000000..436551498
 +	.rmpi_get_configuration = spacemit_rpmi_get_cppc_config,
 +	.rpmi_register_service = spacemit_rpmi_register_cppc_service,
 +};
+diff --git a/bsp/spacemit/platform/rt24/k3.dtsi b/bsp/spacemit/platform/rt24/k3.dtsi
+index 732f11353..f24322af2 100644
+--- a/bsp/spacemit/platform/rt24/k3.dtsi
++++ b/bsp/spacemit/platform/rt24/k3.dtsi
+@@ -635,6 +635,11 @@
+ 			shmem-base = <0x1 0x800000>;
+ 			shmem-size = <0x4000>;
+ 
++			/* CPPC fastchannel region (perf-request then
++			 * perf-feedback, 8 harts x 8 bytes each = 256B) */
++			fchan-base = <0x1 0x801000>;
++			fchan-size = <0x100>;
++
+ 			/* Message and queue configuration */
+ 			slot-size = <256>;
+ 			a2p-queue-size = <4096>;
+@@ -736,6 +741,12 @@
+ 				status = "disabled";
+ 			};
+ 
++			rpmi_cppc: rpmi-cppc@15 {
++				compatible = "k3-os0-rpmi-cppc";
++				reg = <0x0 0x0>;
++				status = "okay";
++			};
++
+ 			rpmi_pwrkey: rpmi-pwrkey@13 {
+ 				compatible = "k3-os0-rpmi-pwrkey";
+ 				reg = <0x0 0x0>;
+diff --git a/bsp/spacemit/platform/rt24/os0_rcpu/BS01DCMA/dts/k3_rt240_BS01DCMA.dts b/bsp/spacemit/platform/rt24/os0_rcpu/BS01DCMA/dts/k3_rt240_BS01DCMA.dts
+index d7a06e807..660c5cc37 100644
+--- a/bsp/spacemit/platform/rt24/os0_rcpu/BS01DCMA/dts/k3_rt240_BS01DCMA.dts
++++ b/bsp/spacemit/platform/rt24/os0_rcpu/BS01DCMA/dts/k3_rt240_BS01DCMA.dts
+@@ -80,6 +80,7 @@
+ &rpmi {
+ 	status = "okay";
+ 	shmem-base = <0x1 0xe00000>;
++	fchan-base = <0x1 0xe01000>;
+ 	mboxes = <&mailbox3 0>;
+ };
+ 

@@ -1,0 +1,37 @@
+--- a/components/librpmi/lib/rpmi_service_group_clock.c
++++ b/components/librpmi/lib/rpmi_service_group_clock.c
+@@ -207,9 +207,13 @@
+ 	 *   state already.
+ 	 **/
+ 	if (state == RPMI_CLK_STATE_DISABLED) {
+-		/* If clock already disabled? use the cached state */
++		/*
++		 * K3 policy: repeated disable is IDEMPOTENT SUCCESS (the
++		 * same rationale as repeated enable — the rhct12 audit
++		 * measured -6 on both paths without the callback).
++		 */
+ 		if (clk->current_state == RPMI_CLK_STATE_DISABLED) {
+-			return RPMI_ERR_ALREADY;
++			return RPMI_SUCCESS;
+ 		}
+ 		/* If the clock has no child or its a parent with single enable
+ 		 * count then - disable, update cache and return */
+@@ -249,9 +253,16 @@
+ 	 *   must be enabled.
+ 	 */
+ 	else if (state == RPMI_CLK_STATE_ENABLED) {
+-		/* If clock is already enabled? use the cached state */
++		/*
++		 * K3 policy (docs/per-clock-rate-policy-2026-11-20.md):
++		 * repeated enable is IDEMPOTENT SUCCESS — the boot snapshot
++		 * pre-enables the firmware clock set and the first Linux
++		 * enable must be recognized, not rejected. The framework's
++		 * ALREADY (-6) breaks the stated policy and skips the
++		 * platform callback (rhct12 audit finding).
++		 */
+ 		if (clk->current_state == RPMI_CLK_STATE_ENABLED)
+-			return RPMI_ERR_ALREADY;
++			return RPMI_SUCCESS;
+ 
+ 		if (!clk->parent) {
+ 			ret = clkgrp->ops->set_state(clkgrp->ops_priv,

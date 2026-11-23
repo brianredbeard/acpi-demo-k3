@@ -46,11 +46,15 @@
     },
     {
      "file": "patches/esos/0010-cppc-service-group.patch",
-     "sha256": "4a65cd6c15091057c5f72a1f4f527701bf90592ab570d36a922da40b88498f65"
+     "sha256": "2185dcb0fd1deb63b026cec02399943e21e261f0f8d7fa27ffbc4e744dc65b12"
     },
     {
      "file": "patches/esos/0011-ownership-sticky-block-and-provider-release.patch",
      "sha256": "9b72d3d4de5cc50894a9f479d74c338d36182aa331b365fce66d28db3fabe666"
+    },
+    {
+     "file": "patches/esos/0012-clk-idempotent-state-policy.patch",
+     "sha256": "f2c715d830d803f7a006086a154a84a748eff3531bfab6296b7d6d826648012d"
     }
    ],
    "configs": [
