@@ -140,11 +140,6 @@ typedef int gfp_t;
 #define IATU_UNROLL 1
 #define dw_pcie_cap_set(pci, cap) ((pci)->caps |= BIT(cap))
 
-/* Driver-local PHY AHB link-status contract. */
-#define K3_ECAM_PHY_AHB_LINK_STS 0x0004
-#define K3_ECAM_LINK_SMLH_UP BIT(1)
-#define K3_ECAM_LINK_RDLH_UP BIT(12)
-
 struct resource {
 	resource_size_t start, end;
 };
@@ -223,11 +218,20 @@ static int pci_is_root_bus(struct pci_bus *bus)
 	return bus->parent == NULL;
 }
 
-static u32 mock_link_status;
+static void *mock_va(resource_size_t pa)
+{
+	return (void *)(uintptr_t)(0x100000000000UL + pa);
+}
+
+static u32 link2_status, link4_status;
 static u32 readl(const void *addr)
 {
-	(void)addr;
-	return mock_link_status;
+	if (addr == mock_va(0x82D00004UL))
+		return link2_status;
+	if (addr == mock_va(0x82B00004UL))
+		return link4_status;
+	fprintf(stderr, "unexpected PHY status read at %p\n", addr);
+	exit(EXIT_FAILURE);
 }
 
 static int mock_version_calls;
@@ -281,11 +285,6 @@ static void reset_iomaps(void)
 	mock_iomap_fail_at = -1;
 }
 
-static void *mock_va(resource_size_t pa)
-{
-	return (void *)(uintptr_t)(0x100000000000UL + pa);
-}
-
 static void *devm_ioremap(struct device *dev, resource_size_t pa,
 			  resource_size_t size)
 {
@@ -334,8 +333,8 @@ static struct device mock_dev;
 #define VA4   ((void *)0x600000000000UL)
 #define DBI2  ((void *)0x700000000000UL)
 #define DBI4  ((void *)0x710000000000UL)
-#define LINK2 ((void *)0x720000000000UL)
-#define LINK4 ((void *)0x721000000000UL)
+#define LINK2 mock_va(0x82D00000UL)
+#define LINK4 mock_va(0x82B00000UL)
 
 static int checks, failed;
 
@@ -381,7 +380,7 @@ static void reset(void)
 	memset(&mock_last_atu, 0, sizeof(mock_last_atu));
 	mock_atu_calls = 0;
 	mock_atu_ret = 0;
-	mock_link_status = BIT(1) | BIT(12);
+	link2_status = link4_status = BIT(1) | BIT(12);
 	mock_version_calls = 0;
 	reset_iomaps();
 
@@ -428,7 +427,7 @@ static void init_fixture(u16 segment, resource_size_t phys, void *win)
 	mock_version_calls = 0;
 	mock_atu_ret = 0;
 	mock_atu_calls = 0;
-	mock_link_status = BIT(1) | BIT(12);
+	link2_status = link4_status = BIT(1) | BIT(12);
 }
 
 int main(void)
@@ -439,18 +438,12 @@ int main(void)
 
 	/* Root-bus DBI access and the device-slot ghost filter. */
 	reset();
-	r = k3_ecam_map_bus(&root2, 0, 0x40);
-	require(r == DBI2 + 0x40, "seg2 root devfn 0 -> DBI2+where");
-	r = k3_ecam_map_bus(&root4, 0, 0x40);
-	require(r == DBI4 + 0x40, "seg4 root devfn 0 -> DBI4+where");
-	require(k3_ecam_map_bus(&root2, 1, 0x40) == DBI2 + 0x40,
-		"root function 1 allowed (PCI_SLOT 0)");
-	require(k3_ecam_map_bus(&root2, 7, 0x40) == DBI2 + 0x40,
-		"root function 7 allowed (PCI_SLOT 0)");
-	require(k3_ecam_map_bus(&root2, 8, 0) == NULL,
-		"root device 1 function 0 filtered (PCI_SLOT 1)");
-	require(k3_ecam_map_bus(&root2, 0x1f, 0) == NULL,
-		"root device 3 function 7 filtered");
+	for (unsigned int devfn = 0; devfn < 256; devfn++) {
+		require(k3_ecam_map_bus(&root2, devfn, 0x40) ==
+			(devfn == 0 ? DBI2 + 0x40 : NULL), "seg2 DBI devfn filter");
+		require(k3_ecam_map_bus(&root4, devfn, 0x40) ==
+			(devfn == 0 ? DBI4 + 0x40 : NULL), "seg4 DBI devfn filter");
+	}
 	require(k3_ecam_map_bus(&root2, 0, 0x1000) == DBI2,
 		"root where masked to 12 bits");
 	require(k3_ecam_map_bus(&root2, 0, 0x100000) == DBI2,
@@ -458,9 +451,11 @@ int main(void)
 	require(mock_atu_calls == 0, "root access does not program iATU");
 
 	reset();
-	mock_link_status = 0;
+	link2_status = link4_status = 0;
 	require(k3_ecam_map_bus(&root2, 0, 0x40) == DBI2 + 0x40,
-		"root DBI access is independent of link state");
+		"seg2 root DBI while both links are down");
+	require(k3_ecam_map_bus(&root4, 0, 0x40) == DBI4 + 0x40,
+		"seg4 root DBI while both links are down");
 
 	/* Downstream: CPU VA, physical iATU base, 12-bit offset. */
 	reset();
@@ -504,20 +499,20 @@ int main(void)
 		"seg4 iATU base = physical 0x12c0000000");
 
 	/* PHY AHB link gate: both SMLH and RDLH, no iATU if down. */
-	reset();
-	mock_link_status = 0;
-	require(k3_ecam_map_bus(&child2, 0, 0) == NULL,
-		"link down -> NULL");
-	require(mock_atu_calls == 0, "link down does not program iATU");
-	mock_link_status = BIT(1);
-	require(k3_ecam_map_bus(&child2, 0, 0) == NULL,
-		"SMLH only -> NULL");
-	mock_link_status = BIT(12);
-	require(k3_ecam_map_bus(&child2, 0, 0) == NULL,
-		"RDLH only -> NULL");
-	mock_link_status = BIT(1) | BIT(12);
-	require(k3_ecam_map_bus(&child2, 0, 0) == VA2,
-		"both link bits -> access allowed");
+	const u32 states[] = { 0, BIT(1), BIT(12), BIT(1) | BIT(12) };
+	for (unsigned int port = 0; port < 2; port++) {
+		for (unsigned int n = 0; n < ARRAY_SIZE(states); n++) {
+			reset();
+			link2_status = port == 0 ? states[n] : 0;
+			link4_status = port == 1 ? states[n] : 0;
+			bool up = states[n] == (BIT(1) | BIT(12));
+			require(k3_ecam_map_bus(&child2, 0, 0) ==
+				(port == 0 && up ? VA2 : NULL), "seg2 PHY link gate");
+			require(k3_ecam_map_bus(&child4, 0, 0) ==
+				(port == 1 && up ? VA4 : NULL), "seg4 PHY link gate");
+			require(mock_atu_calls == (int)up, "only a live link programs iATU");
+		}
+	}
 	reset();
 	seg2.link_base = NULL;
 	require(k3_ecam_map_bus(&child2, 0, 0) == NULL,
@@ -690,7 +685,9 @@ class K3EcamTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="k3-ecam-test-") as d:
             c = Path(d) / "t.c"
             exe = Path(d) / "t"
-            c.write_text(COMMON + "\n" + functions + "\n" + TESTS)
+            phy_defines = "\n".join(line for line in self.source.splitlines()
+                                   if line.startswith("#define K3_ECAM_"))
+            c.write_text(COMMON + "\n" + phy_defines + "\n" + functions + "\n" + TESTS)
             build = subprocess.run(
                 ["cc", "-o", str(exe), str(c), "-Wall", "-Werror",
                  "-Wno-sign-compare"],
@@ -713,9 +710,6 @@ class K3EcamTests(unittest.TestCase):
             line for line in src.splitlines()
             if not line.lstrip().startswith(("*", "/*"))
         )
-        self.assertEqual(code.count("PCI_SLOT(devfn) > 0"), 2,
-                         "both root filters use the device-slot rule")
-        self.assertNotIn("if (devfn)", src)
         self.assertEqual(src.count("where & PCIE_ECAM_REG_MASK"), 2,
                          "own and child maps mask the register offset")
         self.assertIn("dw_pcie_version_detect(&seg->pci)", src)
@@ -760,6 +754,14 @@ class K3EcamTests(unittest.TestCase):
                          "active patch new-file hunk drifted from ecam source")
         self.assertEqual(count, len(self.source.splitlines()),
                          "active patch hunk header line count is stale")
+
+    def test_rpm_spec_applies_ecam_patch(self):
+        lines = CONFIG.with_name("kernel.spec").read_text().splitlines()
+        self.assertEqual(lines.count(f"Patch900007: {ACTIVE_PATCH.name}"), 1)
+        apply = f"ApplyPatch {ACTIVE_PATCH.name}"
+        self.assertEqual(lines.count(apply), 1)
+        self.assertLess(lines.index("ApplyPatch k3-gpio-acpi.patch"), lines.index(apply))
+        self.assertLess(lines.index(apply), lines.index('%{log_msg "End of patch applications"}'))
 
     def test_active_patch_linkage_rows(self):
         patch = self.patch

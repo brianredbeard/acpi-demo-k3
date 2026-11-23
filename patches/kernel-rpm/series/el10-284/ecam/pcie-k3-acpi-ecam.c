@@ -133,16 +133,8 @@ static void __iomem *k3_ecam_map_bus(struct pci_bus *bus,
 		return NULL;
 
 	if (pci_is_root_bus(bus)) {
-		/*
-		 * Root-bus ghost filter (the Nov 18 gpioy-qualified rule,
-		 * seg-2/4 form): the DW controller answers every root-bus
-		 * device slot with the root port's config (all 32 slots
-		 * reporting 1dee:5216 on 3j, their bus claims blocking the
-		 * downstream scan). Only device 0 is reachable; functions
-		 * 1..7 of device 0 stay visible, matching the DW/DT
-		 * PCI_SLOT() filter.
-		 */
-		if (PCI_SLOT(devfn) > 0)
+		/* DBI exposes a single config header at 00:00.0. */
+		if (devfn)
 			return NULL;
 		return k3_ecam_own_map(seg, where);
 	}

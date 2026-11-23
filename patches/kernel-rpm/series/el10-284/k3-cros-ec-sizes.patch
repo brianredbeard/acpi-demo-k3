@@ -1,0 +1,19 @@
+--- a/drivers/platform/chrome/cros_ec_espi.c
++++ b/drivers/platform/chrome/cros_ec_espi.c
+@@ -749,6 +749,16 @@
+ 	dev_dbg(dev, "Setting up ec_dev structure...\n");
+ 	platform_set_drvdata(pdev, ec_dev);
+ 	ec_dev->phys_name = dev_name(dev);
++	/*
++	 * The core allocates din/dout from these sizes (cros_ec_register);
++	 * zero sizes -> prepare_tx's bounds check fails -EINVAL (the 3j
++	 * field finding: 'cros_ec_prepare_tx failed: -22'). Mirror the
++	 * LPC transport's sizing — this driver converts the same packet
++	 * protocol to eSPI PR.
++	 */
++	ec_dev->din_size = sizeof(struct ec_host_response) +
++			   sizeof(struct ec_response_get_protocol_info);
++	ec_dev->dout_size = sizeof(struct ec_host_request);
+ 	ec_dev->cmd_xfer = cros_ec_cmd_xfer_espi;
+ 	ec_dev->pkt_xfer = cros_ec_pkt_xfer_espi;
+ 	ec_dev->cmd_readmem = cros_ec_espi_readmem;

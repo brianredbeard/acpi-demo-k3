@@ -2,7 +2,7 @@ diff --git a/drivers/pci/controller/dwc/pcie-k3-acpi-ecam.c b/drivers/pci/contro
 new file mode 100644
 --- /dev/null
 +++ b/drivers/pci/controller/dwc/pcie-k3-acpi-ecam.c
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,295 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * SpacemiT K3 ACPI PCI config access for DesignWare viewport segments.
@@ -138,16 +138,8 @@ new file mode 100644
 +		return NULL;
 +
 +	if (pci_is_root_bus(bus)) {
-+		/*
-+		 * Root-bus ghost filter (the Nov 18 gpioy-qualified rule,
-+		 * seg-2/4 form): the DW controller answers every root-bus
-+		 * device slot with the root port's config (all 32 slots
-+		 * reporting 1dee:5216 on 3j, their bus claims blocking the
-+		 * downstream scan). Only device 0 is reachable; functions
-+		 * 1..7 of device 0 stay visible, matching the DW/DT
-+		 * PCI_SLOT() filter.
-+		 */
-+		if (PCI_SLOT(devfn) > 0)
++		/* DBI exposes a single config header at 00:00.0. */
++		if (devfn)
 +			return NULL;
 +		return k3_ecam_own_map(seg, where);
 +	}

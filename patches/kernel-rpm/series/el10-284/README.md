@@ -3,7 +3,7 @@
 The build artifacts for 6.12.0-284.acpidebug.1.el10:
 
 - kernel.spec — the modified distro spec (buildid
-  .acpidebug.1, Patch900002/3 for our patches, changelog,
+  .acpidebug.1, Patch900002/3/7 for our patches, changelog,
   with_configchecks 0)
 - config-acpidebug — GPIO_SPACEMIT_K1=y (the EC first-probe fix),
   CONFIG_RFKILL_GPIO=y (the WLEN/BTEN rfkill-gpio devices, added for
@@ -14,11 +14,9 @@ The build artifacts for 6.12.0-284.acpidebug.1.el10:
   chip, probe branch; note: the 284 driver already has
   IRQCHIP_IMMUTABLE and the BGPIOF rename — our patch
   carries only the ACPI additions)
-- k3-ecam-mcfg-quirk.patch — the DW ECAM ghost filter (segs 0/2/4)
-  for the NEXT cycle: pairs with the rhct11-wifi firmware payload
-  (PCI2/PCI4 + MCFG segs 2/4). Not in the frozen 284 SRPM — this
-  closes audit item PCI-01. Untested against mock; apply via the
-  same Patch90000N mechanism.
+- k3-ecam-segs24.patch — Patch900007 provides segment-0 ECAM and
+  segment-2/4 viewport operations. Only devfn 0 reaches each viewport
+  controller's root-port DBI header. The spec applies it after GPIO.
 
 SRPM: rpmbuild -bs with kernel.spec from ~/rpmbuild/SPECS,
 SOURCES = the distro SRPM contents + these files.
