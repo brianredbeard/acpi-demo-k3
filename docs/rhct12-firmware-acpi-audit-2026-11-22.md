@@ -173,3 +173,31 @@ clean to the independent pristine base.
 Not yet exercised on this boot (rode past the hang point): EC event
 delivery, UFS, tsensor zones, rfkill, segs 2/4 endpoints. The rpmi-hsm
 suspend denials in the log are the known, documented boundary items.
+
+## Cycle-3d boot forensics (2026-11-23, ongoing)
+
+The 3d kernel (espi v3 + XScale quirk + ECAM) freezes at the 8250 banner
+(2.70-2.72s) under EVERY hypothesis eliminator tried:
+- espi probe in both states (failed -22 / succeeded via v3)
+- cpuidle.off=1, idle=poll (idle entry ruled out)
+- maxcpus=0 (SMP ruled out)
+- no console= (banner completes; freeze follows the probe anyway)
+- XScale quirk (autoconfig ruled out)
+- 8250.nr_uarts=0: **the boot SURVIVES past the freeze** — kernel runs,
+  initrd finds root (after fixing two initrd defects: dracut built on
+  gpioy omitted the nvme/ufs modules; an --add-drivers run pulled in an
+  iscsi root fatal). The COM0 probe is the killer, mechanism unknown.
+
+Second-order findings (board side, 2026-11-23):
+- The acpidebug initramfs generated at install time ran dracut while
+  GPIOY was booted: hostonly omitted nvme/nvme_core/ufshcd modules.
+  Regenerated with --add-drivers (nvme nvme_core ufshcd_core
+  ufshcd-pltfrm ufs-spacemit gpio_spacemit_k1) -o iscsi -o nfs.
+- The RPMI system-reset path (SBI SRST via the ESOS backend) WEDGES
+  with controller magic=0 version=0 after the second poweroff cycle —
+  hard power cycle required to recover. (Firmware-side issue, separate
+  from the kernel work; the rpmi reset backend's controller state
+  handling needs the same treatment as the clock idempotence item.)
+
+Next: instrumented serial8250_probe_acpi (3e build) to name the exact
+faulting call; the earlycon carries the trace past the 8250 init.
