@@ -116,3 +116,31 @@ Built, verified, and packaged for inspection — NOT flash-qualified.
   installer inspection passes.
 - **Status**: candidate. Flashing waits for the operator's call; the
   kernel-side thermal zone driver rides the cycle-3 RPMs.
+
+## rhct13 flash qualification (2026-11-23, firmware cycle)
+
+Operator-authorized flash of the rev2 candidate (`0e3bfbde…`, `8b171654`)
+on serial HW4MPK3161280211; single EDK2 write (offset 0x210000, 3,248,128
+bytes), readback verified; transaction archived at
+`~/k3-backups/pico-acpi-rhct13-1`.
+
+Boot on the **gpioy kernel** (the qualified recovery kernel, GRUB default —
+one variable: firmware):
+
+- RHEL 10.3 to graphical target; EC bind (`cros_ec_espi PRP0001:03`); UFS
+  attached (host0, `/dev/sda`); NVMe `1dee:5216` on seg0 — the boot device.
+- **GPIO `_CRS` extent live**: `/proc/iomem` shows `d4019000-d40197ff`
+  (0x800) claimed by the PRP0001 GPIO device.
+- **Corrected thermal-trips live**: the decoded DSDT carries
+  (70/90)(72/92)(72/92)(74/94)(75/95)(72/92)(72/92)(72/92) — the ch4
+  hotspot at raw index 4, exactly the `8b171654` fix.
+- **`_OSC` clean**: platform-wide `_OSC` ran (control 0x80 preserved), no
+  AML errors in the boot log.
+- dmicheck: 47 pass / 0 fail / 1 skip.
+- Segs 2/4: roots present in ACPI (domains 0002/0004); endpoints not
+  probed — **matches the rhct12-qualified gpioy behavior** (the
+  qualification receipt itself gates endpoint probing on the ECAM quirk +
+  RFKILL_GPIO kernel, i.e. the cycle-3 acpidebug build).
+
+The thermal zone CONSUMPTION verdict (staggered zones, RW sysfs trips)
+rides the cycle-3 kernel against this now-qualified firmware.
