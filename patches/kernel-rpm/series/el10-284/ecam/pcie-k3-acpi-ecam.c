@@ -102,8 +102,18 @@ static void __iomem *k3_ecam_map_bus(struct pci_bus *bus,
 	if (!seg)
 		return NULL;
 
-	if (pci_is_root_bus(bus))
+	if (pci_is_root_bus(bus)) {
+		/*
+		 * Root-bus ghost filter (the Nov 18 gpioy-qualified rule,
+		 * seg-2/4 form): the DW controller answers every root-bus
+		 * devfn with the root port's config (64 fake bridges seen
+		 * on 3j, their bus claims blocking the downstream scan).
+		 * Only devfn 0 is reachable on the root bus.
+		 */
+		if (devfn)
+			return NULL;
 		return k3_ecam_own_map(seg, where);
+	}
 
 	return k3_ecam_child_map(seg, bus, devfn, where);
 }
@@ -175,8 +185,44 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	return 0;
 }
 
+/*
+ * Segment 0 (genuine 256 MiB ECAM, NVMe root port): the DW controller
+ * does not filter type-0 config TLPs for unused root-bus slots, so a
+ * standard ECAM read of any non-root-port devfn on bus 0 returns the
+ * downstream endpoint's ID (ghost multiplication — 32 slots reporting
+ * 1dee:5216). Mirror the DT pci-host-generic pci_dw_valid_device()
+ * filter (the Nov 18 gpioy-qualified fix): only devfn 0 on the root
+ * bus is reachable; downstream buses enumerate normally.
+ */
+static void __iomem *k3_dw_seg0_map_bus(struct pci_bus *bus,
+					 unsigned int devfn, int where)
+{
+	struct pci_config_window *cfg = bus->sysdata;
+
+	if (bus->number == cfg->busr.start && devfn)
+		return NULL;
+
+	return pci_ecam_map_bus(bus, devfn, where);
+}
+
+struct pci_ecam_ops k3_dw_seg0_ops = {
+	.pci_ops = {
+		.map_bus	= k3_dw_seg0_map_bus,
+		.read		= pci_generic_config_read,
+		.write		= pci_generic_config_write,
+	},
+};
+
 struct pci_ecam_ops k3_dw_ecam_ops = {
 	.init			= k3_ecam_init,
+	/*
+	 * bus_shift 8: pci_ecam_create's size math needs the 64 KiB
+	 * viewport to cover the declared [bus 00-ff] (65536 >> 8 = 256
+	 * buses). The generic ECAM offset is never used — map_bus
+	 * computes viewport + where via the iATU — so the shift only
+	 * satisfies creation.
+	 */
+	.bus_shift		= 8,
 	.pci_ops		= {
 		.map_bus	= k3_ecam_map_bus,
 		.read		= pci_generic_config_read,
