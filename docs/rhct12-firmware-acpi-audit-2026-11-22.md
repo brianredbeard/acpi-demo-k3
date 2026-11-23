@@ -287,3 +287,18 @@ Next: the thermal module needs breadcrumb instrumentation in
 init_sensors (like the 8250 K3DBG round) OR a boot with working
 network for remote debugging. The ECAM/dwmac fixes remain the other
 open items from the 3f boot.
+
+## Thermal zone trip mapping: correct by design (2026-11-23)
+
+The "second trip reads 80-85k vs the DSDT's 90-95k hot" observation is
+the builder's intended layout, not a defect: the ACPI zone builder
+registers THREE trips per channel —
+  trip 0: passive (fan), the DSDT passive value, 8C hysteresis
+  trip 1: MIDDLE passive ((passive+hot)/2) — ch4: (75+95)/2 = 85C ✓
+  trip 2: HOT, the DSDT hot value
+The observed trip_point_1 values (80-85k) are exactly the mid-points;
+trip_point_2 carries the true hot thresholds. The 3f hardware readings
+match the code to the digit. No driver change needed.
+
+(gpioy's zones — ch0-only 65/75/85 — are the OLD hardcoded driver;
+not comparable.)
