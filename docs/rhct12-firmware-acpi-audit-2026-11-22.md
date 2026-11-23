@@ -227,3 +227,32 @@ Test 2 — 3f (the one-line `UPF_FIXED_TYPE` addition, IRQ 11 and all
 other inputs unchanged) is built on the sleeper; boot verdict looks
 for `is a XScale`, the registration-return marker, and SSH/journal
 confirmation of an independently identified boot.
+
+## 3f boot: FIRST acpidebug userspace boot (2026-11-23 13:32)
+
+The UPF_FIXED_TYPE fix (f86c099) + the coherent initramfs (both dracut
+exclusion configs retired; the 43- file had a misspelled directive —
+`omit_dracut_modules` vs RHEL's `omit_dracutmodules` — silently keeping
+the iscsi hook while 42- dropped its drivers; every kernel-install
+regeneration reproduced the fatal) delivered the first 6.12.0-284
+acpidebug boot to a working SERIAL LOGIN ("is a XScale", registration
+returned, console enabled).
+
+Remaining items surfaced by the boot (all concrete, none mysterious):
+1. **tsensor probe -EINVAL**: three of_property_* reads remain in the
+   base probe path (sensor_range, tsensor_map, temperature_offset —
+   lines 25/36/236) that fail on the ACPI-synthesized node. The ACPI
+   zone builder is present; the probe path needs the unified property
+   layer.
+2. **EC chain dead below espi**: the v3 probe succeeds but EC0/PWM0
+   (DSDT-nested PRP0001) never become platform devices — no cros_ec,
+   no PWM, pwm-fan deferred forever.
+3. **ECAM quirk not engaging**: "0002/0004 ECAM region not found" —
+   the SPMT:K3 quirk entries supply ops but the root bridges need an
+   ECAM region (MCFG entry or quirk cfgres); segs 2/4 stay dark and
+   wifi/10G endpoints invisible.
+4. **dwmac -ENXIO "IRQ macirq not found"**: the GMAC's _CRS interrupt
+   not resolving under this kernel's ACPI resource path (worked on
+   gpioy).
+5. **ECAM ghost multiplication**: 8 NVMe copies on bus 0 (the known
+   seg-0 decode interplay; needs the ghost-filter quirk carried).
