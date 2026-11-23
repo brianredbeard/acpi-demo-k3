@@ -1,0 +1,40 @@
+--- a/drivers/tty/serial/8250/8250_platform.c
++++ b/drivers/tty/serial/8250/8250_platform.c
+@@ -15,6 +15,7 @@
+ #include <linux/moduleparam.h>
+ #include <linux/once.h>
+ #include <linux/platform_device.h>
++#include <linux/property.h>
+ 
+ #include <linux/serial_8250.h>
+ 
+@@ -131,11 +132,26 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	/* default clock frequency */
++	/*
++	 * K3 XScale-derived DW 16550: the standard autoconfig runs
++	 * bank-switching feature probes that wedge this UART mid-
++	 * transmission (field result: console frozen inside the 8250
++	 * init banner on the acpidebug kernel, reproducible at
++	 * 2.66-2.73s; build-5 carried this quirk and booted clean).
++	 * Gate on the _DSD compatible (intel,xscale-uart, the vendor
++	 * DT binding mirrored in firmware patch 0008): fixed
++	 * PORT_XSCALE type, no autoconfig.
++	 */
++	if (device_property_match_string(&pdev->dev, "compatible",
++					 "intel,xscale-uart") >= 0) {
++		uart.port.type = PORT_XSCALE;
++	} else {
++		uart.port.type = PORT_16550A;
++		uart.port.flags |= UPF_BOOT_AUTOCONF;
++	}
+ 	uart.port.uartclk = 1843200;
+-	uart.port.type = PORT_16550A;
+ 	uart.port.dev = &pdev->dev;
+-	uart.port.flags |= UPF_SKIP_TEST | UPF_BOOT_AUTOCONF;
++	uart.port.flags |= UPF_SKIP_TEST;
+ 
+ 	ret = uart_read_and_validate_port_properties(&uart.port);
+ 	/* no interrupt -> fall back to polling */
