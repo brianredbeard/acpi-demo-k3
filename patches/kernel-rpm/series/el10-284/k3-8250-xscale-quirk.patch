@@ -8,7 +8,15 @@
  
  #include <linux/serial_8250.h>
  
-@@ -131,11 +132,26 @@
+@@ -114,6 +115,7 @@
+ 	struct resource *regs;
+ 	int ret, line;
+ 
++	pr_info("K3DBG: probe_acpi entry\n");
+ 	regs = platform_get_mem_or_io(pdev, 0);
+ 	if (!regs)
+ 		return dev_err_probe(dev, -EINVAL, "no registers defined\n");
+@@ -131,20 +133,48 @@
  		return -EINVAL;
  	}
  
@@ -25,7 +33,16 @@
 +	 */
 +	if (device_property_match_string(&pdev->dev, "compatible",
 +					 "intel,xscale-uart") >= 0) {
++		/*
++		 * UPF_FIXED_TYPE is REQUIRED: without it the serial
++		 * core discards the requested type (8250_core.c only
++		 * copies up->port.type under UPF_FIXED_TYPE) and
++		 * uart_configure_port reinstates UPF_BOOT_AUTOCONF —
++		 * the autoconfig probes the quirk was meant to skip
++		 * still ran in 3d/3e (the 2026-11-23 field finding).
++		 */
 +		uart.port.type = PORT_XSCALE;
++		uart.port.flags |= UPF_FIXED_TYPE;
 +	} else {
 +		uart.port.type = PORT_16550A;
 +		uart.port.flags |= UPF_BOOT_AUTOCONF;
@@ -36,5 +53,18 @@
 -	uart.port.flags |= UPF_SKIP_TEST | UPF_BOOT_AUTOCONF;
 +	uart.port.flags |= UPF_SKIP_TEST;
  
++	pr_info("K3DBG: before validate props\n");
  	ret = uart_read_and_validate_port_properties(&uart.port);
++	pr_info("K3DBG: validate props ret=%d irq=%d clk=%d\n", ret, uart.port.irq, uart.port.uartclk);
  	/* no interrupt -> fall back to polling */
+ 	if (ret == -ENXIO)
+ 		ret = 0;
+ 	if (ret)
+ 		return ret;
+ 
++	pr_info("K3DBG: before register_8250_port\n");
+ 	line = serial8250_register_8250_port(&uart);
++	pr_info("K3DBG: register_8250_port line=%d\n", line);
+ 	if (line < 0)
+ 		return line;
+ 
