@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
-"""PCIe segment 2/4 (Wi-Fi + 10G NIC) ACPI description tests.
-
-Parses the built EDK2 artifacts (MCFG table + DSDT AML) to verify the
-firmware describes all three enabled host bridges (segments 0/2/4) and
-the WLEN/BTEN rfkill-gpio devices, matching the design in
-docs/wifi-pcie-acpi-2026-11-22.md:
-
-  - MCFG: 3 allocation structures (seg 0 @ 0x1100000000,
-    seg 2 @ 0x1200000000, seg 4 @ 0x12C0000000), bus 0-0xFF each.
-  - DSDT: PCI2/PCI4 root bridges with _SEG 2/4, nested RES2/RES4 ECAM
-    consumers and DBI2/DBI4 reservations, plus WLEN/BTEN rfkill-gpio
-    devices (GpioIo pins 35/30 on \_SB.GPIO, shutdown-gpios _DSD).
+"""Check packaged ACPI tables when K3_EDK2_TEST_FIT selects a candidate.
+Local unit-test runs can still use the existing incremental build output.
 """
+from functools import lru_cache
+import os
 import re
 import struct
 import subprocess
@@ -27,11 +19,21 @@ DSDT = OUTPUT / "Dsdt" / "Dsdt.aml"
 
 IASL = "/usr/bin/iasl"
 
-# segment -> ECAM base address (DSDT _CRS/RESn consumers; seg 0 also in MCFG).
-# Segments 2/4 have NO MCFG entries by design: the platform's compact ECAM
-# windows misdecode under a multi-entry MCFG (ghost multiplication, NVMe
-# lost at BDS — docs/fvb-va-bisect-2026-11-22.md); the kernel k3_dw_ecam
-# quirk carries segments 2/4 config access.
+FIT = os.environ.get("K3_EDK2_TEST_FIT")
+
+
+@lru_cache(maxsize=1)
+def tables_from_fit():
+    from edk2_verify import packaged_tables
+    return packaged_tables(Path(FIT))
+
+
+def table_bytes(signature, incremental):
+    if FIT is not None:
+        return tables_from_fit()[signature]
+    return incremental.read_bytes()
+
+
 EXPECTED_SEGMENTS = {
     0: 0x1100000000,
     2: 0x1200000000,
@@ -47,9 +49,8 @@ EXPECTED_RFKILL = {
 }
 
 
-def parse_mcfg(path):
+def parse_mcfg(data):
     """Parse an MCFG table into {segment: (base, start_bus, end_bus)}."""
-    data = path.read_bytes()
     length = struct.unpack_from("<I", data, 4)[0]
     entries = {}
     off = 44  # ACPI header (36) + MCFG reserved qword (8)
@@ -60,38 +61,39 @@ def parse_mcfg(path):
     return entries
 
 
-def decompile_dsdt(path):
+@lru_cache(maxsize=1)
+def decompile_dsdt():
     """Decompile the built DSDT AML with iasl; return the DSL text."""
     with tempfile.TemporaryDirectory() as tmp:
         dst = Path(tmp) / "Dsdt.aml"
-        dst.write_bytes(path.read_bytes())
+        dst.write_bytes(table_bytes("DSDT", DSDT))
         subprocess.run([IASL, "-d", str(dst)], check=True, capture_output=True)
         return (Path(tmp) / "Dsdt.dsl").read_text()
 
 
-@unittest.skipUnless(MCFG.exists(), f"built MCFG not found: {MCFG}")
+@unittest.skipUnless(FIT is not None or MCFG.exists(), f"built MCFG not found: {MCFG}")
 class McfgSegmentTests(unittest.TestCase):
     def test_single_entry(self):
         """Only segment 0 in MCFG — the compact-ECAM platform rule."""
-        entries = parse_mcfg(MCFG)
+        entries = parse_mcfg(table_bytes("MCFG", MCFG))
         self.assertEqual(sorted(entries), [0])
 
     def test_segments_and_bases(self):
-        entries = parse_mcfg(MCFG)
+        entries = parse_mcfg(table_bytes("MCFG", MCFG))
         for seg, base in EXPECTED_MCFG_SEGMENTS.items():
             self.assertIn(seg, entries, f"segment {seg} missing from MCFG")
             self.assertEqual(entries[seg][0], base)
 
     def test_bus_ranges(self):
-        for seg, (_, start, end) in parse_mcfg(MCFG).items():
+        for seg, (_, start, end) in parse_mcfg(table_bytes("MCFG", MCFG)).items():
             self.assertEqual((start, end), (0, 0xFF))
 
-@unittest.skipUnless(DSDT.exists() and Path(IASL).exists(),
+@unittest.skipUnless(FIT is not None or (DSDT.exists() and Path(IASL).exists()),
                      f"built DSDT or iasl unavailable ({DSDT})")
 class DsdtSegmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.dsl = decompile_dsdt(DSDT)
+        cls.dsl = decompile_dsdt()
     def test_pci2_pci4_root_bridges(self):
         for name in ("PCI2", "PCI4"):
             self.assertRegex(self.dsl, rf"Device \({name}\)")
@@ -111,12 +113,12 @@ class DsdtSegmentTests(unittest.TestCase):
             self.assertRegex(self.dsl, rf"Device \({dev}\)[\s\S]{{0,600}}?{base}")
 
 
-@unittest.skipUnless(DSDT.exists() and Path(IASL).exists(),
+@unittest.skipUnless(FIT is not None or (DSDT.exists() and Path(IASL).exists()),
                      f"built DSDT or iasl unavailable ({DSDT})")
 class DsdtRfkillTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.dsl = decompile_dsdt(DSDT)
+        cls.dsl = decompile_dsdt()
 
     def test_rfkill_devices_present(self):
         for name in EXPECTED_RFKILL:

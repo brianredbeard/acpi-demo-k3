@@ -30,7 +30,11 @@ PCD_SIGNATURE = guid("3c7d193c-682c-4c14-a68f-552dea4f437e")
 # The version 7 RELEASE DB omits token names. Bind these to the generated
 # consuming library via verify_token_abi in every new build.
 MASK_TOKEN = 20
-BRIDGES_TOKEN = 24
+# 2026-11-23: PcdPciePortAGeometryWhenBDisabled (0x30010007) was added
+# between the mask and the bridge table in K3.dec, shifting the bridge
+# table's dynamic token 24 -> 25. Reviewed: the SKU-gated Port A lane
+# geometry (edk2-platforms e0a11126 + token fix ed2506ec + INF 96a276aa).
+BRIDGES_TOKEN = 25
 # Pico DT /soc/pcie@80800000 and /soc/pcie@81000000, first ranges tuple.
 CPU_IO_BASE = {2: 0x1200010000, 4: 0x12c0010000}
 IO_SIZE = 0x100000
