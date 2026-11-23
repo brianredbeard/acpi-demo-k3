@@ -1,0 +1,123 @@
+--- a/drivers/thermal/spacemit/k3_tsensor.c
++++ b/drivers/thermal/spacemit/k3_tsensor.c
+@@ -3,7 +3,9 @@
+ #include <linux/cpufreq.h>
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
++#include <linux/property.h>
+ #include <linux/module.h>
++#include <linux/string.h>
+ #include <linux/platform_device.h>
+ #include <linux/io.h>
+ #include <linux/of_device.h>
+@@ -136,6 +138,82 @@
+  * }
+  */
+ 
++/*
++ * ACPI zone builder (PRP0001 path).
++ *
++ * Staggered per-channel default trips: ch4 measures ~4C above ch0
++ * on this board; identical trip sets either cycle the cool channel
++ * constantly or leave the hotspot uncontrolled. The defaults place
++ * each channel's thresholds relative to its character. Override per
++ * channel via the _DSD "thermal-trips" property:
++ *   Package () { "thermal-trips", Package () {
++ *     <passive0>, <hot0>, <passive1>, <hot1>, ... } }
++ * (milli-degrees, indexed by channel, pairs of passive/hot).
++ *
++ * Trips are registered RW (THERMAL_TRIP_FLAG_RW_TEMP|HYST) so the
++ * thresholds and hysteresis are tunable at runtime via sysfs.
++ */
++#define K3_THERMAL_DEFAULT_PASSIVE_C	70
++#define K3_THERMAL_DEFAULT_HOT_C		90
++
++static struct thermal_zone_device *k3_thermal_register_acpi_zone(
++	struct device *dev, struct k3_thermal_sensor *s, int channel)
++{
++	static const struct thermal_trip_type_map { int passive_c; int hot_c; } defaults[] = {
++		{ 70, 90 }, { 72, 92 }, { 72, 92 }, { 74, 94 },
++		{ 75, 95 }, { 72, 92 }, { 72, 92 }, { 72, 92 },
++	};
++	struct thermal_trip trips[3];
++	struct thermal_zone_params tzp = {
++		.governor_name = "step_wise",
++	};
++	u32 sd_trips[16] = {};
++	int ntrips = 0;
++	int passive_c, hot_c;
++	char prop_name[32];
++	int ret;
++
++	/* _DSD override first: "thermal-trips" = flat per-channel pairs */
++	ret = device_property_count_u32(dev, "thermal-trips");
++	if (ret > 0 && channel * 2 + 1 < ret && ret <= ARRAY_SIZE(sd_trips) &&
++	    !device_property_read_u32_array(dev, "thermal-trips", sd_trips, ret)) {
++		passive_c = sd_trips[channel * 2] / 1000;
++		hot_c = sd_trips[channel * 2 + 1] / 1000;
++	} else {
++		if (channel < ARRAY_SIZE(defaults)) {
++			passive_c = defaults[channel].passive_c;
++			hot_c = defaults[channel].hot_c;
++		} else {
++			passive_c = K3_THERMAL_DEFAULT_PASSIVE_C;
++			hot_c = K3_THERMAL_DEFAULT_HOT_C;
++		}
++	}
++
++	/* trip 0: passive (fan), trip 1: passive (deeper), trip 2: hot */
++	trips[0].temperature = passive_c * 1000;
++	trips[0].hysteresis = 8000;
++	trips[0].type = THERMAL_TRIP_PASSIVE;
++	trips[0].flags = THERMAL_TRIP_FLAG_RW_TEMP | THERMAL_TRIP_FLAG_RW_HYST;
++
++	trips[1].temperature = ((passive_c + hot_c) / 2) * 1000;
++	trips[1].hysteresis = 5000;
++	trips[1].type = THERMAL_TRIP_PASSIVE;
++	trips[1].flags = THERMAL_TRIP_FLAG_RW_TEMP | THERMAL_TRIP_FLAG_RW_HYST;
++
++	trips[2].temperature = hot_c * 1000;
++	trips[2].hysteresis = 2000;
++	trips[2].type = THERMAL_TRIP_HOT;
++	trips[2].flags = THERMAL_TRIP_FLAG_RW_TEMP | THERMAL_TRIP_FLAG_RW_HYST;
++
++	ntrips = 3;
++
++	snprintf(prop_name, sizeof(prop_name), "k3_tsensor_ch%d", channel);
++
++	return thermal_zone_device_register_with_trips(
++			prop_name, trips, ntrips, s->sdesc + channel,
++			&k3_of_thermal_ops, &tzp, 0, 2000);
++}
++
+ static int k3_thermal_probe(struct platform_device *pdev)
+ {
+ 	unsigned int value;
+@@ -224,9 +302,25 @@
+ 				i, s->sdesc + i, &k3_of_thermal_ops);
+ 		if (IS_ERR(s->sdesc[i].tzd)) {
+ 			ret = PTR_ERR(s->sdesc[i].tzd);
+-			dev_err(dev, "faild to register sensor id %d: %d\n",
++			if (ret != -ENODEV) {
++				dev_err(dev, "faild to register sensor id %d: %d\n",
+ 					i, ret);
+-			return ret;
++				return ret;
++			}
++
++			/*
++			 * ACPI path: no DT thermal-zones description
++			 * (the OF lookup is DT-global and the EFI FDT
++			 * is a stub). Build the zone with explicit
++			 * per-channel trips.
++			 */
++			s->sdesc[i].tzd = k3_thermal_register_acpi_zone(dev, s, i);
++			if (IS_ERR(s->sdesc[i].tzd)) {
++				ret = PTR_ERR(s->sdesc[i].tzd);
++				dev_err(dev, "faild to register ACPI zone id %d: %d\n",
++					i, ret);
++				return ret;
++			}
+ 		}
+ 
+ 		/* register the thermal sensor to hwmon */
