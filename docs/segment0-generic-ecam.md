@@ -59,13 +59,60 @@ Record the read exit status and compare counts for the endpoint's allocated MSI/
 
 ## Kernel cycle 3d — segments 2 and 4
 
-The staged `k3-ecam-segs24.patch` has SHA-256 `62a2a3cc0bf2655cdd48a5cd927d45e6edb34fba342e9b71d9229c5c0598fe06`. It adds only segment-2/4 rows. Its first three gates can be evaluated before a board boot. [MCFG fixup source](../patches/kernel-rpm/series/el10-284/ecam/k3-ecam-quirk-mcfg.patch) · [284 input configuration](../patches/kernel-rpm/series/el10-284/config-acpidebug)
+The active `k3-ecam-segs24.patch` has SHA-256 `aa730f211726ae82b4b52b7c7455cc98efabbb686dd11cd802967b6dcb289d85`. Its new-file hunk is byte-identical to `pcie-k3-acpi-ecam.c` (303 lines); the host test extracts the actual functions rather than a hand-copied twin. It adds only the segment-2/4 rows, the segment-0 ops declaration, and the build row. [Active patch](../patches/kernel-rpm/series/el10-284/k3-ecam-segs24.patch) · [284 input configuration](../patches/kernel-rpm/series/el10-284/config-acpidebug)
 
 | Gate | Finding in this patch and 284 source |
 | --- | --- |
-| Early linkage | With `CONFIG_PCIE_SPACEMIT_K1=m`, Kbuild makes a standalone object a module and `#ifdef CONFIG_PCIE_SPACEMIT_K1` omits both built-in MCFG rows. Lookup retains its valid generic ops pointer. The new module lacks `MODULE_LICENSE()` and calls the unexported `dw_pcie_prog_outbound_atu()`. With `=y` the row initializer instead uses `k3_dw_ecam_ops` without a declaration in `pci_mcfg.c` or 284's `pci-ecam.h`. Build and link the early ACPI provider and its prerequisites into vmlinux with a matching declaration and guard. An isolated object compile misses both linkage cases. |
-| Match and resource | rhct13's packaged MCFG has OEM ID `SPMT  `, table ID `K3      `, OEM revision **1**, and just segment 0. Its DSDT has no `_CBA`. Both staged rows require revision **0** and omit `cfgres`. The 284 matcher compares revisions exactly. Even after a match, `pci_mcfg_lookup()` returns `-ENXIO` when the resource start remains zero. Supplying a 64 KiB resource alone yields zero buses in `pci_ecam_create()` at the default 1 MiB stride. Map each physical viewport once and preserve the logical bus range independently. |
-| Access correctness | Root reads return the same DBI header at every devfn. Downstream accesses cast an ioremap **virtual** pointer to the iATU parent-bus address. The zero-initialized DW state leaves `region_limit` zero, so its outbound range check rejects a 64 KiB window. The mutex covers target selection only, ends before the actual config load/store and can sleep inside the PCI core's IRQ-disabled raw spinlock. Use the verified physical address and DW geometry, filter unreachable root functions, check the link and serialize selection through completion of the access with locking valid in PCI configuration context. |
+| Early linkage | `CONFIG_PCIE_SPACEMIT_K1=y` is mandatory. With `=m`, Kbuild makes the object a module, `#ifdef CONFIG_PCIE_SPACEMIT_K1` omits both built-in MCFG rows, and the module references the unexported `dw_pcie_prog_outbound_atu()` and `dw_pcie_version_detect()`. With `=y` the rows and the driver are in vmlinux, and `pci_mcfg.c` declares `k3_dw_ecam_ops`/`k3_dw_seg0_ops` under the same guard. The driver carries `MODULE_LICENSE("GPL")` even though it is built in. An isolated object compile misses both linkage cases. |
+| Match and resource | rhct13's packaged MCFG has OEM ID `SPMT  `, table ID `K3      `, OEM revision **1**, and just segment 0. The rows now match revision **1** and supply 64 KiB physical `cfgres` for segments 2 and 4 (`0x1200000000`, `0x12c0000000`). `MCFG_BUS_ANY` keeps buses 0–255, and `k3_dw_ecam_ops.bus_shift = 8` gives `pci_ecam_create()` a 256-bus range over the 64 KiB window. Segment 0 keeps the generic 256 MiB ECAM aperture from MCFG; its row has no `cfgres`. |
+| Access correctness | Root reads use the DBI mapping and filter only `PCI_SLOT(devfn) > 0`, leaving root functions 0–7 visible. Downstream accesses program the iATU with the physical `cfg->res.start` and return the CPU mapping at `cfg->win`; both offsets are masked with `PCIE_ECAM_REG_MASK`. DW geometry is set explicitly (`region_align = SZ_64K`, `region_limit = SZ_4G - 1`, `num_ob_windows = 1`) instead of the scratch-probing `dw_pcie_iatu_detect()`. The PHY AHB link-status register gates downstream access, and the PCI core's `pci_lock` covers target selection plus the actual config load/store, so the driver keeps no private sleeping mutex. |
+
+### Audit close-out, 2026-11-23
+
+Host audit and fixes in the active patch/source:
+
+- Removed the private `k3_ecam_atu_lock` mutex. `pci_lock` already spans
+  `map_bus` and the config access, so the driver takes no sleeping lock in
+  IRQ-disabled PCI configuration context.
+- Masked `where` with `PCIE_ECAM_REG_MASK` in both the root and downstream
+  maps. Previously `where = 0x1000` returned `DBI + 0x1000` and `0x100000`
+  returned `VA + 0x100000`, which is the translated PCI I/O aperture.
+- Replaced the root filter `if (devfn) return NULL` with
+  `PCI_SLOT(devfn) > 0` in both segment-0 and segment-2/4 ops. Root
+  functions 1–7 must remain visible; only root devices 1–31 are ghosts.
+- Split the CPU mapping from the iATU base: `cfg0_base = cfg->win` for
+  accesses, `cfg0_phys = cfg->res.start` for `parent_bus_addr`.
+- Set DW geometry explicitly (`region_align = SZ_64K`,
+  `region_limit = SZ_4G - 1`, `num_ob_windows = 1`) and called
+  `dw_pcie_version_detect()`; did not call `dw_pcie_iatu_detect()`, which
+  scratch-probes live windows.
+- Mapped the full unrolled iATU file (`SZ_16K`) instead of `0x3f20`.
+- Added the PHY AHB link gate (`+0x4`, SMLH `BIT(1)`, RDLH `BIT(12)`) for
+  segments 2/4; root DBI access remains available while the link is down.
+- Added `MODULE_LICENSE("GPL")`, declared both ops in `pci_mcfg.c` under
+  `CONFIG_PCIE_SPACEMIT_K1`, and changed the config to `=y`.
+
+Firmware facts rechecked against the current tree:
+
+- DSDT `RES2`/`RES4` now reserve the 64 KiB viewports
+  (`0x1200000000–0x120000FFFF`, `0x12C0000000–0x12C000FFFF`). The earlier
+  16 MiB note was stale.
+- MCFG publishes only segment 0 at `0x1100000000`; the segment-2/4
+  `cfgres` entries are fabricated by the kernel quirk. The DSDT `RES2`/
+  `RES4` comments say "declared in MCFG", which is true only for segment 0;
+  this is a firmware comment inconsistency, not a driver defect.
+- The ATU blocks (`0x80B00000`, `0x81300000`) and PHY link blocks
+  (`0x82D00000`, `0x82B00000`) are not reserved in DSDT; the driver
+  `devm_ioremap()`s them.
+- DSDT `AddressTranslation` gives segment-2 non-prefetchable memory CPU
+  base `0x1200110000` and segment-4 `0x12C0110000` (translation base
+  `0x1200000000` plus the per-segment PCI minimum).
+
+Verification: `python3 -m unittest tests.test_k3_ecam_map_bus -v` passes
+all 8 tests, including a C rig that compiles the extracted map/init
+functions against EL10-shaped iATU, ECAM, link and ioremap mocks.
+`python3 -m unittest discover -s tests` passes 82 tests (3 skipped).
+No kernel build, flash, boot, or hardware qualification was performed.
 
 **Build and boot records.** In the proposed launcher, `pgrep -f` searches command lines. The unquoted heredoc expands `$$` in the shell writing the script, and `grep -qv` applies a substring filter to the PIDs. The loop can proceed after a failed 3c. Its cleanup then removes 3c's RPMS and build tree, and its final RPM count can return success after rpmbuild failed.
 

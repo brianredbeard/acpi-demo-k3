@@ -9,21 +9,28 @@
  * downstream access selects the target bus/dev/fn in the outbound
  * iATU (CFG0 directly below the root, CFG1 farther) and then
  * accesses the viewport at the register offset — the DT driver's
- * dw_pcie_other_conf_map_bus behavior, resused for ACPI.
+ * dw_pcie_other_conf_map_bus behavior, reused for ACPI.
+ *
+ * The PCI core holds pci_lock (a raw spinlock with IRQs disabled)
+ * across map_bus and the actual config read/write, so the shared
+ * window's iATU selection stays serialized through completion of
+ * the access. Do not add a sleeping lock here.
  *
  * The firmware (rhct12+) trains the links, publishes the ACPI
  * root bridges (PCI2/PCI4 with _SEG 2/4) and the _CRS windows:
- *   seg 2: viewport 0x1200000000/64K, DBI 0x80800000, ATU 0x80B00000
- *   seg 4: viewport 0x12C0000000/64K, DBI 0x81000000, ATU 0x81300000
+ *   seg 2: viewport 0x1200000000/64K, DBI 0x80800000, ATU 0x80B00000,
+ *          PHY AHB link 0x82D00000
+ *   seg 4: viewport 0x12C0000000/64K, DBI 0x81000000, ATU 0x81300000,
+ *          PHY AHB link 0x82B00000
  * Segment 0 (NVMe) has genuine 256 MiB ECAM and is untouched.
  *
  * rhct12 audit: docs/wifi-pcie-acpi-2026-11-22.md, "Recommended
- * implementation" — K3-specific ops, DBI root access, serialized
- * iATU downstream selection, single-entry MCFG preserved.
+ * implementation" — K3-specific ops, DBI root access, iATU downstream
+ * selection serialized by pci_lock, single-entry MCFG preserved.
  */
 
 #include <linux/io.h>
-#include <linux/mutex.h>
+#include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/pci-acpi.h>
 #include <linux/pci-ecam.h>
@@ -38,15 +45,18 @@
  */
 struct k3_ecam_seg {
 	struct dw_pcie	pci;
-	struct dw_pcie_rp pp;
 	void __iomem	*dbi_base;
 	void __iomem	*cfg0_base;	/* 64 KiB config viewport (VA) */
 	resource_size_t	cfg0_phys;	/* viewport base (physical) */
 	resource_size_t	cfg0_size;
 	void __iomem	*atu_base;
+	void __iomem	*link_base;	/* PHY AHB link-status block */
 };
 
-static DEFINE_MUTEX(k3_ecam_atu_lock);
+/* K3 PHY AHB link status: both SMLH and RDLH must be up. */
+#define K3_ECAM_PHY_AHB_LINK_STS	0x0004
+#define K3_ECAM_LINK_SMLH_UP		BIT(1)
+#define K3_ECAM_LINK_RDLH_UP		BIT(12)
 
 /*
  * Root-bus access: the root port's own config space at DBI.
@@ -54,13 +64,32 @@ static DEFINE_MUTEX(k3_ecam_atu_lock);
  */
 static void __iomem *k3_ecam_own_map(struct k3_ecam_seg *seg, int where)
 {
-	return seg->dbi_base + where;
+	return seg->dbi_base + (where & PCIE_ECAM_REG_MASK);
 }
 
 /*
- * Downstream access: serialize the iATU target selection (the
- * viewport is a single shared window), program the outbound ATU
- * for the target bus/dev/fn, then hand back viewport + where.
+ * The DT driver overrides dw_pcie_link_up() with the PHY AHB status
+ * register; the generic DBI PORT_DEBUG0 check is not the K3 link
+ * contract. Read the same register here so a down link fails the
+ * config access instead of forwarding an error on the system bus.
+ */
+static bool k3_ecam_link_up(struct k3_ecam_seg *seg)
+{
+	u32 val;
+
+	if (!seg->link_base)
+		return false;
+
+	val = readl(seg->link_base + K3_ECAM_PHY_AHB_LINK_STS);
+	return (val & K3_ECAM_LINK_SMLH_UP) &&
+	       (val & K3_ECAM_LINK_RDLH_UP);
+}
+
+/*
+ * Downstream access: select the target bus/dev/fn in the shared
+ * outbound iATU window, then hand back viewport + register offset.
+ * pci_lock serializes this against the config read/write that follows
+ * (see the file header); no private lock is needed or safe here.
  */
 static void __iomem *k3_ecam_child_map(struct k3_ecam_seg *seg,
 					struct pci_bus *bus,
@@ -70,6 +99,9 @@ static void __iomem *k3_ecam_child_map(struct k3_ecam_seg *seg,
 	struct dw_pcie_ob_atu_cfg atu = { 0 };
 	u32 busdev;
 	int type, ret;
+
+	if (!k3_ecam_link_up(seg))
+		return NULL;
 
 	busdev = PCIE_ATU_BUS(bus->number) |
 		 PCIE_ATU_DEV(PCI_SLOT(devfn)) |
@@ -84,14 +116,11 @@ static void __iomem *k3_ecam_child_map(struct k3_ecam_seg *seg,
 	atu.pci_addr = busdev;
 	atu.size = seg->cfg0_size;
 
-	mutex_lock(&k3_ecam_atu_lock);
 	ret = dw_pcie_prog_outbound_atu(pci, &atu);
-	mutex_unlock(&k3_ecam_atu_lock);
-
 	if (ret)
 		return NULL;
 
-	return seg->cfg0_base + where;
+	return seg->cfg0_base + (where & PCIE_ECAM_REG_MASK);
 }
 
 static void __iomem *k3_ecam_map_bus(struct pci_bus *bus,
@@ -107,11 +136,13 @@ static void __iomem *k3_ecam_map_bus(struct pci_bus *bus,
 		/*
 		 * Root-bus ghost filter (the Nov 18 gpioy-qualified rule,
 		 * seg-2/4 form): the DW controller answers every root-bus
-		 * devfn with the root port's config (64 fake bridges seen
-		 * on 3j, their bus claims blocking the downstream scan).
-		 * Only devfn 0 is reachable on the root bus.
+		 * device slot with the root port's config (all 32 slots
+		 * reporting 1dee:5216 on 3j, their bus claims blocking the
+		 * downstream scan). Only device 0 is reachable; functions
+		 * 1..7 of device 0 stay visible, matching the DW/DT
+		 * PCI_SLOT() filter.
 		 */
-		if (devfn)
+		if (PCI_SLOT(devfn) > 0)
 			return NULL;
 		return k3_ecam_own_map(seg, where);
 	}
@@ -122,8 +153,9 @@ static void __iomem *k3_ecam_map_bus(struct pci_bus *bus,
 /*
  * Per-bridge init: resolve the _CRS windows for this segment and
  * build the DW wrapper. The DSDT (rhct12+) publishes the viewport
- * as the bridge's first MEM window and the DBI/ATU as PNP0C02
- * reservations (DBIn/ATUn devices, _UID matching the segment).
+ * as the bridge's MEM window and the DBI as a PNP0C02 reservation
+ * (DBIn, _UID matching the segment). The ATU and PHY AHB link
+ * blocks are not reserved, so map them with devm_ioremap().
  */
 static int k3_ecam_init(struct pci_config_window *cfg)
 {
@@ -136,9 +168,12 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 		u16 segment;
 		resource_size_t dbi;
 		resource_size_t atu;
+		resource_size_t link;
 	} k3_seg_bases[] = {
-		{ .segment = 2, .dbi = 0x80800000, .atu = 0x80B00000 },
-		{ .segment = 4, .dbi = 0x81000000, .atu = 0x81300000 },
+		{ .segment = 2, .dbi = 0x80800000, .atu = 0x80B00000,
+		  .link = 0x82D00000 },
+		{ .segment = 4, .dbi = 0x81000000, .atu = 0x81300000,
+		  .link = 0x82B00000 },
 	};
 	int i;
 
@@ -162,14 +197,21 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	seg->cfg0_phys = cfg->res.start;
 	seg->cfg0_size = resource_size(&cfg->res);
 
-	/* v1: silicon-fixed DBI/ATU (the DSDT reserves both; _CRS
-	 * resolution is the refinement — same bases, less hardcode).
+	/*
+	 * Silicon-fixed DBI/ATU/link bases. The DSDT reserves DBI
+	 * (DBIn) but not the ATU or the PHY AHB link block, so use
+	 * devm_ioremap() rather than devm_ioremap_resource(). The ATU
+	 * spans the full unrolled 32-window file (PCD AtuSize 16 KiB);
+	 * DBI and link are one 4 KiB page each.
 	 */
 	seg->dbi_base = devm_ioremap(dev, k3_seg_bases[i].dbi, SZ_4K);
 	if (!seg->dbi_base)
 		return -ENOMEM;
-	seg->atu_base = devm_ioremap(dev, k3_seg_bases[i].atu, 0x3f20);
+	seg->atu_base = devm_ioremap(dev, k3_seg_bases[i].atu, SZ_16K);
 	if (!seg->atu_base)
+		return -ENOMEM;
+	seg->link_base = devm_ioremap(dev, k3_seg_bases[i].link, SZ_4K);
+	if (!seg->link_base)
 		return -ENOMEM;
 
 	/*
@@ -180,29 +222,33 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	seg->pci.dev = dev;
 	seg->pci.dbi_base = seg->dbi_base;
 	seg->pci.atu_base = seg->atu_base;
+	dw_pcie_version_detect(&seg->pci);
 	/*
-	 * Region geometry + unrolled iATU (DEFECTS 1+3): the EL10
-	 * prog_outbound_atu range check needs region_limit/align;
-	 * zero values fail EVERY child access (-EINVAL at the first
-	 * downstream read). The controller is unrolled (the archived
-	 * boot: 'iATU: unroll T, 16 ob, align 64K, limit 4G') and
-	 * dw_pcie_iatu_detect() would re-derive these — but its
-	 * scratch-probe clobbers live firmware windows, so set the
-	 * observed values directly. Window index 0 is the firmware's
-	 * config window; I/O and memory start at index 1 (preserved).
+	 * Region geometry + unrolled iATU: the EL10 prog_outbound_atu
+	 * range check needs region_limit/align; zero values fail EVERY
+	 * child access (-EINVAL at the first downstream read). The
+	 * controller is unrolled (the archived boot: 'iATU: unroll T,
+	 * align 64K, limit 4G') and dw_pcie_iatu_detect() would
+	 * re-derive these — but its scratch-probe clobbers live
+	 * firmware windows, so set the observed values directly.
+	 * Window index 0 is reserved for per-access config; the
+	 * firmware's I/O and memory windows start at index 1.
 	 */
 	dw_pcie_cap_set(&seg->pci, IATU_UNROLL);
 	seg->pci.region_align = SZ_64K;
 	seg->pci.region_limit = SZ_4G - 1;
-	seg->pci.num_ob_windows = 16;
-	seg->pci.num_ob_windows = 1;	/* single shared viewport */
-	seg->pp.va_cfg0_base = seg->cfg0_base;
-	seg->pp.cfg0_size = seg->cfg0_size;
+	/*
+	 * Only outbound window 0 is programmed here. This field is the
+	 * EL10 range-check bound (index >= num_ob_windows -> -ENOSPC);
+	 * it must be non-zero.
+	 */
+	seg->pci.num_ob_windows = 1;
 
 	cfg->priv = seg;
 
-	dev_info(dev, "K3 ECAM seg %d: viewport %pR via iATU (DBI %pa)\n",
-		 root->segment, &cfg->res, &k3_seg_bases[i].dbi);
+	dev_info(dev, "K3 ECAM seg %d: viewport %pR via iATU (DBI %pa, ATU %pa, link %pa)\n",
+		 root->segment, &cfg->res, &k3_seg_bases[i].dbi,
+		 &k3_seg_bases[i].atu, &k3_seg_bases[i].link);
 
 	return 0;
 }
@@ -210,18 +256,19 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 /*
  * Segment 0 (genuine 256 MiB ECAM, NVMe root port): the DW controller
  * does not filter type-0 config TLPs for unused root-bus slots, so a
- * standard ECAM read of any non-root-port devfn on bus 0 returns the
- * downstream endpoint's ID (ghost multiplication — 32 slots reporting
- * 1dee:5216). Mirror the DT pci-host-generic pci_dw_valid_device()
- * filter (the Nov 18 gpioy-qualified fix): only devfn 0 on the root
- * bus is reachable; downstream buses enumerate normally.
+ * standard ECAM read of any non-root-port device slot on bus 0 returns
+ * the downstream endpoint's ID (ghost multiplication — all 32 slots
+ * reporting 1dee:5216). Mirror the DW/DT root-bus filter
+ * (PCI_SLOT(devfn) > 0; the Nov 18 gpioy-qualified fix): only device 0
+ * on the root bus is reachable, functions 1..7 stay visible, and
+ * downstream buses enumerate normally.
  */
 static void __iomem *k3_dw_seg0_map_bus(struct pci_bus *bus,
 					 unsigned int devfn, int where)
 {
 	struct pci_config_window *cfg = bus->sysdata;
 
-	if (bus->number == cfg->busr.start && devfn)
+	if (bus->number == cfg->busr.start && PCI_SLOT(devfn) > 0)
 		return NULL;
 
 	return pci_ecam_map_bus(bus, devfn, where);
@@ -251,3 +298,6 @@ struct pci_ecam_ops k3_dw_ecam_ops = {
 		.write		= pci_generic_config_write,
 	},
 };
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("SpacemiT K3 ACPI PCI config access for DesignWare viewport segments");
