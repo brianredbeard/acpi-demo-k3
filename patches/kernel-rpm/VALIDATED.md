@@ -53,3 +53,5 @@ boot), run when a patch set is ready — not per-iteration.
 2. tsensor: insmod the rig-built k3_tsensor.ko → zones with
    staggered trips + RW sysfs → trip tuning without reflash
 3. rfkill: rfkill list shows WLEN/BTEN
+
+| 3 | k3-espi-acpi-fix.patch | **v3**: v2's parse gate + the populate gate (devm_of_platform_populate fails -EINVAL on the synthesized node under ACPI; the failure path ran err_assert_resets, resetting the controller out from under the EC child bind — cycle-3 field result: hard hang at 2.73s mid-8250-init, no panic, espi probe failed -22 immediately prior). Under ACPI the DSDT-declared EC0/PWM0 children enumerate via the ACPI bus; the DT populate error is informational. | RIG .o DISASSEMBLY-VERIFIED: .L318 error path calls is_acpi_device_node then branches AWAY from dev_err_probe for ACPI nodes; v3 patch applies clean to the independent 264 pristine base and reproduces the rig-built source exactly | **cycle-3 boot: PANIC GONE (v2 worked), HANG REMAINS (v3 needed)** — v3 rig-built, awaiting cycle-3b |

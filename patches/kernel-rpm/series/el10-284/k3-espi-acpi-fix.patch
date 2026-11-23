@@ -1,5 +1,3 @@
-diff --git a/drivers/bus/spacemit-k3-espi.c b/drivers/bus/spacemit-k3-espi.c
-index 7578b82..aa0cfd1 100644
 --- a/drivers/bus/spacemit-k3-espi.c
 +++ b/drivers/bus/spacemit-k3-espi.c
 @@ -8,10 +8,12 @@
@@ -15,7 +13,7 @@ index 7578b82..aa0cfd1 100644
  #include <linux/module.h>
  #include <linux/mutex.h>
  #include <linux/of.h>
-@@ -176,10 +178,14 @@ struct spacemit_espi {
+@@ -176,11 +178,15 @@
  };
  
  static bool spacemit_espi_property_enabled(struct device_node *np,
@@ -25,14 +23,15 @@ index 7578b82..aa0cfd1 100644
 -	if (of_find_property(np, name, NULL))
 -		return of_property_read_bool(np, name);
 +	u32 val;
-+
+ 
 +	/* Unified layer: DT properties under DT, _DSD under ACPI. */
 +	if (!device_property_read_u32(dev, name, &val))
 +		return !!val;
- 
++
  	return default_value;
  }
-@@ -506,27 +512,41 @@ static int spacemit_espi_parse_dt(struct platform_device *pdev,
+ 
+@@ -506,27 +512,41 @@
  	int ret;
  
  	espi->op_freq_mhz = SPACEMIT_ESPI_DEFAULT_FREQ_MHZ;
@@ -82,7 +81,7 @@ index 7578b82..aa0cfd1 100644
  		if (!strcmp(str, "quad"))
  			espi->io_mode = ESPI_GEN_IO_MODE_QUAD;
  		else if (!strcmp(str, "dual"))
-@@ -537,30 +557,30 @@ static int spacemit_espi_parse_dt(struct platform_device *pdev,
+@@ -537,30 +557,30 @@
  		espi->io_mode = ESPI_GEN_IO_MODE_SINGLE;
  	}
  
@@ -121,3 +120,26 @@ index 7578b82..aa0cfd1 100644
  						"auto-gating-enable",
  						true);
  
+@@ -734,9 +754,21 @@
+ 			 ret);
+ 
+ 	ret = devm_of_platform_populate(dev);
+-	if (ret) {
++	if (ret && !has_acpi_companion(dev)) {
++		/*
++		 * ACPI boots: the children (EC0/PWM0) are DSDT-declared
++		 * PRP0001 devices enumerated by the ACPI bus. The DT
++		 * populate returns -EINVAL on the synthesized node and
++		 * must not fail the probe - the failure path runs
++		 * err_assert_resets, resetting the controller out from
++		 * under the EC child binding mid-probe (cycle-3 field
++		 * result: hard hang at the 8250 init window right after
++		 * this probe failed with -22).
++		 */
+ 		dev_err_probe(dev, ret, "failed to populate child devices\n");
+ 		goto err_assert_resets;
++	} else if (ret) {
++		dev_info(dev, "ACPI boot: children enumerated via DSDT (DT populate %d)\n", ret);
+ 	}
+ 
+ 	return 0;
