@@ -186,3 +186,32 @@ Remaining for full wifi/10G function (kernel-side, staged
 for the acpidebug RPM): the k3_dw_ecam quirk for segs 2/4
 OS enumeration + CONFIG_RFKILL_GPIO for the radio-enable
 line.
+
+## cc20c30 validation (2026-11-23, pre-flash)
+
+Built from the recipe (edk2-platforms 8b171654 + 0001-runtime-flash)
+with the workspace retained; validated host-side:
+
+- **PCIe profile check passed** (the extended memory-triple checker
+  over the built FIT)
+- **test_efi_flash_runtime: 3/3 groups pass** against the built
+  driver sources (the harness #includes the production
+  FlashFvbDxe.c / SpiNorFlashDxe.c / STQspiDxe.c — not twins):
+  fvb (nonidentity/identity/high-va/missing-spi/missing-region),
+  nor (nonidentity/missing-map/program-timeout/enable-timeout),
+  controller (nonidentity/missing-map/sfar-timeout/reset-timeout)
+- **Full suite green** with the cc20c30 ITB as the FIT target
+
+Comparison to the flashed rhct13 (13024d13): distinct payload
+(1b7aa316) differing by exactly the runtime-flash patch — the FVB
+SetVirtualAddressMap pointer conversion (EfiConvertPointer on the
+instance + flash ops), the runtime-pool zeroing, the QSPI
+status-check fixes, and the VariableRuntimeDxe store-pointer
+comparison. Same lower layers; same DSDT content (both from
+8b171654).
+
+**Validation state: host-validated. The board qualification
+(nonidentity runtime map exercised by a real OS) requires a flash
+cycle — the audit's operator-controlled private-variable
+persistence test (write/read/delete across reboot) is the
+acceptance gate. Not flashed.
