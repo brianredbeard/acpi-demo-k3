@@ -302,3 +302,20 @@ match the code to the digit. No driver change needed.
 
 (gpioy's zones — ch0-only 65/75/85 — are the OLD hardcoded driver;
 not comparable.)
+
+## EC enumeration root cause: the 284 config omits the Chrome EC stack (2026-11-23)
+
+gpioy (the working reference): cros_ec_espi binds PRP0001:03 directly
+(ACPI scan creates the platform device; "Chrome EC device registered"
+at 1.978s) and the cros-ec core creates the .auto MFD children
+(dev/chardev/debugfs/gpio). The DSDT-nested-children concern was wrong:
+ACPI enumeration DOES create PRP0001:03's device.
+
+The 3f/284 RPM config has SENSORS_CROS_EC=y and SENSORS_PWM_FAN=y
+(the consumers) but NO CHROME_PLATFORMS/CROS_EC/CROS_EC_ESPI/
+CROS_EC_DEV/PWM_CROS_EC (the transport + PWM provider) — every
+cros_ec* symbol absent. The chain is config-gated off, not broken.
+
+Staged for the next build (3h): the transport symbols appended to
+kernel-riscv64-rhel.config. Sources verified present in the 284 tree.
+This rides AFTER 3g (ECAM) per one-variable-per-boot discipline.
