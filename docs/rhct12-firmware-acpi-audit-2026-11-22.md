@@ -144,3 +144,32 @@ one variable: firmware):
 
 The thermal zone CONSUMPTION verdict (staggered zones, RW sysfs trips)
 rides the cycle-3 kernel against this now-qualified firmware.
+
+## Cycle-3 boot (2026-11-23, 04:45): panic eliminated, hang remains
+
+One-time GRUB entry (grub2-reboot; gpioy default untouched) into
+6.12.0-284.acpidebug.1.el10 (cycle-3 RPMs, sleeper EXIT=0 at 04:03).
+
+**Verdict: v2's parse gate WORKED — no espi panic.** The boot passed 2.9s
+(the cycle-2 panic point) and reached 2.73s of kernel time with:
+- `spacemit-k3-espi PRP0001:02: error -EINVAL: failed to populate child
+  devices` — the probe failed GRACEFULLY (cycle-2: NULL-deref panic)
+- `spacemit-gpio PRP0001:0a: ACPI gpiochip: 128 pins (4 banks x 32)` —
+  the GPIO v3 provider probed clean
+
+**But the box hard-hung at 2.737s**, the console line
+"Serial: 8250/16550 driver, 4 ports, IRQ sharin" frozen mid-word; no
+network, no further output; recovery via Kauf-plug power cycle to gpioy
+(unclean shutdown left a FAT dirty flag on the ESP — fsck advisable).
+
+Root cause (rig-diagnosed): the espi probe's `devm_of_platform_populate`
+returns -EINVAL on the ACPI-synthesized of_node; the failure path runs
+`err_assert_resets`, resetting the ESPI controller out from under the
+EC child binding mid-probe. **v3 staged** (`82acc5c`): the populate
+error only fails the probe for non-ACPI boots; DSDT-declared children
+enumerate via the ACPI bus. Rig .o disassembly-verified; patch applies
+clean to the independent pristine base.
+
+Not yet exercised on this boot (rode past the hang point): EC event
+delivery, UFS, tsensor zones, rfkill, segs 2/4 endpoints. The rpmi-hsm
+suspend denials in the log are the known, documented boundary items.
