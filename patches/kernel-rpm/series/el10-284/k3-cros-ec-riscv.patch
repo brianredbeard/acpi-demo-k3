@@ -1,0 +1,33 @@
+--- a/drivers/platform/chrome/Kconfig
++++ b/drivers/platform/chrome/Kconfig
+@@ -65,7 +65,7 @@
+ config CROS_EC
+ 	tristate "ChromeOS Embedded Controller"
+ 	select CROS_EC_PROTO
+-	depends on X86 || ARM || ARM64 || COMPILE_TEST
++	depends on X86 || ARM || ARM64 || RISCV || COMPILE_TEST
+ 	help
+ 	  If you say Y here you get support for the ChromeOS Embedded
+ 	  Controller (EC) providing keyboard, battery and power services.
+--- a/include/linux/platform_data/cros_ec_proto.h
++++ b/include/linux/platform_data/cros_ec_proto.h
+@@ -201,6 +201,19 @@
+ };
+ 
+ /**
++ * cros_ec_device_alloc() - Allocate and initialize a cros_ec_device.
++ * @dev: Device allocating the EC device (managed).
++ *
++ * The RHEL 6.12 tree's cros-ec transports allocate inline; the newer
++ * cros_ec_espi backport expects this helper. Provides it.
++ */
++static inline struct cros_ec_device *cros_ec_device_alloc(struct device *dev)
++{
++	return devm_kzalloc(dev, sizeof(struct cros_ec_device), GFP_KERNEL);
++}
++
++
++/**
+  * struct cros_ec_platform - ChromeOS EC platform information.
+  * @ec_name: Name of EC device (e.g. 'cros-ec', 'cros-pd', ...)
+  *           used in /dev/ and sysfs.

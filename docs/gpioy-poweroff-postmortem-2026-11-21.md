@@ -25,8 +25,12 @@ needed to recover boot attempts.
    systemd poweroff. Deterministic ~29s (dracut-cmdline
    runs at the same point every boot).
 
-The correct directive is omit_dracut_modules+=" iscsi "
-(the whole module), not omit_drivers (the .ko files only).
+The one-off NVMe recovery used `dracut -o iscsi`. The corresponding
+RHEL 10.3 config variable is `omit_dracutmodules+=" iscsi "`.
+The earlier spelling `omit_dracut_modules` in this postmortem was
+incorrect. For an iSCSI-capable build, retain the hook and its
+transport drivers. The [3f image inspection](8250-console-review-2026-11-23.md#iscsi-in-the-3f-initramfs)
+records the two board-local overrides that affected later RPM installs.
 
 ## The retraction chain (for the record)
 
@@ -58,7 +62,7 @@ dbg1) restored a stable system. Then:
 - A sed that matches N entries when you meant 1: verify the
   blast radius (grep -c the pattern first). The dbg1 entry
   damage was invisible until dbg1 itself poweroff'd.
-- dracut omit_drivers vs omit_dracut_modules: omitting the
+- dracut omit_drivers vs omit_dracutmodules: omitting the
   .ko but shipping the module scripts creates a guaranteed
   FATAL. Omit the module.
 - Cumulative capture logs lie. Truncate per boot, or

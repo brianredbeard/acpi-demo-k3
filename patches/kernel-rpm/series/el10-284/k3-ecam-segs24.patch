@@ -2,7 +2,7 @@ diff --git a/drivers/pci/controller/dwc/pcie-k3-acpi-ecam.c b/drivers/pci/contro
 new file mode 100644
 --- /dev/null
 +++ b/drivers/pci/controller/dwc/pcie-k3-acpi-ecam.c
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,221 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * SpacemiT K3 ACPI PCI config access for DesignWare viewport segments.
@@ -210,6 +210,14 @@ new file mode 100644
 +
 +struct pci_ecam_ops k3_dw_ecam_ops = {
 +	.init			= k3_ecam_init,
++	/*
++	 * bus_shift 8: pci_ecam_create's size math needs the 64 KiB
++	 * viewport to cover the declared [bus 00-ff] (65536 >> 8 = 256
++	 * buses). The generic ECAM offset is never used — map_bus
++	 * computes viewport + where via the iATU — so the shift only
++	 * satisfies creation.
++	 */
++	.bus_shift		= 8,
 +	.pci_ops		= {
 +		.map_bus	= k3_ecam_map_bus,
 +		.read		= pci_generic_config_read,
@@ -233,7 +241,7 @@ new file mode 100644
 +
 --- a/drivers/acpi/pci_mcfg.c
 +++ b/drivers/acpi/pci_mcfg.c
-@@ -38,9 +38,37 @@
+@@ -38,9 +38,30 @@
  						NULL, IORESOURCE_BUS)
  #define MCFG_BUS_ANY			MCFG_BUS_RANGE(0x0, 0xff)
  
@@ -255,16 +263,9 @@ new file mode 100644
 +	 * the viewport bases the firmware's _CRS declares.
 +	 */
 +	{ "SPMT  ", "K3      ", 1, 0, MCFG_BUS_ANY, &k3_dw_seg0_ops },
-+	/*
-+	 * Compact-ECAM decode rule (firmware e2a72182, kernel side):
-+	 * the 64 KiB viewport can only host bus 0 in the generic ECAM
-+	 * bus math (64K/1M-per-bus = 0 buses -> -ENOMEM); downstream
-+	 * buses translate through the iATU in the ops, so the fixup
-+	 * bus range is bus-0-only.
-+	 */
-+	{ "SPMT  ", "K3      ", 1, 2, MCFG_BUS_RANGE(0, 0), &k3_dw_ecam_ops,
++	{ "SPMT  ", "K3      ", 1, 2, MCFG_BUS_ANY, &k3_dw_ecam_ops,
 +	  DEFINE_RES_MEM(0x1200000000UL, 0x10000) },
-+	{ "SPMT  ", "K3      ", 1, 4, MCFG_BUS_RANGE(0, 0), &k3_dw_ecam_ops,
++	{ "SPMT  ", "K3      ", 1, 4, MCFG_BUS_ANY, &k3_dw_ecam_ops,
 +	  DEFINE_RES_MEM(0x12c0000000UL, 0x10000) },
 +#endif
 +

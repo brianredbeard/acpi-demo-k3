@@ -1,5 +1,85 @@
 # fwts broad-run triage — the 17 failures classified (2026-11-23)
 
+## November 23 Pico run with EFI runtime tests
+
+FWTS 26.09 ran through `/dev/efi_test` on kernel
+`6.12.0-284.acpidebug.1.el10.riscv64`, boot ID
+`c1f0ac46-50c1-4ec6-8ed7-5ecfbc1bfa88`. The board report is
+`/var/tmp/fwts-pico.3la5cSZ6/results.log`, SHA-256
+`e257a7d38a8bcf00a31fe8584360e0ee579b5ad12be61b8a3c804cd7798f7f40`.
+It records 420 passes, 29 failures, 11 aborts, 6 warnings and 519 skips.
+The earlier 17-failure assessment below describes a different run.
+
+| Runtime finding | What the test and platform source establish |
+|---|---|
+| Six `SetVariable` failures | Ordinary private-GUID scratch-variable creation with NV, boot-service and runtime attributes fails. Several tests stop at this prerequisite. Five print `EFI_INVALID_PARAMETER`. Test 8 omits the status. The firmware reports 83,328 bytes free, enumerates 48 names and passes 1,024 storage queries. Authenticated creation also fails and leaves the dependent checks untested. |
+| Two `GetNextHighMonotonicCount` failures | Both calls supply an output pointer. The EDK2 counter driver increments its cached high word, writes it through `EfiSetVariable` and returns the write status. UEFI reserves `EFI_INVALID_PARAMETER` here for a null output pointer. [UEFI runtime services](https://uefi.org/specs/UEFI/2.11/08_Services_Runtime_Services.html) |
+| Two `SetTime` failures | Test 4 attempts a valid date. In test 5, rejecting 1899 passes, then restoring the original valid time returns `EFI_DEVICE_ERROR`. Pico selects `VirtualRealTimeClockLib`, which writes timezone, daylight and epoch variables. The runtime wrapper also updates cached settings before the writes succeed and maps failure of its final `TimeSettings` write to `EFI_DEVICE_ERROR`. |
+
+### Scratch-variable persistence test on rhct13
+
+Pico `HW4MPK3161280211` matched the live DSDT SHA-256
+`915e8d9d86dbd9031b50c466b26f886dfdf3ccd5a94dc4ec08a470e8a9688367`.
+The EDK2 FIT extracted from the archived post-flash NOR readback matched
+`13024d1360c915fb73bce809de750dfee82f8b866eba116e73bd6771e1e3bda4`,
+platform revision `8b17165463eff040bb8f486be0b08416daff9f2b`.
+The kernel image SHA-256 was `64209503d9887590dacc0dc494b577d8f3943894c8c8f4710e96dec27dd1f0a6`
+and initramfs SHA-256 was `d2faf7da73ea1849225b2dfe3e5b7c0781f0750aa2d5a08b3aa64da4300505eb`.
+
+Both names used private GUID `9d3f3c17-3d26-4f0e-b69e-7bbf9ccf69db`,
+attributes 7 (NV, BS, RT), and four data bytes. Linux results below are raw
+EFI statuses returned through the original FWTS run's `efi_test.ko`.
+
+| Operation | Observation |
+|---|---|
+| Linux create on the original FWTS boot | `GetVariable(K3AuditRuntime23)` returned `EFI_NOT_FOUND`. Creating it with `RT23` returned `EFI_INVALID_PARAMETER` (0x8000000000000002). Readback returned `EFI_NOT_FOUND` again. |
+| EFI Shell create | `K3AuditPreboot23` was absent. Creation succeeded. `dmpstore` showed NV+RT+BS and `50 52 45 31` (`PRE1`). |
+| Linux update on boot `48df606c-3ea9-4a0d-bb82-c262f81d61f8` | Linux read attributes 7 and `PRE1`. Writing `UP23` returned `EFI_INVALID_PARAMETER`. An immediate read still returned `PRE1`. |
+| Persistence and cleanup | After reset, EFI Shell read `PRE1` from the same name. Deletion in EFI Shell succeeded and a second lookup found it absent. On restored RHEL boot `3ee4d787-a65a-4e32-99f4-350f35ff07ea`, efivarfs listed neither scratch name. SSH was up, root was `/dev/nvme0n1p2`, and `BootCurrent` was the original redhat entry 0007. |
+
+The firmware callback assumes a near-identity runtime map. On both Linux
+test boots, `/sys/kernel/debug/efi_page_tables` showed flash physical
+`0xb8000000` mapped at virtual `0x20200000` for 13 MiB. The variable FV
+starts 7 MiB into that aperture, at physical `0xb8700000` and virtual
+`0x20900000`. In the locked SDK, `VariableClassAddressChangeEvent`
+converts the NV variable base. The platform's `FvbGetPhysicalAddress`
+returns its saved physical region base. In `UpdateVariableStore`, a
+write in the mapped variable store therefore satisfies
+`CurrWritePtr < LinearOffset`, which returns `EFI_INVALID_PARAMETER`
+before `Fvb->Write`. The measured map and the source establish an address
+mismatch. The test observed the external status, without an internal
+firmware trace identifying the first returning instruction.
+
+The fix needs consistent address units in the variable-to-FVB calculation
+and valid runtime pointers for subsequent FVB, SPI NOR and controller calls.
+Keep flash-relative offsets distinct from mapped MMIO addresses. Re-run this
+create/update/read/reset/delete sequence under the observed nonidentity map,
+then re-run the failing counter and time suites. The earlier handoff hang
+remains a regression check. [FVB bisect](fvb-va-bisect-2026-11-22.md) · [Runtime test contract](audit-2026-11-20/uefi-runtime.md)
+
+### Other findings
+
+The other 19 failures break down as follows.
+
+- Two PCI namespace reports identify segments 2 and 4 on this boot.
+- Eight LPI reports share one FWTS range check. `0x11000000` is in the
+  platform-specific retentive range. [SBI HSM suspend types](https://docs.riscv.org/reference/sbi/ext-hsm.html)
+- Three SMBIOS findings depend on whether the board provides an IPMI v1.0
+  host interface, a Redfish host interface or a TPM, respectively.
+  [BRS-I SMBIOS requirements](https://docs.riscv.org/reference/brs/smbios.html)
+- Three wakealarm failures occur when enabling alarm interrupts on
+  `/dev/rtc0`. The kernel records three `rtc-efi` status-3 messages, and
+  the selected virtual RTC library returns `EFI_UNSUPPORTED` for wakeup.
+- Both RHCT failures identify extensions absent from the advertised string.
+  Check the intended profile and silicon support before changing the table.
+- The one `_STA` report comes from FWTS's mandatory SBBR-mode namespace
+  check. The report identifies no particular AML device.
+
+The 11 aborts cover seven CPU-frequency tests, three TPM event-log tests
+and one ESRT test. Their hardware interfaces were unavailable to this run.
+
+## Earlier v12-era run
+
 Source: /root/fwts_results.log on the board (the v12-era broad
 run; the quick `fwts dmicheck` 47/0 is the SMBIOS-only subset).
 The audit's summary: 3 BRS-I SMBIOS, 8 SBI_CRET, 3 RTC

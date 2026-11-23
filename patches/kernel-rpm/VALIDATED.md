@@ -55,20 +55,23 @@ boot), run when a patch set is ready — not per-iteration.
 3. rfkill: rfkill list shows WLEN/BTEN
 
 | 3 | k3-espi-acpi-fix.patch | **v3**: v2's parse gate + the populate gate (devm_of_platform_populate fails -EINVAL on the synthesized node under ACPI; the failure path ran err_assert_resets, resetting the controller out from under the EC child bind — cycle-3 field result: hard hang at 2.73s mid-8250-init, no panic, espi probe failed -22 immediately prior). Under ACPI the DSDT-declared EC0/PWM0 children enumerate via the ACPI bus; the DT populate error is informational. | RIG .o DISASSEMBLY-VERIFIED: .L318 error path calls is_acpi_device_node then branches AWAY from dev_err_probe for ACPI nodes; v3 patch applies clean to the independent 264 pristine base and reproduces the rig-built source exactly | **cycle-3 boot: PANIC GONE (v2 worked), HANG REMAINS (v3 needed)** — v3 rig-built, awaiting cycle-3b |
-| 6 | k3-8250-xscale-quirk.patch | The compatible-gated PORT_XSCALE fixed-type quirk (RECONSTRUCTED from the build-5 work; the cycle-3 SRPM chain had dropped it): plain RSCV0003 + UPF_BOOT_AUTOCONF runs bank-switching autoconfig on the K3 XScale-derived DW 16550, wedging the console mid-print — the 2.66-2.73s freeze on cycles 3/3b, reproducible with cpuidle.off=1 (idle hypothesis disproven). Gated on the _DSD compatible intel,xscale-uart (firmware 0008's binding): fixed type, no autoconfig. | Rig .o built (device_property_match_string verified in the object); patch applies clean to the pristine 264 base; cycle-3c carries it | **cycle-3b boot: HANG PERSISTED with espi v3 GOOD + cpuidle.off=1 — the UART quirk was the missing piece (the rpmi-clock doc's 'SPCR + XScale quirk pair is proven' was the prior closure)** |
+| 6 | k3-8250-xscale-quirk.patch | The November 19 hand-built kernel selected PORT_XSCALE and set UPF_FIXED_TYPE for the intel,xscale-uart compatible. The November 22 RPM patch reconstruction omitted the flag. | The archived gpioy Image sets both fields. The 3e Image sets only the type. Commit `f86c099` restores the flag for 3f. | Full RHEL serial boot qualified on dbg1. 3e lost output during port registration even at explicit 115200. 3f registered ttyS0 as XScale on IRQ 11 and returned line 0. Boot reached dracut, which requested poweroff on its iSCSI check. |
 ### 3e breadcrumb result + the UPF_FIXED_TYPE bug (2026-11-23)
 
-The instrumented 3e boot named the wedge precisely:
-`K3DBG: before register_8250_port` then a partial `printk:` — the
-freeze is inside serial8250_register_8250_port as the console
-registers (the "printk: console [ttyS0] enabled" line, cut mid-word
-through the earlycon too — the probing hart dies mid-printk).
+The instrumented 3e boot printed `K3DBG: before register_8250_port`,
+then a partial `printk: l` in the explicit-baud control. Both the
+legacy-console disable and enable messages match that prefix. The last
+visible marker establishes the registration interval. Hart progress
+after the cutoff remains unknown.
 
 Root cause of the QUIRK'S failure (operator finding): the 3d/3e
 quirk set PORT_XSCALE but omitted UPF_FIXED_TYPE. The 284 serial
 core (8250_core.c:762) only copies up->port.type under
-UPF_FIXED_TYPE, and uart_configure_port reinstates
-UPF_BOOT_AUTOCONF without it — so the autoconfig probes the quirk
-was meant to disable still ran. The build-5 carry had the flag.
+UPF_FIXED_TYPE. Registration sets UPF_BOOT_AUTOCONF, and without
+the fixed-type flag uart_configure_port requests type detection.
+The known-good gpioy Image carries the flag. The mock build-5 RPM
+applied only GPIO and UFS patches and panicked in eSPI on its recorded
+ACPI boot. See the [November 19 qualification](../../docs/rpmi-clock-qualification-2026-11-20.md)
+and the [archived probe source](../../../patches/acpi-kernel/experiments/kernel-cleanup/8250_platform-xscale-quirk.c).
 
 3f: PORT_XSCALE + UPF_FIXED_TYPE (one flag; IRQ 11 unchanged).

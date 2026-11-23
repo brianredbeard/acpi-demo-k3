@@ -1,0 +1,808 @@
+diff --git a/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.dsc b/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.dsc
+index daa4ca22..386ae4ae 100644
+--- a/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.dsc
++++ b/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.dsc
+@@ -231,6 +231,11 @@
+   gSpacemitTokenSpaceGuid.PcdEscEnterBootMenu|FALSE
+ 
+ [PcdsFixedAtBuild.common]
++!if $(ACPI_ENABLE) == TRUE
++  gSpacemitK3TokenSpaceGuid.PcdK3ConfigDescriptionMode|1
++!elseif $(K3_OS_DTB_ENABLE) == TRUE
++  gSpacemitK3TokenSpaceGuid.PcdK3ConfigDescriptionMode|2
++!endif
+   # Definition of RISC-V Hart
+   gUefiRiscVPlatformPkgTokenSpaceGuid.PcdHartCount|16
+   gUefiRiscVPlatformPkgTokenSpaceGuid.PcdBootHartId|0
+@@ -727,6 +732,8 @@
+ [Components]
+   # SKU selection (must run before any SKU-sensitive driver)
+   Silicon/Spacemit/K3/Drivers/SkuSelectDxe/SkuSelectDxe.inf
++  Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.inf
++  Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.inf
+ 
+   # RPMI Voltage
+   Silicon/Spacemit/Drivers/RiscvSbiMpxyRpmiVoltageDxe/RiscvSbiMpxyRpmiVoltageDxe.inf
+diff --git a/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.fdf b/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.fdf
+index 3cd1774e..3158b5c2 100644
+--- a/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.fdf
++++ b/Platform/Spacemit/K3/MUSE-Pico/MUSE-Pico.fdf
+@@ -207,6 +207,8 @@ FILE FREEFORM = 04c61fa0-a7e8-4e92-a832-f13e53c99ab1 {
+ 
+ # SKU selection
+ INF Silicon/Spacemit/K3/Drivers/SkuSelectDxe/SkuSelectDxe.inf
++INF Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.inf
++INF Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.inf
+ # DTB compatible fixup (COM260)
+ !if $(K3_OS_DTB_ENABLE) == FALSE
+ INF Silicon/Spacemit/K3/Drivers/CompatibleFixupDxe/CompatibleFixupDxe.inf
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.c b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.c
+new file mode 100644
+index 00000000..362f80db
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.c
+@@ -0,0 +1,106 @@
++/** @file
++  Publish the selected firmware defaults without accessing controller hardware.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++#include <Library/BaseMemoryLib.h>
++#include <Library/PcdLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Protocol/K3PlatformConfig.h>
++#include "../UsbHcdInitDxe/UsbHostPcdConfig.h"
++
++STATIC K3_PLATFORM_CONFIG_SNAPSHOT  mSnapshot;
++
++STATIC
++EFI_STATUS
++EFIAPI
++GetSnapshot (
++  OUT K3_PLATFORM_CONFIG_SNAPSHOT  *Snapshot,
++  IN  UINTN                        BufferSize
++  )
++{
++  if (Snapshot == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  if (BufferSize < sizeof (mSnapshot)) {
++    return EFI_BUFFER_TOO_SMALL;
++  }
++
++  CopyMem (Snapshot, &mSnapshot, sizeof (mSnapshot));
++  return EFI_SUCCESS;
++}
++
++STATIC K3_PLATFORM_CONFIG_PROTOCOL  mProtocol = {
++  K3_PLATFORM_CONFIG_REVISION,
++  GetSnapshot
++};
++
++STATIC
++VOID
++CaptureUsbDefaults (
++  VOID
++  )
++{
++  CONST USB_HOST_CONTROLLER_HW_ARRAY  *Usb;
++  UINTN                               Index;
++  UINTN                               Size;
++
++  Usb  = PcdGetPtr (PcdUsbHostControllers);
++  Size = PcdGetSize (PcdUsbHostControllers);
++  mSnapshot.UsbCount = 0;
++  if ((Size < OFFSET_OF (USB_HOST_CONTROLLER_HW_ARRAY, Controller)) ||
++      (Usb->Num > ARRAY_SIZE (mSnapshot.UsbState)) ||
++      (Usb->Num > ARRAY_SIZE (Usb->Controller)) ||
++      (Size < OFFSET_OF (USB_HOST_CONTROLLER_HW_ARRAY, Controller) + Usb->Num * sizeof (Usb->Controller[0]))) {
++    return;
++  }
++
++  mSnapshot.UsbCount = (UINT8)Usb->Num;
++  for (Index = 0; Index < Usb->Num; Index++) {
++    // Match the filtering and maximum-speed order in UsbHcd.c.
++    if ((mSnapshot.UsbEnableMask != 0xFF) && ((mSnapshot.UsbEnableMask & (1U << Index)) == 0)) {
++      mSnapshot.UsbState[Index] = K3_USB_OFF;
++    } else if (((mSnapshot.UsbHsOnlyMask & (1U << Index)) != 0) ||
++               (Usb->Controller[Index].MaxSpeed == USB_SPEED_HIGH)) {
++      mSnapshot.UsbState[Index] = K3_USB_HIGH;
++    } else if (Usb->Controller[Index].MaxSpeed == USB_SPEED_SUPER) {
++      mSnapshot.UsbState[Index] = K3_USB_SUPER;
++    } else {
++      mSnapshot.UsbState[Index] = K3_USB_UNKNOWN;
++    }
++  }
++}
++
++EFI_STATUS
++EFIAPI
++K3PlatformConfigEntry (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  CONST CHAR16  *Version;
++  UINTN         Size;
++  EFI_HANDLE    Handle;
++
++  mSnapshot.Revision        = K3_PLATFORM_CONFIG_REVISION;
++  mSnapshot.Size            = sizeof (mSnapshot);
++  mSnapshot.Generation      = 1;
++  mSnapshot.Sku             = LibPcdGetSku ();
++  mSnapshot.DescriptionMode = FixedPcdGet8 (PcdK3ConfigDescriptionMode);
++  mSnapshot.GmacMask        = PcdGet8 (PcdGmacUseMask);
++  mSnapshot.PcieMask        = PcdGet8 (PcdPcieHostEnableMask);
++  mSnapshot.UsbEnableMask   = PcdGet8 (PcdUsbHostEnableMask);
++  mSnapshot.UsbHsOnlyMask   = PcdGet8 (PcdUsbHostHsOnlyMask);
++  mSnapshot.UfsAclkHz       = PcdGet64 (PcdUfsAclkRate);
++  CaptureUsbDefaults ();
++
++  Version = (CONST CHAR16 *)PcdGetPtr (PcdFirmwareVersionString);
++  Size    = PcdGetSize (PcdFirmwareVersionString);
++  if ((Size >= sizeof (CHAR16)) && ((Size % sizeof (CHAR16)) == 0) &&
++      (Size <= sizeof (mSnapshot.FirmwareVersion)) && (Version[Size / sizeof (CHAR16) - 1] == 0)) {
++    CopyMem (mSnapshot.FirmwareVersion, Version, Size);
++  }
++
++  Handle = NULL;
++  return gBS->InstallProtocolInterface (&Handle, &gK3PlatformConfigProtocolGuid, EFI_NATIVE_INTERFACE, &mProtocol);
++}
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.inf b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.inf
+new file mode 100644
+index 00000000..90d8fb45
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigDxe/K3PlatformConfigDxe.inf
+@@ -0,0 +1,42 @@
++## SPDX-License-Identifier: BSD-2-Clause-Patent
++[Defines]
++  INF_VERSION    = 0x0001001B
++  BASE_NAME      = K3PlatformConfigDxe
++  FILE_GUID      = 8e1fbc5f-c4c3-4f3f-8059-13736855a1d0
++  MODULE_TYPE    = DXE_DRIVER
++  VERSION_STRING = 1.0
++  ENTRY_POINT    = K3PlatformConfigEntry
++
++[Sources]
++  K3PlatformConfigDxe.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  Silicon/Spacemit/K3/K3.dec
++  Silicon/Spacemit/SpacemitPkg.dec
++
++[LibraryClasses]
++  BaseMemoryLib
++  PcdLib
++  UefiBootServicesTableLib
++  UefiDriverEntryPoint
++
++[FixedPcd]
++  gSpacemitK3TokenSpaceGuid.PcdK3ConfigDescriptionMode
++  gSpacemitK3TokenSpaceGuid.PcdUsbHostControllers
++  gSpacemitK3TokenSpaceGuid.PcdUfsAclkRate
++
++[Pcd]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVersionString
++  gSpacemitK3TokenSpaceGuid.PcdGmacUseMask
++  gSpacemitK3TokenSpaceGuid.PcdPcieHostEnableMask
++  gSpacemitK3TokenSpaceGuid.PcdUsbHostEnableMask
++  gSpacemitK3TokenSpaceGuid.PcdUsbHostHsOnlyMask
++
++[Protocols]
++  gK3PlatformConfigProtocolGuid          ## PRODUCES
++  gSpacemitK3SkuSelectDoneProtocolGuid   ## CONSUMES
++
++[Depex]
++  gSpacemitK3SkuSelectDoneProtocolGuid
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.uni b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.uni
+new file mode 100644
+index 00000000..a812914d
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.uni
+@@ -0,0 +1,47 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#langdef en-US "English"
++
++#string STR_TITLE             #language en-US "Platform Configuration"
++#string STR_HELP              #language en-US "Firmware configuration for this boot. USB numbers identify controllers and speeds are configured ceilings."
++#string STR_BOOT_TIMEOUT      #language en-US "Boot menu timeout"
++#string STR_BOOT_TIMEOUT_HELP #language en-US "Edit seconds in Boot Maintenance Manager. 0 boots immediately. 65535 waits indefinitely. Save or discard changes there."
++#string STR_SYSTEM            #language en-US "System information"
++#string STR_VERSION           #language en-US "Firmware version"
++#string STR_SKU               #language en-US "Selected PCD SKU"
++#string STR_SKU_SOURCE        #language en-US "SKU selection source"
++#string STR_BOARD_ID          #language en-US "Board identity / revision"
++#string STR_MODE              #language en-US "OS description build"
++#string STR_REVISION          #language en-US "Snapshot revision"
++#string STR_DEFAULTS          #language en-US "Configured peripherals"
++#string STR_GMAC              #language en-US "GMAC controller mask"
++#string STR_PCIE              #language en-US "PCIe root mask"
++#string STR_USB_FILTER        #language en-US "USB controller mask"
++#string STR_USB0              #language en-US "USB controller 0"
++#string STR_USB1              #language en-US "USB controller 1"
++#string STR_USB2              #language en-US "USB controller 2"
++#string STR_USB3              #language en-US "USB controller 3"
++#string STR_USB4              #language en-US "USB controller 4"
++#string STR_UFS               #language en-US "UFS ACLK target"
++#string STR_EVIDENCE          #language en-US "Hardware and OS status"
++#string STR_INIT              #language en-US "Peripheral operation"
++#string STR_PUBLICATION       #language en-US "OS table publication"
++#string STR_QUIRKS            #language en-US "ACPI kernel workarounds"
++#string STR_UART_QUIRK        #language en-US "UART fixed-XScale type"
++#string STR_PCIE_QUIRK        #language en-US "PCIe ghost-device filter"
++#string STR_USB_QUIRK         #language en-US "USB2 DWC3 suspend quirks"
++#string STR_KERNEL_UNCONFIRMED #language en-US "Kernel use unconfirmed"
++#string STR_UNCONFIRMED       #language en-US "Not confirmed"
++#string STR_VERSION_VALUE     #language en-US "Unknown"
++#string STR_SKU_VALUE         #language en-US "Unknown"
++#string STR_SKU_SOURCE_VALUE  #language en-US "Internal DT model / default"
++#string STR_MODE_VALUE        #language en-US "Unknown"
++#string STR_REVISION_VALUE    #language en-US "Unknown"
++#string STR_GMAC_VALUE        #language en-US "Unknown"
++#string STR_PCIE_VALUE        #language en-US "Unknown"
++#string STR_USB_FILTER_VALUE  #language en-US "Unknown"
++#string STR_USB0_VALUE        #language en-US "Unknown"
++#string STR_USB1_VALUE        #language en-US "Unknown"
++#string STR_USB2_VALUE        #language en-US "Unknown"
++#string STR_USB3_VALUE        #language en-US "Unknown"
++#string STR_USB4_VALUE        #language en-US "Unknown"
++#string STR_UFS_VALUE         #language en-US "Unknown"
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.vfr b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.vfr
+new file mode 100644
+index 00000000..6fbf9932
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfig.vfr
+@@ -0,0 +1,53 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++// VFR receives GUIDs and fixed PCD values from the generated StrDefs.h.
++#include "K3PlatformConfigForm.h"
++
++
++formset
++  guid = K3_CONFIG_FORMSET_GUID,
++  title = STRING_TOKEN(STR_TITLE),
++  help = STRING_TOKEN(STR_HELP),
++  classguid = gPlatformManagerFormsetGuid,
++
++  form formid = K3_CONFIG_FORM_ID, title = STRING_TOKEN(STR_TITLE);
++#if FixedPcdGet8 (PcdK3ConfigDescriptionMode) == 1
++    goto formsetguid = BMM_FORMSET_GUID, formid = BMM_MAIN_FORM, question = BMM_TIMEOUT_QUESTION,
++      prompt = STRING_TOKEN(STR_BOOT_TIMEOUT), help = STRING_TOKEN(STR_BOOT_TIMEOUT_HELP);
++#endif
++    subtitle text = STRING_TOKEN(STR_SYSTEM);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_VERSION), text = STRING_TOKEN(STR_VERSION_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_SKU), text = STRING_TOKEN(STR_SKU_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_SKU_SOURCE), text = STRING_TOKEN(STR_SKU_SOURCE_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_BOARD_ID), text = STRING_TOKEN(STR_UNCONFIRMED);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_MODE), text = STRING_TOKEN(STR_MODE_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_REVISION), text = STRING_TOKEN(STR_REVISION_VALUE);
++
++    subtitle text = STRING_TOKEN(STR_DEFAULTS);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_GMAC), text = STRING_TOKEN(STR_GMAC_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_PCIE), text = STRING_TOKEN(STR_PCIE_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB_FILTER), text = STRING_TOKEN(STR_USB_FILTER_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB0), text = STRING_TOKEN(STR_USB0_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB1), text = STRING_TOKEN(STR_USB1_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB2), text = STRING_TOKEN(STR_USB2_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB3), text = STRING_TOKEN(STR_USB3_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB4), text = STRING_TOKEN(STR_USB4_VALUE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_UFS), text = STRING_TOKEN(STR_UFS_VALUE);
++
++    subtitle text = STRING_TOKEN(STR_EVIDENCE);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_INIT), text = STRING_TOKEN(STR_UNCONFIRMED);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_PUBLICATION), text = STRING_TOKEN(STR_UNCONFIRMED);
++#if FixedPcdGet8 (PcdK3ConfigDescriptionMode) == 1
++    subtitle text = STRING_TOKEN(STR_QUIRKS);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_UART_QUIRK), text = STRING_TOKEN(STR_KERNEL_UNCONFIRMED);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_PCIE_QUIRK), text = STRING_TOKEN(STR_KERNEL_UNCONFIRMED);
++    text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_USB_QUIRK), text = STRING_TOKEN(STR_KERNEL_UNCONFIRMED);
++#endif
++
++    // The EDK II browser sends FORM_OPEN to questions marked INTERACTIVE.
++    // Suppress the callback carrier so no editable field or action is exposed.
++    suppressif TRUE;
++      text help = STRING_TOKEN(STR_HELP), text = STRING_TOKEN(STR_TITLE),
++        flags = INTERACTIVE, key = K3_CONFIG_OPEN_KEY;
++    endif;
++  endform;
++endformset;
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigForm.h b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigForm.h
+new file mode 100644
+index 00000000..c06c9dbf
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigForm.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#ifndef K3_PLATFORM_CONFIG_FORM_H_
++#define K3_PLATFORM_CONFIG_FORM_H_
++
++#define K3_CONFIG_FORMSET_GUID  \
++  { 0xcc9c5ba8, 0xaa74, 0x444e, { 0x9e, 0xa5, 0xd8, 0x38, 0x98, 0x30, 0x8d, 0x71 } }
++#define K3_CONFIG_FORM_ID      1
++#define K3_CONFIG_OPEN_KEY     0x7F01
++
++// Existing BootMaintenanceManagerUiLib FormGuid.h identities. BMM owns the editor.
++#define BMM_FORMSET_GUID  \
++  { 0x642237c7, 0x35d4, 0x472d, { 0x83, 0x65, 0x12, 0xe0, 0xcc, 0xf2, 0x7a, 0x22 } }
++#define BMM_MAIN_FORM       0x1001
++#define BMM_TIMEOUT_QUESTION 0x1012
++
++#endif
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.c b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.c
+new file mode 100644
+index 00000000..bf691905
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.c
+@@ -0,0 +1,219 @@
++/** @file
++  Present the immutable K3 boot snapshot in Platform Manager.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++#include <Library/HiiLib.h>
++#include <Library/PrintLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Protocol/DevicePath.h>
++#include <Protocol/HiiConfigAccess.h>
++#include <Protocol/K3PlatformConfig.h>
++#include "K3PlatformConfigForm.h"
++
++extern UINT8  K3PlatformConfigBin[];
++extern UINT8  K3PlatformConfigHiiDxeStrings[];
++
++STATIC EFI_HII_HANDLE               mHiiHandle;
++STATIC K3_PLATFORM_CONFIG_PROTOCOL  *mConfig;
++
++STATIC struct {
++  VENDOR_DEVICE_PATH          Vendor;
++  EFI_DEVICE_PATH_PROTOCOL    End;
++} mPath = {
++  {
++    { HARDWARE_DEVICE_PATH, HW_VENDOR_DP, { sizeof (VENDOR_DEVICE_PATH), 0 } },
++    K3_CONFIG_FORMSET_GUID
++  },
++  { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE, { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 } }
++};
++
++// Display only the named controller indices. The raw mask remains visible even
++// if a future SKU introduces bits outside the current controller registry.
++STATIC
++VOID
++SetMaskString (
++  IN EFI_STRING_ID  Token,
++  IN UINT8          Mask,
++  IN CONST CHAR16   *Ids
++  )
++{
++  UINTN   Index;
++  UINTN   Used;
++  CHAR16  Selected[16];
++  CHAR16  Text[48];
++
++  Used = 0;
++  for (Index = 0; Ids[Index] != 0; Index++) {
++    if ((Mask & (1U << Index)) != 0) {
++      if (Used != 0) {
++        Selected[Used++] = L',';
++      }
++
++      Selected[Used++] = Ids[Index];
++    }
++  }
++
++  Selected[Used] = 0;
++  UnicodeSPrint (Text, sizeof (Text), L"0x%02x (%s)", Mask, Used ? Selected : L"none listed");
++  HiiSetString (mHiiHandle, Token, Text, NULL);
++}
++
++STATIC
++EFI_STATUS
++EFIAPI
++ConfigCallback (
++  IN CONST EFI_HII_CONFIG_ACCESS_PROTOCOL  *This,
++  IN EFI_BROWSER_ACTION                    Action,
++  IN EFI_QUESTION_ID                       QuestionId,
++  IN UINT8                                 Type,
++  IN EFI_IFR_TYPE_VALUE                    *Value,
++  OUT EFI_BROWSER_ACTION_REQUEST           *ActionRequest
++  )
++{
++  STATIC CONST CHAR16 *CONST  SkuNames[] = { L"DEFAULT", L"COM260", L"FML13V05", L"EVB" };
++  STATIC CONST CHAR16 *CONST  Modes[] = { L"Device tree (legacy)", L"ACPI", L"Device tree (firmware-owned)" };
++  STATIC CONST CHAR16 *CONST  UsbStates[] = { L"Unknown ceiling", L"Disabled", L"High-speed ceiling", L"SuperSpeed ceiling" };
++  STATIC CONST EFI_STRING_ID  UsbTokens[] = {
++    STRING_TOKEN (STR_USB0_VALUE), STRING_TOKEN (STR_USB1_VALUE), STRING_TOKEN (STR_USB2_VALUE),
++    STRING_TOKEN (STR_USB3_VALUE), STRING_TOKEN (STR_USB4_VALUE)
++  };
++  K3_PLATFORM_CONFIG_SNAPSHOT  Snapshot;
++  EFI_STATUS                   Status;
++  UINTN                        Index;
++  CHAR16                       Text[80];
++
++  if ((Action != EFI_BROWSER_ACTION_FORM_OPEN) || (QuestionId != K3_CONFIG_OPEN_KEY)) {
++    return EFI_UNSUPPORTED;
++  }
++
++  if (ActionRequest == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *ActionRequest = EFI_BROWSER_ACTION_REQUEST_NONE;
++  Status = mConfig->GetSnapshot (&Snapshot, sizeof (Snapshot));
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if ((Snapshot.Revision != K3_PLATFORM_CONFIG_REVISION) || (Snapshot.Size != sizeof (Snapshot))) {
++    return EFI_INCOMPATIBLE_VERSION;
++  }
++
++  if (Snapshot.FirmwareVersion[0] != 0) {
++    HiiSetString (mHiiHandle, STRING_TOKEN (STR_VERSION_VALUE), Snapshot.FirmwareVersion, NULL);
++  }
++
++  UnicodeSPrint (
++    Text, sizeof (Text), L"%s (%Lu)",
++    Snapshot.Sku < ARRAY_SIZE (SkuNames) ? SkuNames[Snapshot.Sku] : L"Unknown", Snapshot.Sku
++    );
++  HiiSetString (mHiiHandle, STRING_TOKEN (STR_SKU_VALUE), Text, NULL);
++  if (Snapshot.DescriptionMode < ARRAY_SIZE (Modes)) {
++    HiiSetString (mHiiHandle, STRING_TOKEN (STR_MODE_VALUE), (EFI_STRING)Modes[Snapshot.DescriptionMode], NULL);
++  }
++
++  UnicodeSPrint (Text, sizeof (Text), L"%u", Snapshot.Revision);
++  HiiSetString (mHiiHandle, STRING_TOKEN (STR_REVISION_VALUE), Text, NULL);
++  SetMaskString (STRING_TOKEN (STR_GMAC_VALUE), Snapshot.GmacMask, L"0123");
++  SetMaskString (STRING_TOKEN (STR_PCIE_VALUE), Snapshot.PcieMask, L"ABCDE");
++  if (Snapshot.UsbEnableMask == 0xFF) {
++    HiiSetString (mHiiHandle, STRING_TOKEN (STR_USB_FILTER_VALUE), L"0xFF (controller defaults)", NULL);
++  } else {
++    SetMaskString (STRING_TOKEN (STR_USB_FILTER_VALUE), Snapshot.UsbEnableMask, L"01234");
++  }
++
++  for (Index = 0; (Index < Snapshot.UsbCount) && (Index < ARRAY_SIZE (UsbTokens)); Index++) {
++    if (Snapshot.UsbState[Index] < ARRAY_SIZE (UsbStates)) {
++      HiiSetString (mHiiHandle, UsbTokens[Index], (EFI_STRING)UsbStates[Snapshot.UsbState[Index]], NULL);
++    }
++  }
++
++  if (Snapshot.UfsAclkHz == 0) {
++    HiiSetString (mHiiHandle, STRING_TOKEN (STR_UFS_VALUE), L"Driver default", NULL);
++  } else {
++    UnicodeSPrint (Text, sizeof (Text), L"%Lu Hz", Snapshot.UfsAclkHz);
++    HiiSetString (mHiiHandle, STRING_TOKEN (STR_UFS_VALUE), Text, NULL);
++  }
++  return EFI_SUCCESS;
++}
++
++STATIC
++EFI_STATUS
++EFIAPI
++ExtractConfig (
++  IN CONST EFI_HII_CONFIG_ACCESS_PROTOCOL  *This,
++  IN CONST EFI_STRING                      Request,
++  OUT EFI_STRING                           *Progress,
++  OUT EFI_STRING                           *Results
++  )
++{
++  if ((Progress == NULL) || (Results == NULL)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *Progress = Request;
++  *Results  = NULL;
++  return EFI_NOT_FOUND;
++}
++
++STATIC
++EFI_STATUS
++EFIAPI
++RouteConfig (
++  IN CONST EFI_HII_CONFIG_ACCESS_PROTOCOL  *This,
++  IN CONST EFI_STRING                      Configuration,
++  OUT EFI_STRING                           *Progress
++  )
++{
++  if ((Configuration == NULL) || (Progress == NULL)) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  *Progress = Configuration;
++  return EFI_NOT_FOUND;
++}
++
++STATIC EFI_HII_CONFIG_ACCESS_PROTOCOL  mConfigAccess = { ExtractConfig, RouteConfig, ConfigCallback };
++
++EFI_STATUS
++EFIAPI
++K3ConfigHiiEntry (
++  IN EFI_HANDLE        ImageHandle,
++  IN EFI_SYSTEM_TABLE  *SystemTable
++  )
++{
++  EFI_STATUS  Status;
++  EFI_HANDLE  Handle;
++
++  Status = gBS->LocateProtocol (&gK3PlatformConfigProtocolGuid, NULL, (VOID **)&mConfig);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  if (mConfig->Revision != K3_PLATFORM_CONFIG_REVISION) {
++    return EFI_INCOMPATIBLE_VERSION;
++  }
++
++  Handle = NULL;
++  Status = gBS->InstallMultipleProtocolInterfaces (
++                  &Handle, &gEfiDevicePathProtocolGuid, &mPath,
++                  &gEfiHiiConfigAccessProtocolGuid, &mConfigAccess, NULL
++                  );
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  mHiiHandle = HiiAddPackages (
++                 &mPath.Vendor.Guid, Handle, K3PlatformConfigBin, K3PlatformConfigHiiDxeStrings, NULL
++                 );
++  if (mHiiHandle == NULL) {
++    gBS->UninstallMultipleProtocolInterfaces (
++           Handle, &gEfiDevicePathProtocolGuid, &mPath,
++           &gEfiHiiConfigAccessProtocolGuid, &mConfigAccess, NULL
++           );
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  return EFI_SUCCESS;
++}
+diff --git a/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.inf b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.inf
+new file mode 100644
+index 00000000..91c47c1f
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Drivers/K3PlatformConfigHiiDxe/K3PlatformConfigHiiDxe.inf
+@@ -0,0 +1,40 @@
++## SPDX-License-Identifier: BSD-2-Clause-Patent
++[Defines]
++  INF_VERSION    = 0x0001001B
++  BASE_NAME      = K3PlatformConfigHiiDxe
++  FILE_GUID      = 804b392a-e5ed-4b29-8183-60047e8b037c
++  MODULE_TYPE    = DXE_DRIVER
++  VERSION_STRING = 1.0
++  ENTRY_POINT    = K3ConfigHiiEntry
++
++[Sources]
++  K3PlatformConfigHiiDxe.c
++  K3PlatformConfig.vfr
++  K3PlatformConfig.uni
++  K3PlatformConfigForm.h
++
++[Packages]
++  MdePkg/MdePkg.dec
++  MdeModulePkg/MdeModulePkg.dec
++  Silicon/Spacemit/K3/K3.dec
++  Silicon/Spacemit/SpacemitPkg.dec
++
++[LibraryClasses]
++  HiiLib
++  PrintLib
++  UefiBootServicesTableLib
++  UefiDriverEntryPoint
++
++[FixedPcd]
++  gSpacemitK3TokenSpaceGuid.PcdK3ConfigDescriptionMode
++
++[Guids]
++  gPlatformManagerFormsetGuid
++
++[Protocols]
++  gEfiDevicePathProtocolGuid        ## PRODUCES
++  gEfiHiiConfigAccessProtocolGuid   ## PRODUCES
++  gK3PlatformConfigProtocolGuid     ## CONSUMES
++
++[Depex]
++  gK3PlatformConfigProtocolGuid AND gEfiHiiDatabaseProtocolGuid AND gEfiHiiStringProtocolGuid
+diff --git a/Silicon/Spacemit/K3/Include/Protocol/K3PlatformConfig.h b/Silicon/Spacemit/K3/Include/Protocol/K3PlatformConfig.h
+new file mode 100644
+index 00000000..446f0025
+--- /dev/null
++++ b/Silicon/Spacemit/K3/Include/Protocol/K3PlatformConfig.h
+@@ -0,0 +1,50 @@
++/** @file
++  Snapshot of firmware configuration inputs after SKU selection.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++#ifndef K3_PLATFORM_CONFIG_H_
++#define K3_PLATFORM_CONFIG_H_
++
++#include <Uefi.h>
++
++#define K3_PLATFORM_CONFIG_REVISION  1
++#define K3_CONFIG_MAX_USB            5
++
++#define K3_USB_UNKNOWN  0
++#define K3_USB_OFF      1
++#define K3_USB_HIGH     2
++#define K3_USB_SUPER    3
++
++typedef struct {
++  UINT32    Revision;
++  UINT32    Size;
++  UINT64    Generation;
++  UINT64    Sku;
++  UINT64    UfsAclkHz;
++  CHAR16    FirmwareVersion[64];
++  UINT8     DescriptionMode;
++  UINT8     GmacMask;
++  UINT8     PcieMask;
++  UINT8     UsbEnableMask;
++  UINT8     UsbHsOnlyMask;
++  UINT8     UsbCount;
++  UINT8     UsbState[K3_CONFIG_MAX_USB]; // Indexed by firmware controller ID.
++} K3_PLATFORM_CONFIG_SNAPSHOT;
++
++// Up to TPL_CALLBACK. Copies a complete immutable record to caller storage.
++// No variable I/O, hardware access or status updates occur after publication.
++typedef
++EFI_STATUS
++(EFIAPI *K3_GET_CONFIG_SNAPSHOT)(
++  OUT K3_PLATFORM_CONFIG_SNAPSHOT  *Snapshot,
++  IN UINTN                         BufferSize
++  );
++
++typedef struct {
++  UINT32                    Revision;
++  K3_GET_CONFIG_SNAPSHOT    GetSnapshot;
++} K3_PLATFORM_CONFIG_PROTOCOL;
++
++extern EFI_GUID  gK3PlatformConfigProtocolGuid;
++
++#endif
+diff --git a/Silicon/Spacemit/K3/K3.dec b/Silicon/Spacemit/K3/K3.dec
+index 67e2063b..5204f184 100644
+--- a/Silicon/Spacemit/K3/K3.dec
++++ b/Silicon/Spacemit/K3/K3.dec
+@@ -12,14 +12,22 @@
+   PACKAGE_GUID                   = 18052e0e-d0c3-4833-93b6-0b4910f063c4
+   PACKAGE_VERSION                = 1.0
+ 
++[Includes]
++  Include
++
+ [Protocols]
+   ## Protocol published by SkuSelectDxe to signal SKU selection is complete
+   gSpacemitK3SkuSelectDoneProtocolGuid = { 0x6f78abc7, 0x7ab2, 0x4ff0, { 0xa4, 0x2e, 0x1a, 0xdf, 0x93, 0x0f, 0x6b, 0xe3 }}
+ 
++  ## Immutable observation of the selected SKU and its configuration inputs.
++  gK3PlatformConfigProtocolGuid = { 0x27c61a79, 0x72af, 0x4192, { 0xa8, 0xa9, 0x0a, 0xb1, 0x47, 0xcf, 0x7a, 0xf7 }}
++
+ [Guids]
+   gSpacemitK3TokenSpaceGuid = {0xc8002e18, 0x445b, 0x4707, {0x97, 0x31, 0x44, 0xb4, 0xd8, 0x26, 0x32, 0xde}}
+ 
+ [PcdsFixedAtBuild]
++  # Build-selected OS description for setup (0 = legacy DT, 1 = ACPI, 2 = firmware-owned DT).
++  gSpacemitK3TokenSpaceGuid.PcdK3ConfigDescriptionMode|0|UINT8|0x0000B001
+   gSpacemitK3TokenSpaceGuid.PcdSpacemitMPMURegBase|0x0|UINT64|0x00000001
+   gSpacemitK3TokenSpaceGuid.PcdSpacemitAPMURegBase|0x0|UINT64|0x00000002
+   gSpacemitK3TokenSpaceGuid.PcdSpacemitAPBSpareRegBase|0x0|UINT64|0x00000003
+diff --git a/tools/tests/platform_config_host.c b/tools/tests/platform_config_host.c
+new file mode 100644
+index 00000000..c8a0ffe6
+--- /dev/null
++++ b/tools/tests/platform_config_host.c
+@@ -0,0 +1,83 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#include <TestUefi.h>
++#include <uchar.h>
++
++typedef uint16_t CHAR16;
++typedef uint16_t UINT16;
++typedef uint8_t BOOLEAN;
++#define CONST const
++#define EFI_INVALID_PARAMETER 2
++#undef EFI_BUFFER_TOO_SMALL
++#define EFI_BUFFER_TOO_SMALL 5
++#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
++#define CopyMem memcpy
++#define OFFSET_OF offsetof
++#define PcdGet8(pcd) (pcd)
++#define PcdGet64(pcd) (pcd)
++#define FixedPcdGet8(pcd) (pcd)
++#define PcdGetPtr(pcd) (&pcd)
++#define PcdGetSize(pcd) sizeof(pcd)
++
++#include "UsbHcdInitDxe/UsbHostPcdConfig.h"
++
++static USB_HOST_CONTROLLER_HW_ARRAY PcdUsbHostControllers;
++static UINT8 PcdUsbHostEnableMask, PcdUsbHostHsOnlyMask;
++static UINT8 PcdPcieHostEnableMask, PcdGmacUseMask, PcdK3ConfigDescriptionMode;
++static UINT64 PcdUfsAclkRate;
++static CHAR16 PcdFirmwareVersionString[] = u"1.2.3";
++static UINTN Sku;
++
++#include "K3PlatformConfigDxe.c"
++
++EFI_GUID gK3PlatformConfigProtocolGuid;
++static K3_PLATFORM_CONFIG_PROTOCOL *Published;
++
++static EFI_STATUS Install(EFI_HANDLE *handle, EFI_GUID *guid, int type, VOID *interface) {
++  assert(guid == &gK3PlatformConfigProtocolGuid && type == EFI_NATIVE_INTERFACE);
++  Published = interface;
++  return EFI_SUCCESS;
++}
++
++static EFI_BOOT_SERVICES Boot = { .InstallProtocolInterface = Install };
++EFI_BOOT_SERVICES *gBS = &Boot;
++UINTN LibPcdGetSku(void) { return Sku; }
++
++int main(void) {
++  K3_PLATFORM_CONFIG_SNAPSHOT s;
++
++  PcdUsbHostControllers.Num = 3;
++  PcdUsbHostControllers.Controller[0].MaxSpeed = USB_SPEED_SUPER;
++  PcdUsbHostControllers.Controller[1].MaxSpeed = USB_SPEED_HIGH;
++  PcdUsbHostControllers.Controller[2].MaxSpeed = 77; // unrecognized default
++  PcdUsbHostEnableMask = 0xff; // all described controllers, never all eight bits
++  PcdUsbHostHsOnlyMask = 1;
++  PcdK3ConfigDescriptionMode = 1;
++  PcdGmacUseMask = 2;
++  PcdPcieHostEnableMask = 9;
++  PcdUfsAclkRate = 491520000;
++  Sku = 243; // unrecognized SKU must retain its identity
++  assert(K3PlatformConfigEntry(NULL, NULL) == EFI_SUCCESS);
++  assert(Published->GetSnapshot(NULL, sizeof(s)) == EFI_INVALID_PARAMETER);
++  assert(Published->GetSnapshot(&s, sizeof(s)-1) == EFI_BUFFER_TOO_SMALL);
++  PcdUsbHostEnableMask = 0;
++  assert(Published->GetSnapshot(&s, sizeof(s)) == EFI_SUCCESS);
++  assert(s.Revision == 1 && s.Size == sizeof(s) && s.Generation == 1);
++  assert(s.Sku == 243 && s.UsbEnableMask == 0xff && s.UsbCount == 3);
++  assert(s.UsbState[0] == K3_USB_HIGH && s.UsbState[1] == K3_USB_HIGH);
++  assert(s.UsbState[2] == K3_USB_UNKNOWN);
++  assert(s.GmacMask == 2 && s.PcieMask == 9 && s.UfsAclkHz == 491520000);
++  assert(s.DescriptionMode == 1 && !memcmp(s.FirmwareVersion, u"1.2.3", sizeof(u"1.2.3")));
++  s.Sku = 0;
++  assert(Published->GetSnapshot(&s, sizeof(s)) == EFI_SUCCESS && s.Sku == 243);
++
++  PcdUsbHostEnableMask = 1;
++  PcdUsbHostHsOnlyMask = 0;
++  assert(K3PlatformConfigEntry(NULL, NULL) == EFI_SUCCESS);
++  assert(Published->GetSnapshot(&s, sizeof(s)) == EFI_SUCCESS);
++  assert(s.UsbState[0] == K3_USB_SUPER && s.UsbState[1] == K3_USB_OFF);
++
++  PcdUsbHostControllers.Num = USB_HOST_MAX_CONTROLLERS + 1;
++  assert(K3PlatformConfigEntry(NULL, NULL) == EFI_SUCCESS);
++  assert(Published->GetSnapshot(&s, sizeof(s)) == EFI_SUCCESS && s.UsbCount == 0);
++  return 0;
++}
+diff --git a/tools/tests/test_platform_config.py b/tools/tests/test_platform_config.py
+new file mode 100644
+index 00000000..fd04f1fc
+--- /dev/null
++++ b/tools/tests/test_platform_config.py
+@@ -0,0 +1,27 @@
++"""Exercise the snapshot producer with boot services and PCD inputs supplied by the test."""
++from pathlib import Path
++import subprocess
++import tempfile
++import unittest
++
++ROOT = Path(__file__).resolve().parents[2]
++K3 = ROOT / 'Silicon/Spacemit/K3'
++HOST = K3 / 'Library/K3OsFdtLib/Test/Include'
++
++
++class PlatformConfigTests(unittest.TestCase):
++    def test_boot_snapshot(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            tmp = Path(tmp)
++            for path in ['Protocol/ClockCtrl.h', 'Library/BaseMemoryLib.h']:
++                header = tmp / path
++                header.parent.mkdir(exist_ok=True)
++                header.touch()
++            exe = tmp / 'snapshot'
++            subprocess.run([
++                'cc', '-std=c11', '-fshort-wchar', '-Wall', '-Werror',
++                '-I', tmp, '-I', HOST, '-I', K3 / 'Include', '-I', K3 / 'Drivers',
++                '-I', K3 / 'Drivers/K3PlatformConfigDxe',
++                ROOT / 'tools/tests/platform_config_host.c', '-o', exe
++            ], check=True)
++            subprocess.run([exe], check=True)
