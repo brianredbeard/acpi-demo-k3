@@ -256,3 +256,34 @@ Remaining items surfaced by the boot (all concrete, none mysterious):
    gpioy).
 5. **ECAM ghost multiplication**: 8 NVMe copies on bus 0 (the known
    seg-0 decode interplay; needs the ghost-filter quirk carried).
+
+## Thermal patch v2 on-hardware session (2026-11-23 14:0x)
+
+The full ACPI conversion applied to the rig tree (all four pieces):
+1. Three probe-path property reads → device_property_* (sensor_range,
+   tsensor_map, temperature_offset)
+2. func/bus clocks optional under ACPI (gated on !has_acpi_companion —
+   the firmware's AcpiClockInitDxe owns them; the earlier working
+   driver's form)
+3. init_sensors() return checked (goto err_clocks with clock cleanup)
+4. Teardown: ACPI-registered zones unregistered via
+   thermal_zone_device_unregister (the devm OF helper mismatches the
+   manually registered zones); clock/reset cleanup NULL-guarded
+Plus #include <linux/acpi.h>.
+
+Rig build: CLEAN (k3_tsensor.ko, 25544 bytes, "init_sensors failed:
+%d" verified in the binary). The RPM's old module was rmmod'd and the
+new one insmod'd successfully on the 3f boot.
+
+**The manual device rebind (echo PRP0001:0d > .../k3_thermal/bind)
+HUNG the console** — the probe passes the property reads (no -EINVAL)
+but wedges later (suspect: init_sensors' TSEN mmio or the zone
+registration under the rebind path). The RPM build's original probe
+failed -EINVAL at 19.6s BEFORE any mmio, so the mmio sequence is
+unproven on this kernel. No network on this boot (the dwmac macirq
+issue) limited remote diagnosis; power-cycled to gpioy.
+
+Next: the thermal module needs breadcrumb instrumentation in
+init_sensors (like the 8250 K3DBG round) OR a boot with working
+network for remote debugging. The ECAM/dwmac fixes remain the other
+open items from the 3f boot.
