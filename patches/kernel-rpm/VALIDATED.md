@@ -28,6 +28,7 @@ boot), run when a patch set is ready — not per-iteration.
 | ufs-acpi | ufs-spacemit.ko (rig's own prior build + verified) | module linked |
 | espi-v2 | .o (5.4s, =y) | **DISASSEMBLY: parse_dt+0x8e jalr is_acpi_device_node + beqz guard** — the v2 gate is in the object (the v1 lesson: source-level verification was insufficient; the object is the proof) |
 | gpio-v3 | .o (5.1s, =y) | **nm: _raw_spin calls present** (bank_lock compiled in) |
+| ecam-segs-2/4 series | newfile .o COMPILED CLEAN (rig) | object symbols: dw_pcie_prog_outbound_atu + pci_generic_config_*; mcfg/makefile patches apply roundtrip (mechanically generated) | STAGED — needs the K1 config + hardware test on a cycle-3+ boot |
 | 6 | build5-authoritative (tracked, not shipped) | the base gpio patch build 5 actually compiled (data defs relocated) | provenance record — the bad-regeneration discovery | REFERENCE |
 
 ## Firmware-side staged (edk2-platforms commits, not flashed)
