@@ -1,5 +1,11 @@
 # FlashFvbDxe VA-change regression — bisect post-mortem (2026-11-22)
 
+**November 23 correction.** The handoff bisect below stands. The later Pico
+runtime test measured physical flash at `0xb8000000` and its Linux virtual
+mapping at `0x20200000`. The callback from `ee82b38f` recovered boot but left
+runtime nonvolatile writes broken. The identity-map explanation and no-op
+recommendation below are historical. [Measurements and candidate qualification](fwts-17-failures-triage-2026-11-23.md#scratch-variable-persistence-test-on-rhct13)
+
 ## Symptom
 
 rhct10 (and rhct10-nobrs) hang at the GRUB→kernel handoff: no

@@ -57,6 +57,66 @@ create/update/read/reset/delete sequence under the observed nonidentity map,
 then re-run the failing counter and time suites. The earlier handoff hang
 remains a regression check. [FVB bisect](fvb-va-bisect-2026-11-22.md) · [Runtime test contract](audit-2026-11-20/uefi-runtime.md)
 
+### EDK2 runtime flash candidate
+
+The candidate applies one [pinned platform patch](../patches/edk2-platforms/runtime-flash/recipe.json)
+to rhct13. FVB records the mapped FV address for the SDK variable writer and
+keeps the physical addresses used to calculate NOR offsets. It converts
+the SPI call targets before converting the interface pointer. The NOR driver
+converts its flash-info pointer and leaves the embedded SPI device intact.
+QSPI uses its mapped registers and 128-byte receive FIFO in virtual mode,
+keeps the hardware bus address in SFAR, bounds its retries, and restores the
+controller receive configuration and interrupt mask on return.
+
+Reproduce the candidate from this repository with a fresh destination:
+
+```sh
+python3 build_edk2.py --destination build/runtime-flash-release \
+  --recipe patches/edk2-platforms/runtime-flash/recipe.json \
+  --expect-platform-revision 8b17165463eff040bb8f486be0b08416daff9f2b \
+  --sdk-archive build/edk2-spacemit_0.0.9.tar.xz \
+  --platform-repository ../edk2-platforms --keep-workspace
+```
+
+Set `K3_EDK2_RUNTIME_WORKSPACE` to the retained build's `workspace` directory
+and `K3_EDK2_TEST_FIT` to its FIT when running the repository suite. The
+native tests compile the three production drivers and the pinned SDK's
+`UpdateVariableStore`. The rhct13 control reproduced `0x8000000000000002`
+on the measured map. The candidate also exercised identity and high virtual
+addresses, unavailable mappings, NOR timeouts, and controller restoration.
+The final full repository suite passed all 82 tests with the candidate FIT
+and retained driver workspace selected.
+
+| Verified artifact | SHA-256 |
+|---|---|
+| RELEASE FIT | `8e91f18fbdcae329514d501613c788fcd6e165989cc85c97b77ff2f71d8c2ef1` |
+| Installer manifest | `1bd47e2e00f69d01a72376323d138a38f9b4922b4c52f0fe7b4b293d81b6e9c0` |
+
+All 110 DXE file GUIDs matched the rhct13 baseline. Only the FVB, SPI NOR
+and QSPI driver file contents changed. Installer inspection passed. The
+offline plan against the verified rhct13 NOR selected one 3,248,128-byte
+EDK2 write at `0x210000`.
+
+**Hardware qualification is pending.** With Pico in the flash window and
+a fresh backup directory, the operator can run this from the integration
+repository:
+
+```sh
+sudo python3 edk2_release.py flash --board pico-itx --device usb:3-3.3 \
+  --installer "$HOME/Projects/fedora-k3-firmware/k3-firmware" \
+  --bundle build/pico-rhct13-runtime-flash \
+  --expect-sha256 1bd47e2e00f69d01a72376323d138a38f9b4922b4c52f0fe7b4b293d81b6e9c0 \
+  --backup-dir "$HOME/k3-backups/pico-runtime-flash-001"
+```
+
+Verify the NOR readback and the existing GRUB-to-RHEL NVMe boot. Repeat
+the four-byte scratch test above under the Linux runtime map. Require both
+Linux writes to succeed, read both values after reset, delete the scratch
+variables and verify absence. Then rerun `uefirtvariable`, `uefirtmisc`
+and `uefirttime` through `/dev/efi_test`, including the valid time restore.
+Retain the serial log, boot ID, runtime page map and per-call EFI statuses.
+The installer's pre-flash transaction is the rollback image.
+
 ### Other findings
 
 The other 19 failures break down as follows.
