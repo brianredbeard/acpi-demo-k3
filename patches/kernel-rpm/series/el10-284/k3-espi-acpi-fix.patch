@@ -1,6 +1,13 @@
+diff --git a/drivers/bus/spacemit-k3-espi.c b/drivers/bus/spacemit-k3-espi.c
+index 7578b82..aa0cfd1 100644
 --- a/drivers/bus/spacemit-k3-espi.c
 +++ b/drivers/bus/spacemit-k3-espi.c
-@@ -12,6 +12,7 @@
+@@ -8,10 +8,12 @@
+  * EC reboots underneath Linux.
+  */
+ 
++#include <linux/acpi.h>
+ #include <linux/bitfield.h>
  #include <linux/clk.h>
  #include <linux/delay.h>
  #include <linux/io.h>
@@ -8,7 +15,7 @@
  #include <linux/module.h>
  #include <linux/mutex.h>
  #include <linux/of.h>
-@@ -176,11 +177,15 @@
+@@ -176,10 +178,14 @@ struct spacemit_espi {
  };
  
  static bool spacemit_espi_property_enabled(struct device_node *np,
@@ -18,15 +25,14 @@
 -	if (of_find_property(np, name, NULL))
 -		return of_property_read_bool(np, name);
 +	u32 val;
- 
++
 +	/* Unified layer: DT properties under DT, _DSD under ACPI. */
 +	if (!device_property_read_u32(dev, name, &val))
 +		return !!val;
-+
+ 
  	return default_value;
  }
- 
-@@ -506,27 +511,39 @@
+@@ -506,27 +512,41 @@ static int spacemit_espi_parse_dt(struct platform_device *pdev,
  	int ret;
  
  	espi->op_freq_mhz = SPACEMIT_ESPI_DEFAULT_FREQ_MHZ;
@@ -41,16 +47,18 @@
 -	if (!ret)
 -		espi->pr_mem_base0 = lower_32_bits(range.start);
 +	/*
-+	 * Under ACPI (PRP0001) the device has no of_node: the DT helpers
-+	 * above are NULL-safe no-ops, but of_range_to_resource() derefs
-+	 * np via parser_init() -> of_n_addr_cells() and panics the boot
-+	 * (6.12.0-284.acpidebug.1.el10 field result: spacemit_espi_parse_dt
-+	 * -> of_range_to_resource -> of_n_addr_cells+0xa, badaddr 0x68).
-+	 * The PR window bases are _DSD properties on this board
-+	 * (pr-mem-base0/1); the unified property layer below resolves
-+	 * them under ACPI and the DT properties under DT.
++	 * Under ACPI the device may still carry an of_node (the firmware
++	 * publishes an FDT and the ACPI-OF glue synthesizes nodes), but
++	 * that node's range parsing faults: parser_init() ->
++	 * of_n_addr_cells() walks the synthesized node's parent/bus chain
++	 * and dereferences NULL (cycle-2 field result: panic at
++	 * spacemit_espi_parse_dt+0x98 -> of_range_to_resource ->
++	 * of_n_addr_cells, np non-NULL). Gate on the ACPI companion, not
++	 * the node pointer: under ACPI the configuration comes from _DSD
++	 * (pr-mem-base0/1 below, via the unified property layer); the DT
++	 * range path is for real DT boots only.
 +	 */
-+	if (np) {
++	if (!has_acpi_companion(dev)) {
 +		ret = of_range_to_resource(np, 0, &range);
 +		if (!ret)
 +			espi->pr_mem_base0 = lower_32_bits(range.start);
@@ -74,7 +82,7 @@
  		if (!strcmp(str, "quad"))
  			espi->io_mode = ESPI_GEN_IO_MODE_QUAD;
  		else if (!strcmp(str, "dual"))
-@@ -537,30 +554,30 @@
+@@ -537,30 +557,30 @@ static int spacemit_espi_parse_dt(struct platform_device *pdev,
  		espi->io_mode = ESPI_GEN_IO_MODE_SINGLE;
  	}
  
