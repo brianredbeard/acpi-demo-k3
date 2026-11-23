@@ -233,7 +233,7 @@ new file mode 100644
 +
 --- a/drivers/acpi/pci_mcfg.c
 +++ b/drivers/acpi/pci_mcfg.c
-@@ -38,9 +38,30 @@
+@@ -38,9 +38,37 @@
  						NULL, IORESOURCE_BUS)
  #define MCFG_BUS_ANY			MCFG_BUS_RANGE(0x0, 0xff)
  
@@ -255,9 +255,16 @@ new file mode 100644
 +	 * the viewport bases the firmware's _CRS declares.
 +	 */
 +	{ "SPMT  ", "K3      ", 1, 0, MCFG_BUS_ANY, &k3_dw_seg0_ops },
-+	{ "SPMT  ", "K3      ", 1, 2, MCFG_BUS_ANY, &k3_dw_ecam_ops,
++	/*
++	 * Compact-ECAM decode rule (firmware e2a72182, kernel side):
++	 * the 64 KiB viewport can only host bus 0 in the generic ECAM
++	 * bus math (64K/1M-per-bus = 0 buses -> -ENOMEM); downstream
++	 * buses translate through the iATU in the ops, so the fixup
++	 * bus range is bus-0-only.
++	 */
++	{ "SPMT  ", "K3      ", 1, 2, MCFG_BUS_RANGE(0, 0), &k3_dw_ecam_ops,
 +	  DEFINE_RES_MEM(0x1200000000UL, 0x10000) },
-+	{ "SPMT  ", "K3      ", 1, 4, MCFG_BUS_ANY, &k3_dw_ecam_ops,
++	{ "SPMT  ", "K3      ", 1, 4, MCFG_BUS_RANGE(0, 0), &k3_dw_ecam_ops,
 +	  DEFINE_RES_MEM(0x12c0000000UL, 0x10000) },
 +#endif
 +
