@@ -760,7 +760,7 @@ class K3EcamTests(unittest.TestCase):
         self.assertEqual(lines.count(f"Patch900007: {ACTIVE_PATCH.name}"), 1)
         apply = f"ApplyPatch {ACTIVE_PATCH.name}"
         self.assertEqual(lines.count(apply), 1)
-        self.assertLess(lines.index("ApplyPatch k3-gpio-acpi.patch"), lines.index(apply))
+        self.assertLess(lines.index("ApplyPatch k3-gpio-acpi-v3.patch"), lines.index(apply))
         self.assertLess(lines.index(apply), lines.index('%{log_msg "End of patch applications"}'))
 
     def test_active_patch_linkage_rows(self):

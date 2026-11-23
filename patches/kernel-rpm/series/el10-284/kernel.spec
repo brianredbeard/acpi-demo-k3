@@ -1136,8 +1136,13 @@ Patch1: patch-%{patchversion}-redhat.patch
 
 # K3 acpidebug series
 Patch900002: k3-ufs-acpi.patch
-Patch900003: k3-gpio-acpi.patch
+Patch900003: k3-gpio-acpi-v3.patch
 Patch900007: k3-ecam-segs24.patch
+Patch900004: k3-espi-acpi-fix.patch
+Patch900005: k3-rfkill-gpio-prp0001.patch
+Patch900006: k3-8250-xscale-quirk.patch
+Patch900008: k3-cros-ec-riscv.patch
+Patch900009: k3-cros-ec-sizes.patch
 
 # empty final patch to facilitate testing of kernel patches
 Patch999999: linux-kernel-test.patch
@@ -2051,8 +2056,13 @@ ApplyOptionalPatch patch-%{patchversion}-redhat.patch
 
 ApplyOptionalPatch linux-kernel-test.patch
 ApplyPatch k3-ufs-acpi.patch
-ApplyPatch k3-gpio-acpi.patch
+ApplyPatch k3-gpio-acpi-v3.patch
 ApplyPatch k3-ecam-segs24.patch
+ApplyPatch k3-espi-acpi-fix.patch
+ApplyPatch k3-rfkill-gpio-prp0001.patch
+ApplyPatch k3-8250-xscale-quirk.patch
+ApplyPatch k3-cros-ec-riscv.patch
+ApplyPatch k3-cros-ec-sizes.patch
 
 %{log_msg "End of patch applications"}
 # END OF PATCH APPLICATIONS
