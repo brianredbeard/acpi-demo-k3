@@ -319,3 +319,25 @@ cros_ec* symbol absent. The chain is config-gated off, not broken.
 Staged for the next build (3h): the transport symbols appended to
 kernel-riscv64-rhel.config. Sources verified present in the 284 tree.
 This rides AFTER 3g (ECAM) per one-variable-per-boot discipline.
+
+## 3j boot (2026-11-23 20:4x): ECAM segs 2/4 LIVE; EC probes with a protocol error
+
+The bus_shift fix works: segments 2 and 4 enumerate through the full
+PCI walk (downstream busn_res updates visible at 2.3s; lspci shows
+the X100 root complexes on 0002:). Two bounded items remain:
+
+1. **Seg 2/4 root-bus ghosts**: 64 root-port (201f:0002) aliases —
+   k3_ecam_map_bus returns the DBI for EVERY root-bus devfn. The
+   Nov 18 filter (devfn==0 only on the root bus) must apply to the
+   seg-2/4 own_map path; the fake bridges' bus claims block the
+   downstream scan from reaching the real RTL8127/RTL8852BE.
+
+2. **EC transport up, protocol failing**: cros_ec_espi binds
+   PRP0001:03, reaches registration, then "cros_ec_prepare_tx
+   failed: -22" and "couldn't register ec_dev (-74)". prepare_tx
+   -EINVAL = the outgoing message exceeds the declared shmem
+   mapping — the EC's max_request/response sizes (ec->din/dout)
+   need the _DSD or a sane default the K3 EC actually uses.
+
+Seg 0 remains perfect (one NVMe, ghost filter holding). Console,
+network, thermal zones, UFS all working on this boot.
