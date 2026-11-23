@@ -182,7 +182,7 @@ The 3d kernel (espi v3 + XScale quirk + ECAM) freezes at the 8250 banner
 - cpuidle.off=1, idle=poll (idle entry ruled out)
 - maxcpus=0 (SMP ruled out)
 - no console= (banner completes; freeze follows the probe anyway)
-- XScale quirk (autoconfig ruled out)
+- 3d/3e XScale quirk: the reconstruction omitted `UPF_FIXED_TYPE`. EL10-284 re-enables hardware type detection in this case. [Binary comparison and corrective experiment](8250-console-review-2026-11-23.md)
 - 8250.nr_uarts=0: **the boot SURVIVES past the freeze** — kernel runs,
   initrd finds root (after fixing two initrd defects: dracut built on
   gpioy omitted the nvme/ufs modules; an --add-drivers run pulled in an
@@ -201,3 +201,29 @@ Second-order findings (board side, 2026-11-23):
 
 Next: instrumented serial8250_probe_acpi (3e build) to name the exact
 faulting call; the earlycon carries the trace past the 8250 init.
+
+## Matched-boot protocol (operator-directed, 2026-11-23)
+
+Control (test 1) — existing 3e with `console=ttyS0,115200n8` (explicit
+baud; the earlier boots' bare `console=ttyS0` made the name-based 8250
+setup default to 9600 and reprogram the divisor mid-registration):
+**the wedge is unchanged** — `K3DBG: before register_8250_port` then
+`printk: l` (frozen mid-word, one character further than the 9600 boot).
+Baud reprogramming is excluded as the cause.
+
+Binary evidence (operator): the archived gpioy image sets the
+fixed-type bit on the XScale match; the packaged 3e binary omits it.
+The 284 serial core honors the supplied type only under
+UPF_FIXED_TYPE and otherwise reinstates UPF_BOOT_AUTOCONF — so 3d/3e
+never actually disabled hardware type detection. The generic 16550A
+path can clear IER bit 6 (the K3 UART's transmit enable) during that
+window, and OpenSBI polls the same physical UART for TX-ready without
+a timeout — losing both ttyS0 and SBI output with IRQ and MMIO
+correct. The 3e trace (validation OK, irq=11 clk=14745600; freeze
+inside the registration interval before the return marker) is
+consistent.
+
+Test 2 — 3f (the one-line `UPF_FIXED_TYPE` addition, IRQ 11 and all
+other inputs unchanged) is built on the sleeper; boot verdict looks
+for `is a XScale`, the registration-return marker, and SSH/journal
+confirmation of an independently identified boot.
