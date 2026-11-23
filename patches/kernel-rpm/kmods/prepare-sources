@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Stage the four small source archives from the stock EL10 284 SRPM payloads.
+set -euo pipefail
+if [[ $# != 2 ]]; then
+    echo "Usage: $0 EXTRACTED_STOCK_SRPM_DIR RPM_SOURCEDIR" >&2
+    exit 2
+fi
+stock=$(realpath "$1")
+series=$(cd "$(dirname "$0")/../series/el10-284" && pwd)
+mkdir -p "$2"
+dest=$(realpath "$2")
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+base=linux-6.12.0-284.el10
+(cd "$stock" && sha256sum --check <<'HASHES'
+4af6610182fd7c46f1665f1068501d84093fbfcfb63b68122f836a0405d61a5a  linux-6.12.0-284.el10.tar.xz
+5f1dd18ad2cf1e208bea38a3cd0bdc66e504eed79442148cb0484ea9b2caac7d  linux-kernel-test.patch
+HASHES
+)
+cd "$tmp"
+tar -xf "$stock/$base.tar.xz" \
+    "$base/drivers/gpio/gpio-spacemit-k1.c" "$base/net/rfkill/rfkill-gpio.c" \
+    "$base/drivers/ufs/host/ufshcd-pltfrm.h" \
+    "$base"/drivers/thermal/{thermal_hwmon,thermal_core,thermal_netlink,thermal_debugfs}.h
+cd "$base"
+git apply --include='drivers/ufs/host/ufs-spacemit.*' \
+          --include='drivers/thermal/spacemit/k3_tsensor.*' "$stock/linux-kernel-test.patch"
+
+archive() {
+    local module=$1 patch=$2
+    shift 2
+    tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+        --mode=u=rw,go=r -czf "$tmp/$module.tar.gz" "$@"
+    install -m 644 "$tmp/$module.tar.gz" "$series/$patch" "$dest/"
+}
+archive ufs-spacemit k3-ufs-acpi-build5.patch drivers/ufs/host/{ufs-spacemit.c,ufs-spacemit.h,ufshcd-pltfrm.h}
+archive k3_tsensor k3-tsensor-acpi-zones.patch drivers/thermal/spacemit/k3_tsensor.{c,h} \
+    drivers/thermal/{thermal_hwmon,thermal_core,thermal_netlink,thermal_debugfs}.h
+archive gpio-spacemit-k1 k3-gpio-acpi-v3.patch drivers/gpio/gpio-spacemit-k1.c
+archive rfkill-gpio k3-rfkill-gpio-prp0001.patch net/rfkill/rfkill-gpio.c

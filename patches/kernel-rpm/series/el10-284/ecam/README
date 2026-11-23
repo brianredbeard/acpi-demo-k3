@@ -1,0 +1,23 @@
+# ECAM segs 2/4 — K3-specific config ops (wifi/10G unlock)
+
+Three-part series (apply in order):
+1. k3-ecam-quirk-newfile.patch — drivers/pci/controller/dwc/
+   pcie-k3-acpi-ecam.c (the ops + per-segment DW wrapper; 181
+   lines; RIG-COMPILED CLEAN, object symbols verified:
+   dw_pcie_prog_outbound_atu + pci_generic_config_*)
+2. k3-ecam-quirk-makefile.patch — obj-y entry under
+   CONFIG_PCIE_SPACEMIT_K1
+3. k3-ecam-quirk-mcfg.patch — the SPMT:K3 quirk table entries
+   for segments 2/4 (arch-neutral placement, before ARM64)
+
+Design (rhct12 audit, "Recommended implementation"): root-port
+config via DBI; downstream via mutex-serialized outbound iATU
+(CFG0/CFG1 by depth) + the 64 KiB viewport. v1 hardcodes the
+silicon-fixed DBI/ATU bases (0x80800000/0x80B00000 seg2,
+0x81000000/0x81300000 seg4 — the DSDT reserves both; _CRS
+resolution is the refinement). Segment 0 untouched.
+
+Field names verified against the 6.12 DW headers (num_ob_windows,
+pp embedded, va_cfg0_base); the hand-written patch lesson:
+generate diffs MECHANICALLY (python edit + git diff), never
+hand-count hunk headers.

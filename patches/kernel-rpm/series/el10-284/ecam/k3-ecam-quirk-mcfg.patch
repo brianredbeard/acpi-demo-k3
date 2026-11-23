@@ -1,0 +1,24 @@
+diff --git a/drivers/acpi/pci_mcfg.c b/drivers/acpi/pci_mcfg.c
+index 58e10a9..d9573f1 100644
+--- a/drivers/acpi/pci_mcfg.c
++++ b/drivers/acpi/pci_mcfg.c
+@@ -41,6 +41,19 @@ struct mcfg_fixup {
+ static struct mcfg_fixup mcfg_quirks[] = {
+ /*	{ OEM_ID, OEM_TABLE_ID, REV, SEGMENT, BUS_RANGE, ops, cfgres }, */
+ 
++#ifdef CONFIG_PCIE_SPACEMIT_K1
++	/*
++	 * SpacemiT K3 (riscv): segments 2 (10G NIC) and 4 (Wi-Fi) have
++	 * 64 KiB DesignWare config viewports with config-shift disabled.
++	 * Generic ECAM's 1 MiB bus-1 offset lands in the translated PCI
++	 * I/O aperture. The K3 ops program the outbound iATU per access
++	 * and address the viewport; the root port reads its DBI. Segment
++	 * 0 (NVMe) has genuine 256 MiB ECAM and is untouched.
++	 */
++	{ "SPMT  ", "K3      ", 0, 2, MCFG_BUS_ANY, &k3_dw_ecam_ops },
++	{ "SPMT  ", "K3      ", 0, 4, MCFG_BUS_ANY, &k3_dw_ecam_ops },
++#endif
++
+ #ifdef CONFIG_ARM64
+ 
+ #define AL_ECAM(table_id, rev, seg, ops) \

@@ -22,3 +22,5 @@ mock -r rhel-10.3-riscv64 from the distro 284 SRPM:
 
 The manual hunk applications are recorded here; a future
 revision regenerates clean patches against 284.
+
+For individual module RPMs, see the [EL10-284 per-module build jobs](kmods/README.md).
