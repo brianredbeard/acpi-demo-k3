@@ -91,3 +91,23 @@ The rhct12-wifi provenance set is regenerated and installer-verified.
 Open follow-up (audit's portable-source ask): retain the OpenSBI object
 source as a git bundle or portable repository; the current lock points at
 local commit `51a9d0f9` with a stale `fw_dynamic` note.
+
+## rhct13 candidate assembled (2026-11-23)
+
+Built, verified, and packaged for inspection — NOT flash-qualified.
+
+- **Content**: thermal-trips (`cdfda4a4`), `_OSC` status-bit + buffer-length
+  fixes (`3b2ff7f0`), resource bounds (`d6d9a1a9`), the Port A SKU gate
+  (`e0a11126` + token/INF fixes), and the GPIO `_CRS` extent 0x100→0x800.
+- **Build**: isolated, lock-pinned at `96a276aa` (tree `f0ab6d8b`,
+  epoch `1795401403`); PCIe profile check passed.
+- **Verification**: full suite 67/67 with the candidate ITB as the FIT
+  target — the extended memory-triple checker covers the RES2/RES4
+  64 KiB viewports and the PCI2 non-prefetchable bounds.
+- **Bundle**: `~/bundles/pico-acpi-rhct13-candidate`
+  (bundle sha `24ca3e2d…`, sealed via `edk2_release.py package` against
+  the rhct12-wifi baseline; lower layers byte-identical: fsbl/agent/
+  esos/opensbi carry the qualified hashes; the new edk2 payload is
+  `2cd2a90a…`). Installer inspection passes.
+- **Status**: candidate. Flashing waits for the operator's call; the
+  kernel-side thermal zone driver rides the cycle-3 RPMs.
