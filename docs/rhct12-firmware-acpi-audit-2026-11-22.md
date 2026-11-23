@@ -104,10 +104,15 @@ Built, verified, and packaged for inspection — NOT flash-qualified.
 - **Verification**: full suite 67/67 with the candidate ITB as the FIT
   target — the extended memory-triple checker covers the RES2/RES4
   64 KiB viewports and the PCI2 non-prefetchable bounds.
-- **Bundle**: `~/bundles/pico-acpi-rhct13-candidate`
-  (bundle sha `24ca3e2d…`, sealed via `edk2_release.py package` against
-  the rhct12-wifi baseline; lower layers byte-identical: fsbl/agent/
-  esos/opensbi carry the qualified hashes; the new edk2 payload is
-  `2cd2a90a…`). Installer inspection passes.
+- **Bundle (rev 2, `8b171654`)**: `~/bundles/pico-acpi-rhct13-candidate`
+  (bundle sha `0e3bfbde…`). The first packaging (`24ca3e2d…`) carried a
+  REAL defect caught on cross-check: the thermal-trips 75/95 hotspot pair
+  sat at flat index 3 while the ACPI zone builder indexes pairs by RAW
+  channel (`channel*2`) — ch3 received the hotspot thresholds and the
+  actual ch4 hotspot read the default. Fixed (pair at index 4, ch3 at
+  74/94 matching the driver's own defaults, ch1 slot documented as the
+  unwired placeholder); the DSDT comment now states the raw-index
+  contract. Lower layers byte-identical to the qualified baseline;
+  installer inspection passes.
 - **Status**: candidate. Flashing waits for the operator's call; the
   kernel-side thermal zone driver rides the cycle-3 RPMs.
