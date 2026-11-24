@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""k3-fit-diff — the FIT payload comparison gate (AGENTS.md commandment 2).
+
+Compare EVERY payload node of two EDK2 FIT images (the changed
+image vs the last-known-good) and assert the diff covers EXACTLY
+the intended payloads and nothing else.
+
+The v20-v26 post-mortem: a regenerated rcpu0 dtb rode silently
+in every FIT from v20 through fix1 — dozens of flashes chasing
+a symptom the payload diff would have caught in seconds. The
+session tooling for this was re-derived from the FIT walker
+repeatedly; this is the checked-in form.
+
+Usage:
+  k3-fit-diff BASELINE_FIT CANDIDATE_FIT [--expect uefi] [--expect rcpu0-fw]
+
+Exit 0 = the diff is exactly the expected set (or, without
+--expect, prints the diff for review). Exit 1 = an unexpected
+payload differs — DO NOT FLASH.
+"""
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("baseline", type=Path, help="the last-known-good FIT (or edk2.bin)")
+    ap.add_argument("candidate", type=Path, help="the staged FIT to gate")
+    ap.add_argument("--fd", type=Path, help="the built FD (for the uefi digest check)")
+    ap.add_argument("--expect", action="append", default=[],
+                    help="a payload name that MAY differ (repeatable)")
+    args = ap.parse_args(argv)
+
+    import hashlib
+    from k3_fit import read_edk2_fit
+
+    _, before, old_layout = read_edk2_fit(args.baseline)
+    _, after, new_layout = read_edk2_fit(args.candidate)
+    changed = sorted(k for k in before.keys() | after.keys()
+                     if before.get(k) != after.get(k))
+    inventory = {k: ("DIFF" if before.get(k) != after.get(k) else "same")
+                 for k in before.keys() | after.keys()}
+    if old_layout != new_layout:
+        print("WARNING: FIT layout/configuration/padding also changed", file=sys.stderr)
+    if args.fd:
+        fd_sha = hashlib.sha256(args.fd.read_bytes()).hexdigest()
+        if after.get("uefi") != fd_sha:
+            print("FAIL: packaged UEFI FD differs from the build manifest", file=sys.stderr)
+            return 1
+    print("payload inventory:")
+    for name in sorted(inventory):
+        mark = "DIFF" if inventory[name] == "DIFF" else "same"
+        print(f"  {name:12} {mark}")
+
+    if not args.expect:
+        # review mode: print the diff for the operator to judge
+        print(f"\nchanged payloads: {changed or '(none)'} (no expectation set)")
+        return 0
+    unexpected = [c for c in changed if c not in args.expect]
+    if unexpected:
+        print(f"\nFAIL: unexpected payload differences: {unexpected}", file=sys.stderr)
+        print("The single-variable rule is violated — DO NOT FLASH.", file=sys.stderr)
+        return 1
+    missing = [e for e in args.expect if e not in changed]
+    if missing:
+        print(f"\nFAIL: expected changes not present: {missing}", file=sys.stderr)
+        return 1
+    print(f"\nOK: changed payloads {changed} match the expected set")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
