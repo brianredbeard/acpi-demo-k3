@@ -1135,7 +1135,7 @@ Patch1: patch-%{patchversion}-redhat.patch
 %endif
 
 # K3 acpidebug series
-Patch900002: k3-ufs-acpi.patch
+Patch900002: k3-ufs-acpi-build5.patch
 Patch900003: k3-gpio-acpi-v3.patch
 Patch900007: k3-ecam-segs24.patch
 Patch900004: k3-espi-acpi-fix.patch
@@ -2055,7 +2055,7 @@ ApplyOptionalPatch patch-%{patchversion}-redhat.patch
 %endif
 
 ApplyOptionalPatch linux-kernel-test.patch
-ApplyPatch k3-ufs-acpi.patch
+ApplyPatch k3-ufs-acpi-build5.patch
 ApplyPatch k3-gpio-acpi-v3.patch
 ApplyPatch k3-ecam-segs24.patch
 ApplyPatch k3-espi-acpi-fix.patch

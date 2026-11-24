@@ -16,7 +16,7 @@ SPEC = Path(__file__).resolve().parents[1] / "patches/kernel-rpm/series/el10-284
 
 # The complete K3 patch set, in declaration order.
 EXPECTED_PATCHES = [
-    ("Patch900002", "k3-ufs-acpi.patch"),
+    ("Patch900002", "k3-ufs-acpi-build5.patch"),
     ("Patch900003", "k3-gpio-acpi-v3.patch"),
     ("Patch900004", "k3-espi-acpi-fix.patch"),
     ("Patch900005", "k3-rfkill-gpio-prp0001.patch"),
