@@ -1146,6 +1146,7 @@ Patch900009: k3-cros-ec-sizes.patch
 Patch900010: k3-tsensor-acpi-zones.patch
 Patch900011: k3-pwmfan-acpi-cooling.patch
 Patch900012: k3-i2c-k1-optional-clocks.patch
+Patch900013: k3-cros-ec-pwm-defer.patch
 
 # empty final patch to facilitate testing of kernel patches
 Patch999999: linux-kernel-test.patch
@@ -2069,6 +2070,7 @@ ApplyPatch k3-cros-ec-sizes.patch
 ApplyPatch k3-tsensor-acpi-zones.patch
 ApplyPatch k3-pwmfan-acpi-cooling.patch
 ApplyPatch k3-i2c-k1-optional-clocks.patch
+ApplyPatch k3-cros-ec-pwm-defer.patch
 
 %{log_msg "End of patch applications"}
 # END OF PATCH APPLICATIONS

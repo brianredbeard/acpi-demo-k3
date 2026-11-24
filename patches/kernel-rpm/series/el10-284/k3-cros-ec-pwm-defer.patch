@@ -1,0 +1,19 @@
+--- a/drivers/pwm/pwm-cros-ec.c
++++ b/drivers/pwm/pwm-cros-ec.c
+@@ -222,7 +222,15 @@
+ 	int ret;
+ 
+ 	if (!ec)
+-		return dev_err_probe(dev, -EINVAL, "no parent EC device\n");
++		/*
++		 * The parent EC device is registered but its drvdata
++		 * is not set yet (the cros-ec probe is still running —
++		 * observed under ACPI: this child probes at ~1.6s, the
++		 * EC registers at ~2.2s). DEFER so the core retries;
++		 * -EINVAL stranded the pwm-fan in deferred-probe
++		 * forever (no governor, the fan at probe-time max).
++		 */
++		return dev_err_probe(dev, -EPROBE_DEFER, "no parent EC device yet\n");
+ 
+ 	if (of_device_is_compatible(np, "google,cros-ec-pwm-type")) {
+ 		use_pwm_type = true;
