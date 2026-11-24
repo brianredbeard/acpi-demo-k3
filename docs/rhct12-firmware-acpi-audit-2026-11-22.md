@@ -537,3 +537,48 @@ chip's GPIO9 (R_AX_GPIO_EXT_CTRL 0x60 bit1 via PCI BAR2
 0x12c0200000 mmap) — if HIGH, rebind rtw89 and test
 association; if still LOW, the rail is excluded and the search
 moves to the PMIC expander's pre-burned pins 0/4/5.
+
+## rhct15 booted: the aldo3 test result + the GPIO9 mechanism (2026-11-24, night)
+
+**The rhct15 flash**: verified (readback bound, NOR edk2 region =
+bundle hash). Boot regression-green: EC, UFS, NVMe, thermal,
+console. RQTS enumerated (PRP0001:07) on the corrected channel 7.
+
+**aldo3 EXCLUDED**: the RPMI voltage path works end-to-end
+(channel 7 = servicegroup 7; 24 domains; SET_CONFIG(1) +
+SET_LEVEL(3.3V) on domain 13 = aldo3 — the EC accepted both,
+RPMI_SUCCESS). GPIO9 unchanged (still low). The rail is not
+the wifi-enable line. Domain map correction: the RPMI server
+numbers ALL domains (fixed 0-5 + dynamic 6-23); aldo3 =
+domain 13, not 8.
+
+**The GPIO9 mechanism DECODED (from the rtw89 driver source)**:
+GPIO9 = the chip's HARDWARE RFKILL INPUT (rtw8852b.c
+rfkill_get = {R_AX_GPIO_EXT_CTRL, B_AX_GPIO_IN_9}, INVERTED).
+The pin is programmed as input (func sel 0xf, MOD/IO_SEL 0) by
+the driver's rfkill_init — CORRECTLY, verified by register
+read. The board's wifi-enable line into GPIO9 is simply LOW:
+nothing drives it on the pico. Pins 35/73 both excluded,
+aldo3 excluded → the line is either unwired (NC/pulldown on
+the pico vs driven on the com260) or driven by the PMIC
+expander's pre-burned pins 0/4/5.
+
+**THE UNBLOCK PROVEN**: driving GPIO9 as output-high from the
+chip side (R_AX_GPIO_EXT_CTRL+1 bit1 OUT, +2 MOD, +3 IO_SEL)
+flips GPIO_IN_9 to 1 → "rfkill hardware state changed to
+enable" → rfkill hard-block CLEARED. The chip scans (probe
+requests flow) — the radio TRANSMITS.
+
+**Remaining on wifi**: the scan's pkt-offload h2c fails
+("Update probe request failed" — rtw89_hw_scan_update_probe_req
+→ rtw89_append_probe_req_ie path) with empty scan results.
+Distinct from the enable question; suspects: the chip
+initted with the pin low then transitioned (a cold boot with
+GPIO9 high from the start may fully init), or a seg-4 DMA
+path issue. NEXT TEST: drive GPIO9 high BEFORE the rtw89
+probe (early boot), then scan.
+
+**The RPMI sysfs client (v6)**: /sys/devices/platform/PRP0001:07/
+{domain,enable,level,query} — the runtime rail-control
+interface, with a proper remove() (v5 leaked the channel —
+the missing .remove kept the mbox bound; fixed).
