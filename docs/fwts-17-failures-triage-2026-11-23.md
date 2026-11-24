@@ -223,3 +223,14 @@ next DSDT cycle.
 - 8-CPU latency: real minor gap — _LPI latencies next DSDT cycle
 - SMBIOS/RTC/_STA: re-verify on the next broad run post-
   cycle-3 boot
+
+## The ssstateen decision (2026-11-25)
+
+Reviewed for the non-blocker pass: adding ssstateen to the RHCT
+ISA string was flagged as "safe" (the smstateen superset view).
+DECISION: no change. The fwts RVA23 findings are tester-vs-spec
+ambiguity (fwts applies DT-profile rules to the RHCT string;
+the kernel — the real consumer — parses + works). ssstateen is
+not in RVA23's required list, so adding it changes no fwts
+result, and every string change costs a flash cycle to
+validate. The string stays as kernel-verified.
