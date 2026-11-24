@@ -865,3 +865,31 @@ driver's phy state for the differential; or an external
 loopback plug for the RJ45/SPF to inject known frames. The
 RTL8127's SerDes calibration registers (r8127_sds_* in the
 driver) are the prime suspect region.
+
+## Session close (2026-11-24, end of day)
+
+**The 10G RX — the final state of the hunt**: descriptors
+armed (own=1, valid), RxConfig accept bits correct
+(0x0e = bcast|mcast|myphys), IRQ + NAPI poll firing, TX
+completing — and ZERO frames ever delivered (not even
+background broadcast/multicast from the switch). DMA
+placement eliminated (swiotlb=force negative). The failure
+sits in the NIC-internal RX datapath between the 10GBASE-R
+SerDes and the MAC descriptor engine. The com260 (DT-mode,
+working 10G) is the discriminating comparison — not
+reachable from this network; needs the user's access to
+read its r8169 state (RxConfig, the phylink config, the
+SDS registers) for the differential.
+
+**The session's shipped state**:
+- rhct16 flashed + qualified: the GPIO35 wifi hold works
+  (rfkill unblocked from boot, association + DHCP + TCP
+  data path + internet via wifi with rp_filter=0)
+- Kernel: 13-patch set (the ecam MSI, tsensor should_bind +
+  active trip + zone enable, pwm-fan devm cdev, i2c-k1
+  optional clocks, cros-ec-pwm deferral)
+- Fan governor: fully autonomous, qualified across the
+  thermal cycle
+- The naming Q&A: enP2p1s0 = udev path-policy with nonzero
+  PCI domain (correct); end0/net0 on other hosts = firmware
+  names kept by policy
