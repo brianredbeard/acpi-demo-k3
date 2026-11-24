@@ -501,3 +501,39 @@ Also found: the i2c-k1 ACPI probe fails on its func clock
 (the i2c8/PMIC path is dead under ACPI for the same clock
 family reason — the AcpiClockInitDxe table needs the i2c
 rows added).
+
+## The rhct15 firmware cycle: AcpiPowerInitDxe + RQTS (2026-11-24, evening)
+
+**The RQTS channel bug (found live)**: the RQTS device shipped
+with `mboxes = <MPXY 8 0>` — channel 8 is the CLOCK service group
+(RCLK's own channel). The rpmi-volt platform driver bound
+PRP0001:07 correctly but the channel request failed -EBUSY
+(someone — clk-rpmi — already owns it). The FW DT
+(k3_fw_dt.dtsi) maps the service groups: clock = channel 8,
+voltage = channel 7. Fixed: RQTS now declares `<MPXY 7 0>`.
+
+**The rpmi-volt client (v5, on the board)**: platform driver
+binding k3,rpmi-qual-test; verifies the channel's servicegroup
+via RPMI_MBOX_ATTR_SERVICEGROUP_ID (expects 0x0007), then
+GET_NUM_DOMAINS / GET_ATTRIBUTES (the domain name proves the id
+mapping) / GET_CONFIG / SET_CONFIG(enable) / optional SET_LEVEL
+/ read-back. Domain 8 = aldo3 (regulator-dynamic8 in the pico
+rcpu DT). Module params: domain_id, set_enable, set_level_uv.
+
+**The TWSI8 clock gap (closed in the same driver)**: the OS
+i2c-k1 driver's "failed to enable func clock" under ACPI pointed
+at the TWSI8 block being unclocked. The register is
+APBC+0x20 — WRITE-ONLY (reads return zero; the ccu-k1.c quirk
+comment). AcpiPowerInitDxe blind-writes 0x3 (func+bus gates,
+mux 0 = pll1_d78_31p5) before the PMIC I2C transfer, the same
+combined-gate form the kernel's quirk workaround uses.
+
+**The P1 register math**: ALDO3_VOLT_REG 0x62 = 0x7b (3.3V:
+500mV at VSEL 0x0b + 112 x 25mV), ALDO3_CTRL_REG 0x61 bit0
+enable. Read-modify-write, idempotent.
+
+**The aldo3 test on the rhct15 boot** (one variable): read the
+chip's GPIO9 (R_AX_GPIO_EXT_CTRL 0x60 bit1 via PCI BAR2
+0x12c0200000 mmap) — if HIGH, rebind rtw89 and test
+association; if still LOW, the rail is excluded and the search
+moves to the PMIC expander's pre-burned pins 0/4/5.
