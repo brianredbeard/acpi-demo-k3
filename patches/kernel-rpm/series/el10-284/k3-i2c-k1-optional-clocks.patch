@@ -1,0 +1,32 @@
+--- a/drivers/i2c/busses/i2c-k1.c
++++ b/drivers/i2c/busses/i2c-k1.c
+@@ -854,7 +854,14 @@
+ 	if (i2c->irq < 0)
+ 		return dev_err_probe(dev, i2c->irq, "failed to get irq resource");
+ 
+-	clk = devm_clk_get_enabled(dev, "func");
++	/*
++	 * ACPI boots have no clock provider: the TWSI function/bus
++	 * gates come up by OTP (buses 0-7) or are asserted by
++	 * firmware (the TWSI8 write-only gate, AcpiPowerInitDxe).
++	 * Fetch the clocks as optional so the driver binds and uses
++	 * the pre-clocked hardware; DT boots keep full management.
++	 */
++	clk = devm_clk_get_optional_enabled(dev, "func");
+ 	if (IS_ERR(clk))
+ 		return dev_err_probe(dev, PTR_ERR(clk), "failed to enable func clock");
+ 
+@@ -867,7 +874,7 @@
+ 		return dev_err_probe(dev, PTR_ERR(i2c->scl_clk),
+ 				     "failed to get scl clock\n");
+ 
+-	clk = devm_clk_get_enabled(dev, "bus");
++	clk = devm_clk_get_optional_enabled(dev, "bus");
+ 	if (IS_ERR(clk))
+ 		return dev_err_probe(dev, PTR_ERR(clk), "failed to enable bus clock");
+ 
+@@ -942,4 +949,3 @@
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_DESCRIPTION("I2C bus driver for SpacemiT K1 SoC");
+-
