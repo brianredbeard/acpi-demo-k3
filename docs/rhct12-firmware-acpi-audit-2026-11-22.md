@@ -722,3 +722,27 @@ a UEFI DXE GPIO hold at ReadyToBoot (AcpiPowerInitDxe family)
 or the WLEN rfkill-gpio DSDT device driving it via the OS
 rfkill path (the DSDT WLEN exists — the rfkill-gpio double-
 claim bug (audit finding 9) blocks it).
+
+## The fan governor: complete (2026-11-24, night 2 close)
+
+The full chain, live-verified on the rebuilt kernel:
+1. k3_tz_should_bind (the tsensor's zone ops) — binds the
+   pwm-fan cdev by type to every trip (the 6.12 core binds
+   ONLY through tz->ops.should_bind; ACPI zones had none)
+2. Trip 0 = ACTIVE (was passive — passive only throttles UP
+   from wherever the cdev already is, stranding the fan at
+   its probe-time max; ACTIVE drives state 0 below the
+   threshold)
+3. thermal_zone_device_enable at registration (the zones
+   register disabled; the governor never ran without it)
+4. The pwm-fan cdev on the devm registration (the manual
+   register's cdev outlived the driver unbind → the governor
+   panic in pwm_fan_set_cur_state on freed ctx)
+
+The qualification: 74C → cdev state 3 / pwm 255 (full
+cooling) → 57C → state 0 / pwm 77 (the 30% DSDT floor,
+quiet), stable across polling cycles, no crashes. The cros-ec
+PWM probe-order race (EC PWM at 1.6s vs the EC at 2.2s)
+still needs the manual rebind at boot — the durable fix is
+the probe deferral (a separate small patch: the cros-ec-pwm
+must defer until the EC parent registers).
