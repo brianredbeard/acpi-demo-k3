@@ -893,3 +893,35 @@ SDS registers) for the differential.
 - The naming Q&A: enP2p1s0 = udev path-policy with nonzero
   PCI domain (correct); end0/net0 on other hosts = firmware
   names kept by policy
+
+## The 10G mystery SOLVED — it's not software (2026-11-24/25, the Ubuntu boot)
+
+The user rebooted the pico into its DT-based Ubuntu install
+(6.18.3-9-spacemit, a totally different kernel + DT mode).
+THE SAME 10G FAILURE: tx_packets counts up (102), rx_packets
+ZERO, broadcast ZERO, multicast ZERO — identical to our ACPI
+boot. The DT-mode register dump (ethtool -d) shows a slightly
+different RxConfig (0x40e20d4e vs our 0x40c20f4e — FIFO/burst
+tuning differences between driver versions) but BOTH are dead.
+
+THE DEFINITIVE CROSS-CHECK: the builder's ARP table shows NO
+entry for the board's 10G MAC (50:0a:52:0b:86:4a) after the
+board's 10G pings — the board's TX frames never reach the
+network. The 10G path is dead in BOTH directions across two
+operating systems.
+
+CONCLUSION: the failure is physical — the connector, the
+cable, the switch port, or the PHY-to-connector SerDes. The
+"link up at 10G" reading is the LOCAL PHY state (no
+auto-negotiation on this link type; both ends can
+independently believe they're up while passing nothing).
+
+THE DISCRIMINATING CHECK (user, seconds): the switch port
+status — does the port show link-up, and does the switch's
+MAC table learn 50:0a:52:0b:86:4a? If not: cable/port. If
+yes but no traffic: the SerDes equalization on the board.
+
+ALL software layers exonerated: ACPI tables, ECAM, MSI
+routing, DMA, driver config — the wifi (seg 4) works
+completely and the 10G (seg 2) fails identically under
+vendor DT kernels.
