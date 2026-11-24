@@ -117,6 +117,23 @@ A host sweep of its extracted map/init functions checked all 130,560
 downstream BDF selections across both segments with zero mismatches.
 Hardware qualification is pending.
 
+**Nov 24 boot evidence.** The operator's serial capture shows two kernels.
+The dbg1 GPIO control mounted NVMe root, reached login and rebooted cleanly.
+The 284.acpidebug.1 kernel built at 01:59:28 UTC matched both viewport
+quirks, enumerated 0002:01:00.0 [10ec:8127] and 0004:01:00.0 [10ec:b852],
+and assigned their BARs. Endpoint driver binding, I/O, EC registration and
+boot to userspace remain open for this candidate. The trace establishes
+the enumeration milestone for the booted binary. Its file digest is unknown.
+
+At 2.033 s the candidate faulted at address 0x2b0 in devm_kmalloc+0x16,
+called from cros_ec_register+0x8c and cros_ec_espi_probe+0x208.
+All three addresses match the local 3k kernel-core System.map after the
+reported relocation. The transport's backported allocator returns a
+zeroed EC with no owning device; the 284 core uses ec_dev->dev for its
+first managed input buffer allocation. The next discriminating change
+is to initialize that pointer and retain the existing buffer sizes. Check
+EC registration, then PWM/fan binding, on a separately identified boot.
+
 **Build and boot records.** In the proposed launcher, `pgrep -f` searches command lines. The unquoted heredoc expands `$$` in the shell writing the script, and `grep -qv` applies a substring filter to the PIDs. The loop can proceed after a failed 3c. Its cleanup then removes 3c's RPMS and build tree, and its final RPM count can return success after rpmbuild failed.
 
 Wait for the exact 3c job's completion receipt and archive its log, effective config, input SRPM and output RPM hashes before using its result as the UART-fix control. Give 3d a fresh RPM topdir and result directory, a separate mock root if using mock, and its own log. Set Kconfig in the new input tree and check the effective `.config` after `olddefconfig`. Capture the rpmbuild exit status immediately, publish it with the cycle ID and artifact hashes via a same-directory atomic rename, and exit with that status. If logging through a pipeline, also check the log writer's exit status. Count and inspect only RPMs produced by the successful job.
