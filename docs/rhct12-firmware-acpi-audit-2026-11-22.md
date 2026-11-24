@@ -793,3 +793,35 @@ visibility from the driver's datapath.
 DHCP (wlP4p1s0 got 192.168.137.158 via the AP) — the r8169
 wedge during the wifi's NM shuffle killed the ssh session but
 the wifi itself stayed associated.
+
+## rhct16 flashed + qualified: the wifi radio complete (2026-11-24, late)
+
+**The GPIO35 firmware hold WORKS**: the rhct16 boot comes up
+with `rfkill: hard blocked: no` from the first poll — no
+gpioset, no OS dependency. NetworkManager auto-connects (SSID
+"2e", 5GHz @5220, -68dBm, DHCP .158). The MSI fires (2600+
+counts), 1472 rx / 104 tx packets at the station level.
+
+**The full data path qualified**: TCP sessions open over the
+wifi's L2 — /dev/tcp connects to the builder (.45:22) and the
+sleeper (.133:22) complete the three-way handshake through
+the RTL8852BE (the SSH banner exchange runs; auth fails only
+for key policy, not connectivity). The ping failures are the
+hosts' ICMP firewalls (RHEL default) — the ARP table
+resolving both hosts + the TCP handshakes prove the
+bidirectional path. Association + DHCP + ARP + TCP = the
+radio works.
+
+**Regression checklist green on rhct16**: EC registered
+(2.24s), NVMe + UFS present, both 10ec: radios enumerated,
+10G link UP, fan governor autonomous (mode enabled, 66C,
+pwm 77 quiet), RQTS/RPMI rail control live (channel 7, aldo3
+queryable). The rhct15→rhct16 delta was edk2.bin only
+(uefi FIT node only) — verified before flash.
+
+**The wifi arc — CLOSED** (4 flash cycles): the rhct13-era
+"radio disabled at the silicon" → the GPIO9 mechanism decoded
+(the chip's hw-rfkill input) → pin 35 isolated (the A/B test)
+→ the MSI bridge fix (the scan) → the GPIO35 ReadyToBoot hold
+(the durable enable). The radio, the scan, the association,
+and the data path all work under pure ACPI.
