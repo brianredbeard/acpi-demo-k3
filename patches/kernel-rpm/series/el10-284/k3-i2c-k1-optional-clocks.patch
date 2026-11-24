@@ -25,8 +25,3 @@
  	if (IS_ERR(clk))
  		return dev_err_probe(dev, PTR_ERR(clk), "failed to enable bus clock");
  
-@@ -942,4 +949,3 @@
- 
- MODULE_LICENSE("GPL");
- MODULE_DESCRIPTION("I2C bus driver for SpacemiT K1 SoC");
--
