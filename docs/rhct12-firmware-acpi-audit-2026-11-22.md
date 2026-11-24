@@ -746,3 +746,50 @@ PWM probe-order race (EC PWM at 1.6s vs the EC at 2.2s)
 still needs the manual rebind at boot — the durable fix is
 the probe deferral (a separate small patch: the cros-ec-pwm
 must defer until the EC parent registers).
+
+## The 10G RX diagnosis (2026-11-24, night 3) + the pwm deferral fix
+
+**The cros-ec-pwm probe deferral (fix built)**: the ACPI boot
+order (EC PWM child at ~1.6s, the EC parent registering at
+~2.2s) hit `if (!ec) return -EINVAL` in cros_ec_pwm_probe —
+stranding pwm-fan in deferred-probe forever. The fix:
+-EPROBE_DEFER (the parent WILL come up). Kernel rebuilt
+(CONFIG_PWM_CROS_EC=y — built-in); the boot-time validation
+rides the next flash/boot cycle of the rebuilt Image.
+
+**The 10G (RTL8127, seg 2) — evidence assembled**:
+- The MSI path works (post-fix: irq fires, rtl8169_interrupt +
+  rtl_rx poll both observed via kprobe — 23 hits in one ping
+  window)
+- TX completes at the driver level (tx_packets increments,
+  0 tx_errors in ethtool)
+- RX = ZERO forever: the descriptors are valid + ARMED
+  (RxDesc[0] peeked via a module: own=1, size 0x3fff, buffer
+  0x1088f4000) but the CPU never sees the NIC's DMA writes
+  flip them
+- Any sustained 10G TX wedges the kernel system-wide within
+  seconds: the console shell blocks, echo hangs, even
+  /proc/sysrq-trigger write hangs (a lock held across a
+  spinning NAPI/softirq path)
+- The wifi (seg 4, same bridge coherency config, same MSI
+  fix) works completely — TX, RX, association, DHCP, traffic
+
+**The differential ruled out**: the bridge register config is
+parity with the DT driver (only COHERENCY_CONTROL_3 AWCACHE
+exists — verified against the DT source); no IOMMU (direct
+DMA); no dma-ranges on the DT side either; the descriptor
+memory = normal system RAM with valid addresses.
+
+**Remaining suspects**: the RTL8127's descriptor-write TLP
+format (10G MAC burst pattern the seg-2 bridge mishandles
+while seg 4 handles the rtw89's fine) or an attribute
+difference in the iATU window for seg 2's mem space. NEXT
+STEP (needs a stable setup): the known-pattern DMA test —
+loopback the NIC's DMA into a marker buffer read by a module,
+before any NAPI involvement, to isolate bridge-write
+visibility from the driver's datapath.
+
+**The wifi fully works** (the record): scan + associate +
+DHCP (wlP4p1s0 got 192.168.137.158 via the AP) — the r8169
+wedge during the wifi's NM shuffle killed the ssh session but
+the wifi itself stayed associated.
