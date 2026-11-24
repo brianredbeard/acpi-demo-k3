@@ -423,3 +423,34 @@ binds cdevs via the GOVERNOR's should_bind callback (not
 thermal_zone_params, which lacks that member in this kernel);
 the tsensor zones need a governor or trip-level wiring to
 modulate the fan from the 30% floor through 60/80/100%.
+
+## The power-rail audit: the ACPI boot's biggest gap (2026-11-24)
+
+The EC firmware (RPMI voltage service) declares 22+ rails. The
+AP-side DT (the DT-mode truth) marks 16 always-on/boot-on
+(buck1-6, aldo1/2/4, dldo1-7), three GPIO-gated (pwr_x100/
+a100/ext, default off), and ONE unconfigured: **aldo3** (500mV-
+3.4V range, no state, no consumer — the only rail a driver
+would enable at probe).
+
+The ACPI boot handles NONE of them: the DSDT declares zero
+voltage consumers, no RPMI voltage driver loads, and the rails'
+state at AP boot is whatever the EC's own init left. Everything
+that works, works on always-on luck.
+
+The WiFi chain closes here: the chip enumerates (slot power
+present) but its GPIO9 enable input reads LOW at the silicon —
+aldo3 (RPMI regulator-dynamic8) is the prime suspect for the
+chip's enable/VDD rail.
+
+**The fix: AcpiPowerInitDxe** — the power twin of the existing
+AcpiClockInitDxe (the proven pattern). At ReadyToBoot, send the
+RPMI voltage-enable for the boot-required rails the EC leaves
+off (aldo3 at the DT's range; verify pwr_ext) through the ESOS
+voltage service. The EC owns the rails; the firmware sequences
+them before the OS, same as the clock handoff.
+
+**The broader missing ACPI functionality** (the port map):
+thermal fan-zone governor binding (6.12 should_bind), rfkill
+-EBUSY (finding 9), suspend/resume (the ESOS M2/CPPC cycle +
+_LPI latencies), USB power sequencing, display (DSI/backlight).
