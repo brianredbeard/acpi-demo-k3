@@ -925,3 +925,41 @@ ALL software layers exonerated: ACPI tables, ECAM, MSI
 routing, DMA, driver config — the wifi (seg 4) works
 completely and the 10G (seg 2) fails identically under
 vendor DT kernels.
+
+## The fan cooling-curve characterization (2026-11-24/25)
+
+**The provenance question**: the DSDT FAN0 cooling-levels table
+{77, 153, 204, 255} is 100% synthesized (introduced 3f78ab66,
+the DSDT v12 promotion) — the vendor pico DT's fan0 node
+carries only compatible + pwms, no cooling-levels anywhere in
+any vendor source. The "30/60/80/100%" percentages were
+reasonable guesses.
+
+**The empirical curve** (governor disabled, direct pwm1 writes,
+70s+ settles, steady idle-to-light load):
+- 16 (6%): 74C — the fan spins; no stall cliff to the bottom
+- 32 (12%): 71C · 48 (18%): 69C · 64 (25%): 70C
+- 77 (30%): 70C · 96 (37%): 69C — the 25-37% thermal PLATEAU
+- 128 (50%): 65C — the cooling headroom starts here
+- 255 (100%): full recovery 83→64C in 80s
+- 0 (off): passive runaway through trip 1 (80C) in ~2min —
+  the floor-not-off design is validated
+
+**The decision (user, 2026-11-25)**: keep 77 as state 0. The
+plateau shows 64/77/96 are thermally identical at this load —
+the choice is purely acoustic; 77 is the known-quantity that
+reads "basically silent" in practice. The synthesized table is
+now a MEASURED one: every level's thermal effect is
+characterized, the escalation path (153/204/255) has the
+governor-qualified cycle from the earlier work, and the floor
+sits clear of the stall region with the 70C trip 3-6C above
+the idle band.
+
+**The sweep-methodology notes** (for future re-characterization):
+- pwm1_enable is NOT the governor override (it gates the PWM/
+  regulator); the correct manual control = zone mode disabled
+  + direct pwm1 writes
+- 25s settles read transients (the board's thermal time
+  constant is ~2min); only 70s+ settles are equilibrium
+- the thermal core owns cdev0/cur_state under a governor —
+  sysfs state writes are ignored
