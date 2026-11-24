@@ -688,3 +688,37 @@ write/update path. Next: the FlashFvbDxe runtime write path
 (the same family as the VA-mode read fix), specifically
 whether the variable data write hits the same virtual-address
 gap the reads had.
+
+## The fixed-kernel boot: wifi qualified, the 10G TX defect isolated (2026-11-24, night 2)
+
+**The rebuilt kernel** (the rig Image with k3_ecam_enable_msi at
+probe + the restored config/Makefile — the tree had lost both
+in a partial reset): the quirk registers ("K3 ECAM seg 2/4..."
+lines), both radios enumerate, the ECAM path fully working.
+
+**THE WIFI — qualified end-to-end**: pin 35 driven high
+(gpioset; the poll unblocks within 5s), the scan returns 7
+networks (2e x2, FAIRFAX_OMADA, Qingping, ATTBp3Mgnb,
+Hello123), the MSI fires (140 counts during the scan). The
+chain: firmware (rhct15, rail + RQTS) + pin 35 + the ecam MSI
+fix = working wifi under ACPI.
+
+**The 10G TX defect (isolated, NOT fixed)**: the r8169's MSI
+now fires (the interrupt path works) but every TX errors at
+the interface level (18/18 packets, TX errors = 100%) and the
+error storm wedges the kernel's net path (console commands
+hang, hard power cycle needed). The rtw89 on the SAME
+configuration TXs fine — the difference is the r8169's DMA/
+descriptor pattern. DT-mode 10G works on the com260 with the
+same COH3 setting. NEXT: the r8169 TX error code capture
+(ethtool -S + the driver's TX path), the DMA mask setup under
+ACPI vs DT, and possibly the AWCACHE setting granularity (the
+DT driver sets COH3 identically, but the ACPI boot's swiotlb
+path may interact).
+
+The board needs a pin-35 DURABLE fix (the hold must survive
+boots — the gpioset drive is session-local): the candidates =
+a UEFI DXE GPIO hold at ReadyToBoot (AcpiPowerInitDxe family)
+or the WLEN rfkill-gpio DSDT device driving it via the OS
+rfkill path (the DSDT WLEN exists — the rfkill-gpio double-
+claim bug (audit finding 9) blocks it).
