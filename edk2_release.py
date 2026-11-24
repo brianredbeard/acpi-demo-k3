@@ -196,6 +196,30 @@ def selected(root, expected):
     return manifest
 
 
+def verify_starting_edk2(root, nor, manifest):
+    """The live NOR's EDK2 region must match the sealed baseline
+    before any write (the single-variable rule): a wrong starting
+    image means the planned flash does not isolate one change.
+
+    The baseline identity is the sealed baseline manifest's EDK2
+    digest and size; the live region must equal that image
+    0xff-padded to the page-rounded region length (the same
+    normalization verify_readback applies to the after-image)."""
+    start, _ = REGIONS["edk2"]
+    payload = entry_data(root, manifest["files"]["edk2"])  # size template
+    length = (len(payload) + 0xfff) & ~0xfff
+    base_manifest = json.loads(entry_data(
+        root, manifest["provenance"]["baseline-manifest"]))
+    base_entry = base_manifest["files"]["edk2"]
+    base_size = base_entry["size"]
+    region = nor[start:start+length]
+    if (region[base_size:] != b"\xff" * (length - base_size)
+            or sha(region[:base_size]) != base_entry["sha256"]):
+        raise ValueError(
+            "starting EDK2 image differs from the sealed baseline; "
+            "refusing to flash a candidate onto an unexpected firmware")
+
+
 def verify_readback(bundle, expected, transaction):
     manifest = selected(bundle, expected)
     raw = (transaction / "report.json").read_bytes()
@@ -211,6 +235,9 @@ def verify_readback(bundle, expected, transaction):
     for name, image in (("before", before), ("after", after)):
         if len(image) != NOR_SIZE or sha(image) != report[f"{name}_sha256"]:
             raise ValueError(f"{name} NOR size or digest differs from installer report")
+    # The receipt must also prove the flash started from the sealed
+    # baseline (the audit's flash-baseline gate, offline side).
+    verify_starting_edk2(bundle, before, manifest)
     for name, (start, capacity) in REGIONS.items():
         payload = entry_data(bundle, manifest["files"][name])
         length = (len(payload) + 0xfff) & ~0xfff if name == "edk2" else capacity
@@ -263,6 +290,10 @@ def flash(args):
                 raise ValueError("selected manifest digest changed before flash")
             backend = prepare(candidate, args.device, progress=progress)
             before = backend.read_nor()
+            # The live baseline gate (audit finding 3): refuse to write
+            # unless the starting EDK2 bytes match the sealed baseline —
+            # the single-variable rule enforced before confirmation.
+            verify_starting_edk2(args.bundle, before, manifest)
             writes = plan(candidate, before)
             describe(writes)
             if [w.name for w in writes] != ["edk2"]:

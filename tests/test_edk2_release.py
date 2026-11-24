@@ -148,6 +148,11 @@ class ReleaseTests(unittest.TestCase):
         for name, start in (("esos", 0xb0000), ("opensbi", 0x1b0000), ("edk2", 0x210000)):
             data = (self.base / name).read_bytes()
             before[start:start+len(data)] = data
+        # model the erased NOR: the EDK2 region is image + 0xff padding
+        # to the page-rounded length (the baseline gate hashes the region)
+        pad = (len((self.base / "edk2").read_bytes()) + 0xfff) & ~0xfff
+        before[0x210000+len((self.base / "edk2").read_bytes()):0x210000+pad] = \
+            b"\xff" * (pad - len((self.base / "edk2").read_bytes()))
         after = before[:]
         data = (self.out / "edk2").read_bytes()
         after[0x210000:0x210000+len(data)] = data
@@ -169,6 +174,36 @@ class ReleaseTests(unittest.TestCase):
         report["after_sha256"] = digest(after)
         write_json(run / "report.json", report)
         with self.assertRaisesRegex(ValueError, "outside|NOR"):
+            release.verify_readback(self.out, candidate_hash, run)
+
+    def test_readback_rejects_wrong_starting_edk2(self):
+        """The audit's flash-baseline gate: a transaction whose
+        before-image carries a DIFFERENT EDK2 than the sealed
+        baseline must not verify (the single-variable rule)."""
+        self.package()
+        candidate_hash = digest((self.out / "manifest.json").read_bytes())
+        run = self.root / "wrong-baseline"
+        run.mkdir()
+        before = bytearray(b"\xff" * 0x800000)
+        for name, start in (("esos", 0xb0000), ("opensbi", 0x1b0000), ("edk2", 0x210000)):
+            data = (self.base / name).read_bytes()
+            before[start:start+len(data)] = data
+        # a FOREIGN EDK2 where the baseline should be (one bit off the
+        # baseline payload — the wrong-starting-image case)
+        before[0x210000] ^= 1
+        after = before[:]
+        data = (self.out / "edk2").read_bytes()
+        after[0x210000:0x210000+len(data)] = data
+        (run / "nor-before.bin").write_bytes(before)
+        (run / "nor-after.bin").write_bytes(after)
+        report = {"schema": 1, "status": "verified", "serial": "K3", "completed": ["edk2"],
+                  "before_sha256": digest(before), "after_sha256": digest(after),
+                  "writes": [{"name": "edk2", "offset": 0x210000, "erase_size": 4096,
+                              "size": len(data), "sha256": digest(data)}],
+                  "metadata": {"release": "candidate", "board_assertion": "pico-itx",
+                               "operation": "flash", "bundle_sha256": candidate_hash}}
+        write_json(run / "report.json", report)
+        with self.assertRaisesRegex(ValueError, "starting EDK2"):
             release.verify_readback(self.out, candidate_hash, run)
 
 
