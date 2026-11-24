@@ -674,3 +674,17 @@ cdev->type "pwm-fan" (the type the ACPI pwm-fan patch
 registers), binds all trips with THERMAL_NO_LIMIT upper. The
 rig module built clean; the full boot test rides the rebuilt
 kernel.
+
+## The rhct14/15 variable-write test (2026-11-24, night 2)
+
+The acpidebug kernel on rhct15: the EFI variable write via
+efivars — the CREATE succeeds (K3TestVar appears, 0 bytes) but
+the DATA never lands; subsequent writes and deletes return
+EPERM. The variable is now stuck (an empty var in the store;
+needs a flash-var cleanup or ignore). Progress vs rhct13
+(EINVAL = SetVariable rejected outright): the runtime service
++ the FVB create path work; the failure moved to the data
+write/update path. Next: the FlashFvbDxe runtime write path
+(the same family as the VA-mode read fix), specifically
+whether the variable data write hits the same virtual-address
+gap the reads had.
