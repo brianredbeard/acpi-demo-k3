@@ -45,7 +45,43 @@
          val &= ~BITS_D_CK_DIV_SEL;
          val |= BITS_CK_DIV_SEL_DIV4;
  
-@@ -136,6 +143,82 @@
+@@ -120,8 +127,35 @@
+  *	return 0;
+  * }
+  */
++/*
++ * ACPI-mode cdev binding: the 6.12 thermal core only binds a
++ * cooling device to a zone through tz->ops.should_bind (the
++ * OF zones use thermal_of_should_bind via cooling-maps; ACPI
++ * zones registered by this driver have no OF node behind the
++ * zone, so without this hook the pwm-fan cooling device never
++ * binds and the fan stays at its probe-time max).
++ *
++ * Policy: bind the pwm-fan cdev to every trip with the full
++ * cdev state range; the governor (step_wise) then drives the
++ * fan between the cooling states per trip.
++ */
++static bool k3_tz_should_bind(struct thermal_zone_device *tz,
++			      const struct thermal_trip *trip,
++			      struct thermal_cooling_device *cdev,
++			      struct cooling_spec *c)
++{
++	if (strcmp(cdev->type, "pwm-fan"))
++		return false;
++
++	c->upper = THERMAL_NO_LIMIT;
++	c->lower = 0;
++	c->weight = 1024;
++	return true;
++}
++
+ static const struct thermal_zone_device_ops k3_of_thermal_ops = {
+ 	.get_temp = k3_thermal_get_temp,
++	.should_bind = k3_tz_should_bind,
+ 	/* .set_trips = k3_thermal_set_trips, */
+ };
+ 
+@@ -136,6 +170,88 @@
   * }
   */
  
@@ -100,10 +136,16 @@
 +		}
 +	}
 +
-+	/* trip 0: passive (fan), trip 1: passive (deeper), trip 2: hot */
++	/*
++	 * trip 0: active (the fan's on/off band — an ACTIVE trip
++	 * drives the cdev to state 0 below the threshold and steps
++	 * it up above; PASSIVE only throttles up from wherever the
++	 * cdev already is, which stranded the fan at its probe-time
++	 * max), trip 1: passive (deeper), trip 2: hot
++	 */
 +	trips[0].temperature = passive_c * 1000;
 +	trips[0].hysteresis = 8000;
-+	trips[0].type = THERMAL_TRIP_PASSIVE;
++	trips[0].type = THERMAL_TRIP_ACTIVE;
 +	trips[0].flags = THERMAL_TRIP_FLAG_RW_TEMP | THERMAL_TRIP_FLAG_RW_HYST;
 +
 +	trips[1].temperature = ((passive_c + hot_c) / 2) * 1000;
@@ -128,7 +170,7 @@
  static int k3_thermal_probe(struct platform_device *pdev)
  {
  	unsigned int value;
-@@ -155,7 +238,7 @@
+@@ -155,7 +271,7 @@
  	if (IS_ERR(s->base))
  		return PTR_ERR(s->base);
  
@@ -137,7 +179,7 @@
  	if (ret) {
  		dev_err(dev, "Get temperature_offset failed\n");
  		return -EINVAL;
-@@ -174,18 +257,20 @@
+@@ -174,18 +290,20 @@
  
          reset_control_deassert(s->resets);
  
@@ -169,7 +211,7 @@
  	mutex_init(&s->lock);
  
  	s->sdesc = (struct k3_thermal_sensor_desc *)devm_kzalloc(dev,
-@@ -195,7 +280,13 @@
+@@ -195,7 +313,13 @@
  	platform_set_drvdata(pdev, s);
  
  	/* initialize the sensors */
@@ -183,7 +225,7 @@
  
  	/* enable the sensors & using auto mode */
  	enable_sensors(pdev);
-@@ -211,7 +302,9 @@
+@@ -211,7 +335,9 @@
  	value = readl(s->base);
  	pr_debug("cfg_val: 0x%x\n", value);
  
@@ -194,7 +236,7 @@
  	for (i = s->sr[0]; i <= s->sr[1]; ++i) {
  		if (s->tsen_enable_map[i] == 0)
  			continue;
-@@ -220,13 +313,23 @@
+@@ -220,13 +346,23 @@
  		s->sdesc[i].index = i;
  		s->sdesc[i].ks = s;
  		s->sdesc[i].temp_offset = s->temp_offset;
@@ -220,7 +262,7 @@
  		}
  
  		/* register the thermal sensor to hwmon */
-@@ -235,6 +338,13 @@
+@@ -235,6 +371,13 @@
  	}
  
  	return 0;
@@ -234,7 +276,7 @@
  }
  
  static void k3_thermal_remove(struct platform_device *pdev)
-@@ -243,12 +353,20 @@
+@@ -243,12 +386,20 @@
  	struct k3_thermal_sensor *s = platform_get_drvdata(pdev);
  
  	/* disable the clk */
@@ -260,41 +302,3 @@
  
  	return;
  }
---- a/drivers/thermal/spacemit/k3_tsensor.c
-+++ b/drivers/thermal/spacemit/k3_tsensor.c
-@@ -127,8 +134,35 @@
-  *	return 0;
-  * }
-  */
-+/*
-+ * ACPI-mode cdev binding: the 6.12 thermal core only binds a
-+ * cooling device to a zone through tz->ops.should_bind (the
-+ * OF zones use thermal_of_should_bind via cooling-maps; ACPI
-+ * zones registered by this driver have no OF node behind the
-+ * zone, so without this hook the pwm-fan cooling device never
-+ * binds and the fan stays at its probe-time max).
-+ *
-+ * Policy: bind the pwm-fan cdev to every trip with the full
-+ * cdev state range; the governor (step_wise) then drives the
-+ * fan between the cooling states per trip.
-+ */
-+static bool k3_tz_should_bind(struct thermal_zone_device *tz,
-+			      const struct thermal_trip *trip,
-+			      struct thermal_cooling_device *cdev,
-+			      struct cooling_spec *c)
-+{
-+	if (strcmp(cdev->type, "pwm-fan"))
-+		return false;
-+
-+	c->upper = THERMAL_NO_LIMIT;
-+	c->lower = 0;
-+	c->weight = 1024;
-+	return true;
-+}
-+
- static const struct thermal_zone_device_ops k3_of_thermal_ops = {
- 	.get_temp = k3_thermal_get_temp,
-+	.should_bind = k3_tz_should_bind,
- 	/* .set_trips = k3_thermal_set_trips, */
- };
- 

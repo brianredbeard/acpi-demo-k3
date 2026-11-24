@@ -1,26 +1,19 @@
 --- a/drivers/hwmon/pwm-fan.c
 +++ b/drivers/hwmon/pwm-fan.c
-@@ -636,8 +636,21 @@
+@@ -636,6 +636,16 @@
  
  	ctx->pwm_fan_state = ctx->pwm_fan_max_state;
  	if (IS_ENABLED(CONFIG_THERMAL)) {
--		cdev = devm_thermal_of_cooling_device_register(dev,
--			dev->of_node, "pwm-fan", ctx, &pwm_fan_cooling_ops);
 +		/*
-+		 * ACPI boots: dev->of_node is the synthesized stub — the
-+		 * OF registration's cooling-map lookup fails and leaves the
-+		 * fan at the probe-time MAX_PWM with no governor (the fan
-+		 * blows constantly; field finding 2026-11-24). Register the
-+		 * non-OF cooling device; the tsensor ACPI zones bind it.
++		 * ACPI boots: dev->of_node is the synthesized stub — its
++		 * cooling-map lookup fails (no OF binding), but the cdev
++		 * still registers with devm lifetime; the tsensor ACPI
++		 * zones bind it by type (k3_tz_should_bind). Keep the
++		 * devm form for BOTH paths: the manual register version
++		 * left the cdev alive after driver unbind and later
++		 * panicked the governor in pwm_fan_set_cur_state on the
++		 * freed ctx (field findings 2026-11-24).
 +		 */
-+		if (!dev->of_node) {
-+			cdev = thermal_cooling_device_register("pwm-fan",
-+				ctx, &pwm_fan_cooling_ops);
-+		} else {
-+			cdev = devm_thermal_of_cooling_device_register(dev,
-+				dev->of_node, "pwm-fan", ctx,
-+				&pwm_fan_cooling_ops);
-+		}
+ 		cdev = devm_thermal_of_cooling_device_register(dev,
+ 			dev->of_node, "pwm-fan", ctx, &pwm_fan_cooling_ops);
  		if (IS_ERR(cdev)) {
- 			ret = PTR_ERR(cdev);
- 			dev_err(dev,
