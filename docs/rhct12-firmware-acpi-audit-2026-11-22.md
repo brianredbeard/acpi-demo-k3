@@ -454,3 +454,50 @@ them before the OS, same as the clock handoff.
 thermal fan-zone governor binding (6.12 should_bind), rfkill
 -EBUSY (finding 9), suspend/resume (the ESOS M2/CPPC cycle +
 _LPI latencies), USB power sequencing, display (DSI/backlight).
+
+## Wi-Fi enable: the toggle attempts + the path forward (2026-11-24, cont.)
+
+The live aldo3 toggle via RPMI: three approaches attempted.
+
+1. **Raw SBI MPXY** (module 1): SET_SHMEM + GET_CHANNEL_IDS
+   work, but "mpxy channels: 0" — the response parsing needs
+   the per-CPU shmem model the kernel's own mpxy-mbox driver
+   uses; the global-page approach is insufficient.
+
+2. **Kernel RPMI mbox API** (modules 2/3): the correct API
+   (rpmi_mbox_init_send_with_response + rpmi_mbox_send_message,
+   the clk-rpmi pattern), but mbox_request_channel requires a
+   consumer device with the DT/ACPI mboxes spec. The RQTS
+   device (which declares exactly that) exists only in the repo
+   DSDT — it "rides the next firmware cycle" and was never
+   flashed. A first-iteration ERR_PTR bug panicked the kernel
+   (recovered; fixed).
+
+3. **Board GPIO tests**: neither pin 35 (the pico DT's WLEN)
+   nor pin 73 (the com260's working wifi line, which reads
+   ACTIVE-high on this board too) changes the chip's GPIO9.
+   The P1 PMIC's I2C expander (ri2c2 slave 0x41, 6 pre-burned
+   pins, pwren on 1/2/3) is the remaining wire-level candidate,
+   but the AP's i2c8 driver fails under ACPI ("failed to
+   enable func clock" — another clock/power ACPI gap, same
+   family as the rail topology).
+
+**The com260 comparison**: the com260's wifi WORKS (its DT:
+pin 73, ACTIVE_LOW). Same chip, same package. The pico's GPIO9
+reads LOW with both candidate pins in enable state — the pico's
+GPIO9 wiring goes elsewhere (the PMIC expander's pre-burned
+pins 0/4/5, or a rail).
+
+**The path forward (the next firmware cycle)**:
+- Add the RQTS voltage-consumer device to the DSDT (the mboxes
+  spec — the kernel-side RPMI client then binds and the rail
+  state is directly controllable)
+- OR implement AcpiPowerInitDxe (the ReadyToBoot rail enable —
+  the same RPMI voltage SET_CONFIG from the firmware side,
+  no OS dependency)
+- Both belong to the rhct14+ cycle with the ESOS power work.
+
+Also found: the i2c-k1 ACPI probe fails on its func clock
+(the i2c8/PMIC path is dead under ACPI for the same clock
+family reason — the AcpiClockInitDxe table needs the i2c
+rows added).
