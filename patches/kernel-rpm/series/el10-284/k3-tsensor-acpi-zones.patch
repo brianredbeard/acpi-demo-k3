@@ -1,16 +1,51 @@
 --- a/drivers/thermal/spacemit/k3_tsensor.c
 +++ b/drivers/thermal/spacemit/k3_tsensor.c
-@@ -3,7 +3,9 @@
+@@ -3,7 +3,10 @@
  #include <linux/cpufreq.h>
  #include <linux/delay.h>
  #include <linux/interrupt.h>
 +#include <linux/property.h>
  #include <linux/module.h>
++#include <linux/acpi.h>
 +#include <linux/string.h>
  #include <linux/platform_device.h>
  #include <linux/io.h>
  #include <linux/of_device.h>
-@@ -136,6 +138,82 @@
+@@ -20,7 +23,7 @@
+ 	struct k3_thermal_sensor *s = platform_get_drvdata(pdev);
+ 
+ 	/* read the sensor range */
+-	ret = of_property_read_u32_array(pdev->dev.of_node, "sensor_range", s->sr, 2);
++	ret = device_property_read_u32_array(&pdev->dev, "sensor_range", s->sr, 2);
+ 	if (ret < 0) {
+ 		dev_err(&pdev->dev, "get sensor range error\n");
+ 		return ret;
+@@ -31,19 +34,23 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	ret = of_property_read_u32_array(pdev->dev.of_node, "tsensor_map",
++	ret = device_property_read_u32_array(&pdev->dev, "tsensor_map",
+ 			s->tsen_enable_map, s->sr[1] - s->sr[0] + 1);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "Failed to get definition of tsensor_map\n");
+ 		return -EINVAL;
+ 	}
+ 
++	pr_info("K3DBG: init_sensors props ok sr=%d-%d map0=%d\n",
++		s->sr[0], s->sr[1], s->tsen_enable_map ? s->tsen_enable_map[0] : -1);
+ 	/* first: disable all the interrupts */
+         writel(0xffffffff, s->base + REG_TSEN_LITE_INT_CLR);
+         writel(0xffffffff, s->base + REG_TSEN_LITE_INT_ENB);
+ 
++        pr_info("K3DBG: before CFG readl\\n");
+         /* select clk div 26M/4 */
+         val = readl(s->base + REG_TSEN_LITE_CFG);
++        pr_info("K3DBG: CFG read ok val=0x%x\\n", val);
+         val &= ~BITS_D_CK_DIV_SEL;
+         val |= BITS_CK_DIV_SEL_DIV4;
+ 
+@@ -136,6 +143,82 @@
   * }
   */
  
@@ -93,31 +128,135 @@
  static int k3_thermal_probe(struct platform_device *pdev)
  {
  	unsigned int value;
-@@ -224,9 +302,25 @@
- 				i, s->sdesc + i, &k3_of_thermal_ops);
- 		if (IS_ERR(s->sdesc[i].tzd)) {
- 			ret = PTR_ERR(s->sdesc[i].tzd);
--			dev_err(dev, "faild to register sensor id %d: %d\n",
-+			if (ret != -ENODEV) {
-+				dev_err(dev, "faild to register sensor id %d: %d\n",
- 					i, ret);
--			return ret;
-+				return ret;
-+			}
-+
-+			/*
-+			 * ACPI path: no DT thermal-zones description
-+			 * (the OF lookup is DT-global and the EFI FDT
-+			 * is a stub). Build the zone with explicit
-+			 * per-channel trips.
-+			 */
+@@ -155,7 +238,7 @@
+ 	if (IS_ERR(s->base))
+ 		return PTR_ERR(s->base);
+ 
+-	ret = of_property_read_u32(dev->of_node, "temperature_offset", &s->temp_offset);
++	ret = device_property_read_u32(dev, "temperature_offset", &s->temp_offset);
+ 	if (ret) {
+ 		dev_err(dev, "Get temperature_offset failed\n");
+ 		return -EINVAL;
+@@ -174,18 +257,20 @@
+ 
+         reset_control_deassert(s->resets);
+ 
+-	s->fclk = devm_clk_get(dev, "func");
+-	if (IS_ERR(s->fclk))
+-		return PTR_ERR(s->fclk);
++	/* ACPI: the firmware (AcpiClockInitDxe) enabled the TSEN clocks
++	 * at ReadyToBoot; no DT clock provider exists, so treat the
++	 * clocks as optional (the earlier working ACPI driver's form). */
++	if (!has_acpi_companion(dev)) {
++		s->fclk = devm_clk_get(dev, "func");
++		if (IS_ERR(s->fclk))
++			return PTR_ERR(s->fclk);
++		clk_prepare_enable(s->fclk);
++		s->bclk = devm_clk_get(dev, "bus");
++		if (IS_ERR(s->bclk))
++			return PTR_ERR(s->bclk);
++		clk_prepare_enable(s->bclk);
++	}
+ 
+-	clk_prepare_enable(s->fclk);
+-
+-	s->bclk = devm_clk_get(dev, "bus");
+-	if (IS_ERR(s->bclk))
+-		return PTR_ERR(s->bclk);
+-
+-	clk_prepare_enable(s->bclk);
+-
+ 	mutex_init(&s->lock);
+ 
+ 	s->sdesc = (struct k3_thermal_sensor_desc *)devm_kzalloc(dev,
+@@ -195,7 +280,13 @@
+ 	platform_set_drvdata(pdev, s);
+ 
+ 	/* initialize the sensors */
++	pr_info("K3DBG: probe calling init_sensors\\n");
+ 	ret = init_sensors(pdev);
++	pr_info("K3DBG: init_sensors ret=%d\\n", ret);
++	if (ret) {
++		dev_err(dev, "init_sensors failed: %d\n", ret);
++		goto err_clocks;
++	}
+ 
+ 	/* enable the sensors & using auto mode */
+ 	enable_sensors(pdev);
+@@ -211,7 +302,9 @@
+ 	value = readl(s->base);
+ 	pr_debug("cfg_val: 0x%x\n", value);
+ 
+-	/* then register the thermal zone */
++	/* then register the thermal zone: ACPI builds directly
++	 * (the OF lookup walks the stub FDT and faults under ACPI);
++	 * the DT path is for real DT boots only. */
+ 	for (i = s->sr[0]; i <= s->sr[1]; ++i) {
+ 		if (s->tsen_enable_map[i] == 0)
+ 			continue;
+@@ -220,13 +313,23 @@
+ 		s->sdesc[i].index = i;
+ 		s->sdesc[i].ks = s;
+ 		s->sdesc[i].temp_offset = s->temp_offset;
++		if (has_acpi_companion(dev)) {
 +			s->sdesc[i].tzd = k3_thermal_register_acpi_zone(dev, s, i);
 +			if (IS_ERR(s->sdesc[i].tzd)) {
 +				ret = PTR_ERR(s->sdesc[i].tzd);
 +				dev_err(dev, "faild to register ACPI zone id %d: %d\n",
 +					i, ret);
-+				return ret;
++				goto err_clocks;
 +			}
++			continue;
++		}
+ 		s->sdesc[i].tzd = devm_thermal_of_zone_register(dev,
+ 				i, s->sdesc + i, &k3_of_thermal_ops);
+ 		if (IS_ERR(s->sdesc[i].tzd)) {
+ 			ret = PTR_ERR(s->sdesc[i].tzd);
+ 			dev_err(dev, "faild to register sensor id %d: %d\n",
+-					i, ret);
+-			return ret;
++				i, ret);
++			goto err_clocks;
  		}
  
  		/* register the thermal sensor to hwmon */
+@@ -235,6 +338,13 @@
+ 	}
+ 
+ 	return 0;
++
++err_clocks:
++	if (s->fclk)
++		clk_disable_unprepare(s->fclk);
++	if (s->bclk)
++		clk_disable_unprepare(s->bclk);
++	return ret;
+ }
+ 
+ static void k3_thermal_remove(struct platform_device *pdev)
+@@ -243,12 +353,20 @@
+ 	struct k3_thermal_sensor *s = platform_get_drvdata(pdev);
+ 
+ 	/* disable the clk */
+-	clk_disable_unprepare(s->fclk);
+-	clk_disable_unprepare(s->bclk);
+-	reset_control_assert(s->resets);
++	if (s->fclk)
++		clk_disable_unprepare(s->fclk);
+ 
+-	for (i = s->sr[0]; i <= s->sr[1]; ++i)
+-		devm_thermal_of_zone_unregister(&pdev->dev, s->sdesc[i].tzd);
++	pr_info("K3DBG: zone loop start\\n");
++		for (i = s->sr[0]; i <= s->sr[1]; ++i) {
++		if (!s->sdesc[i].tzd)
++			continue;
++		/* ACPI zones were registered manually (register_with_trips):
++		 * the devm OF helper would mismatch. */
++		if (has_acpi_companion(&pdev->dev))
++			thermal_zone_device_unregister(s->sdesc[i].tzd);
++		else
++			devm_thermal_of_zone_unregister(&pdev->dev, s->sdesc[i].tzd);
++	}
+ 
+ 	return;
+ }

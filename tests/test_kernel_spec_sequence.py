@@ -24,6 +24,8 @@ EXPECTED_PATCHES = [
     ("Patch900007", "k3-ecam-segs24.patch"),
     ("Patch900008", "k3-cros-ec-riscv.patch"),
     ("Patch900009", "k3-cros-ec-sizes.patch"),
+    ("Patch900010", "k3-tsensor-acpi-zones.patch"),
+    ("Patch900011", "k3-pwmfan-acpi-cooling.patch"),
 ]
 
 
