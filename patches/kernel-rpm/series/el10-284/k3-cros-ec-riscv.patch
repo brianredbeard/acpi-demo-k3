@@ -11,7 +11,7 @@
  	  Controller (EC) providing keyboard, battery and power services.
 --- a/include/linux/platform_data/cros_ec_proto.h
 +++ b/include/linux/platform_data/cros_ec_proto.h
-@@ -201,6 +201,19 @@
+@@ -201,6 +201,25 @@
  };
  
  /**
@@ -23,7 +23,13 @@
 + */
 +static inline struct cros_ec_device *cros_ec_device_alloc(struct device *dev)
 +{
-+	return devm_kzalloc(dev, sizeof(struct cros_ec_device), GFP_KERNEL);
++	struct cros_ec_device *ec_dev;
++
++	ec_dev = devm_kzalloc(dev, sizeof(*ec_dev), GFP_KERNEL);
++	if (ec_dev)
++		ec_dev->dev = dev;
++
++	return ec_dev;
 +}
 +
 +
