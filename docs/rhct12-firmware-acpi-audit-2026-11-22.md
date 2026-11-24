@@ -357,3 +357,69 @@ Remaining: pwm-fan deferred (probe order — the PWM provider probed
 before the EC registered; the rebind path), the radio link tests
 (wifi association, 10G traffic), and the rhct14 variable-write
 test on this kernel.
+
+## Wi-Fi radio disable: silicon-level diagnosis (2026-11-24)
+
+The RTL8852BE hard-block chain, measured at every layer:
+
+**Layer 1 — the driver stack works.** rtw89_8852be binds at
+0004:01:00.0, loads rtw89/rtw8852b_fw-2.bin, creates phyN. The
+rfkill-gpio PRP0001:00/01 probes fail -EBUSY (audit finding 9,
+the GPS fallback double-claim) but this does NOT gate the radio.
+
+**Layer 2 — the rtw89 rfkill mechanism (driver source):**
+`rtw89_core_rfkill_init()` programs the chip's GPIO9 pinmux +
+input mode; `rtw89_core_rfkill_get()` reads
+`R_AX_GPIO_EXT_CTRL` (0x0060) bit `B_AX_GPIO_IN_9` (BIT(1) of
+the byte at 0x0062), INVERTED: register set = enabled, clear =
+disabled. The driver polls this and reports the rfkill hard
+state.
+
+**Layer 3 — the silicon measurement.** Via PCI BAR2
+(0x12c0200000, 1 MiB) register-space mmap: GPIO_EXT_CTRL
+reads 0x00000008 — **GPIO9 input = LOW = radio disabled at the
+chip pin.** This is the hard-block source; the WLEN GPIO is
+not it (Layer 4).
+
+**Layer 4 — the board wiring.** The DSDT WLEN device
+(\_SB.WLEN, _UID 0x80) declares GpioIo flat pin 35, active-high
+shutdown. Measured via gpiod: pin 35 = inactive (LOW = enable).
+A 4-second WLEN high pulse (gpioset -p 4 35=1) does NOT change
+the chip's GPIO9 reading — **the chip's GPIO9 is not directly
+wired to the WLEN line**, or the enable state is latched
+inside the chip/EC and requires a re-initialization sequence
+(driver rebind also does not clear it).
+
+**Layer 5 — the power topology.** The vendor DT
+(k3-pico-itx.dts): pcie4_rc = 1 lane, combophy 5, vpcie3v3 =
+reg_aux_vcc3v3 (always-on fixed regulator). No radio-specific
+power gate in the DT. The remaining candidate controllers for
+GPIO9's state: the Chrome EC's radio domain (the EC firmware
+holds the WLAN_ENABLE output; /dev/cros_ec exists but no
+gpio-query debugfs is available on this kernel build), or the
+chip requires its WLAN_EN power-on pulse sequence (the
+Realtek reference design pulses PD_N/ WLAN_EN at power-on).
+
+**Open:** query the EC's radio/wlan GPIO via a cros-ec command
+(the chardev exists; ectool is not packaged for EL10) or the
+ESOS-side EC firmware source (the EC image's gpio config for
+the WLAN_ENABLE output).
+
+## Fan always-blowing + the durable fix (2026-11-24)
+
+The pwm-fan probe deliberately sets MAX_PWM (safety default)
+and registers its cooling device via the OF-only
+devm_thermal_of_cooling_device_register(dev, dev->of_node, …)
+— under ACPI the of_node is the synthesized stub, the
+registration fails, and NO governor ever lowers the duty. The
+fan blew at 100% from boot.
+
+Immediate relief: `echo 77 > …/hwmon*/pwm1` (the 30% floor =
+DSDT FAN0 cooling-levels state 0). Durable fix:
+k3-pwmfan-acpi-cooling.patch (Patch900011, commit 6825961) —
+the ACPI path registers thermal_cooling_device_register
+directly. REMAINING: the zone binding — the 6.12 thermal core
+binds cdevs via the GOVERNOR's should_bind callback (not
+thermal_zone_params, which lacks that member in this kernel);
+the tsensor zones need a governor or trip-level wiring to
+modulate the fan from the 30% floor through 60/80/100%.
