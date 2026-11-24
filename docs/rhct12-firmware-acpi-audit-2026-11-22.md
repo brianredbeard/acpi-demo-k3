@@ -582,3 +582,39 @@ probe (early boot), then scan.
 {domain,enable,level,query} — the runtime rail-control
 interface, with a proper remove() (v5 leaked the channel —
 the missing .remove kept the mbox bound; fixed).
+
+## The rhct15 night session close (2026-11-24)
+
+**The wifi state after the full arc**:
+- The radio ENABLE is solved at the mechanism level: GPIO9 =
+  the chip's hw-rfkill input; driving it high (chip-side output
+  or the SoC GPIO hold through a driver re-init) unblocks the
+  radio — "rfkill hardware state changed to enable", probe
+  requests transmit.
+- The SCAN still fails: "Update probe request failed"
+  (rtw89_hw_scan_update_probe_req → the pkt-offload h2c path)
+  regardless of the rfkill state or its timing relative to
+  init. A distinct defect — suspects: seg-4 DMA path for the
+  fw command, or the chip fw's pkt-offload needing a state
+  the late enable didn't provide. Next investigation: the h2c
+  error code capture (dyndbg had no extra output), the com260
+  comparison (its scan works), and the _CCA/DMA config of
+  0004:01:00.0.
+- The board's GPIO35/73 hold test: with both held via gpioset
+  -p, a rmmod/modprobe cycle re-initted the chip with GPIO9
+  reading HIGH at probe ("changed to enable" at init, not a
+  poll fix). The pin/line wiring EXISTS on the pico — one of
+  35/73 (or the combination) reaches GPIO9. Not yet isolated
+  which.
+
+**The rhct15 regression checklist**: EC registered (2.24s),
+NVMe + UFS present, both radios enumerated (10ec:8127 +
+10ec:b852), 10G UP, thermal zones live. Fan quieted (pwm1=77
+after the cros-ec-pwm rebind — the probe-order race: EC PWM
+probes at 1.62s before the EC registers at 2.24s; the known
+rebind path works).
+
+**Cleanup**: the modprobe blacklist + the wifi-gpio9 systemd
+  unit were removed (the unit had vanished in the XFS
+  incident; the blacklist file removed manually). No leftover
+  boot-time state.
