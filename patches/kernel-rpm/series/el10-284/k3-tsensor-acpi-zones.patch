@@ -81,7 +81,7 @@
  	/* .set_trips = k3_thermal_set_trips, */
  };
  
-@@ -136,6 +170,88 @@
+@@ -136,6 +170,103 @@
   * }
   */
  
@@ -162,15 +162,30 @@
 +
 +	snprintf(prop_name, sizeof(prop_name), "k3_tsensor_ch%d", channel);
 +
-+	return thermal_zone_device_register_with_trips(
++	{
++		struct thermal_zone_device *tzd;
++
++		tzd = thermal_zone_device_register_with_trips(
 +			prop_name, trips, ntrips, s->sdesc + channel,
 +			&k3_of_thermal_ops, &tzp, 0, 2000);
++		if (IS_ERR(tzd))
++			return tzd;
++
++		/*
++		 * 6.12 zones register with mode disabled; the polling
++		 * interval above only arms the timer once enabled.
++		 * Without this the governor never runs (the fan stayed
++		 * at its probe-time state until manually enabled).
++		 */
++		thermal_zone_device_enable(tzd);
++		return tzd;
++	}
 +}
 +
  static int k3_thermal_probe(struct platform_device *pdev)
  {
  	unsigned int value;
-@@ -155,7 +271,7 @@
+@@ -155,7 +286,7 @@
  	if (IS_ERR(s->base))
  		return PTR_ERR(s->base);
  
@@ -179,7 +194,7 @@
  	if (ret) {
  		dev_err(dev, "Get temperature_offset failed\n");
  		return -EINVAL;
-@@ -174,18 +290,20 @@
+@@ -174,18 +305,20 @@
  
          reset_control_deassert(s->resets);
  
@@ -211,7 +226,7 @@
  	mutex_init(&s->lock);
  
  	s->sdesc = (struct k3_thermal_sensor_desc *)devm_kzalloc(dev,
-@@ -195,7 +313,13 @@
+@@ -195,7 +328,13 @@
  	platform_set_drvdata(pdev, s);
  
  	/* initialize the sensors */
@@ -225,7 +240,7 @@
  
  	/* enable the sensors & using auto mode */
  	enable_sensors(pdev);
-@@ -211,7 +335,9 @@
+@@ -211,7 +350,9 @@
  	value = readl(s->base);
  	pr_debug("cfg_val: 0x%x\n", value);
  
@@ -236,7 +251,7 @@
  	for (i = s->sr[0]; i <= s->sr[1]; ++i) {
  		if (s->tsen_enable_map[i] == 0)
  			continue;
-@@ -220,13 +346,23 @@
+@@ -220,13 +361,23 @@
  		s->sdesc[i].index = i;
  		s->sdesc[i].ks = s;
  		s->sdesc[i].temp_offset = s->temp_offset;
@@ -262,7 +277,7 @@
  		}
  
  		/* register the thermal sensor to hwmon */
-@@ -235,6 +371,13 @@
+@@ -235,6 +386,13 @@
  	}
  
  	return 0;
@@ -276,7 +291,7 @@
  }
  
  static void k3_thermal_remove(struct platform_device *pdev)
-@@ -243,12 +386,20 @@
+@@ -243,12 +401,20 @@
  	struct k3_thermal_sensor *s = platform_get_drvdata(pdev);
  
  	/* disable the clk */
