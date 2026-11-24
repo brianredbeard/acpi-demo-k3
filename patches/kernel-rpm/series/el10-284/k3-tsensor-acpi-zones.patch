@@ -260,3 +260,41 @@
  
  	return;
  }
+--- a/drivers/thermal/spacemit/k3_tsensor.c
++++ b/drivers/thermal/spacemit/k3_tsensor.c
+@@ -127,8 +134,35 @@
+  *	return 0;
+  * }
+  */
++/*
++ * ACPI-mode cdev binding: the 6.12 thermal core only binds a
++ * cooling device to a zone through tz->ops.should_bind (the
++ * OF zones use thermal_of_should_bind via cooling-maps; ACPI
++ * zones registered by this driver have no OF node behind the
++ * zone, so without this hook the pwm-fan cooling device never
++ * binds and the fan stays at its probe-time max).
++ *
++ * Policy: bind the pwm-fan cdev to every trip with the full
++ * cdev state range; the governor (step_wise) then drives the
++ * fan between the cooling states per trip.
++ */
++static bool k3_tz_should_bind(struct thermal_zone_device *tz,
++			      const struct thermal_trip *trip,
++			      struct thermal_cooling_device *cdev,
++			      struct cooling_spec *c)
++{
++	if (strcmp(cdev->type, "pwm-fan"))
++		return false;
++
++	c->upper = THERMAL_NO_LIMIT;
++	c->lower = 0;
++	c->weight = 1024;
++	return true;
++}
++
+ static const struct thermal_zone_device_ops k3_of_thermal_ops = {
+ 	.get_temp = k3_thermal_get_temp,
++	.should_bind = k3_tz_should_bind,
+ 	/* .set_trips = k3_thermal_set_trips, */
+ };
+ 
