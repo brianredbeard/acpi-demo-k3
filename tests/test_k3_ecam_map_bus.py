@@ -41,6 +41,7 @@ EXTRACT = (
     "k3_ecam_own_map",
     "k3_ecam_child_map",
     "k3_ecam_map_bus",
+    "k3_ecam_enable_msi",
     "k3_ecam_init",
     "k3_dw_seg0_map_bus",
 )
@@ -224,16 +225,54 @@ static void *mock_va(resource_size_t pa)
 }
 
 static u32 link2_status, link4_status;
+static u32 link2_irq_en, link2_intr_en, link4_irq_en, link4_intr_en;
+static u32 dbi2_coh3, dbi4_coh3;
+static int ro_wr_en_count;
 static u32 readl(const void *addr)
 {
 	if (addr == mock_va(0x82D00004UL))
 		return link2_status;
 	if (addr == mock_va(0x82B00004UL))
 		return link4_status;
-	fprintf(stderr, "unexpected PHY status read at %p\n", addr);
+	if (addr == mock_va(0x808008E8UL))
+		return dbi2_coh3;
+	if (addr == mock_va(0x810008E8UL))
+		return dbi4_coh3;
 	exit(EXIT_FAILURE);
 }
 
+/* the MSI-enable path's register handlers (vars declared above readl) */
+static void writel_relaxed(u32 v, void *addr)
+{
+	if (addr == mock_va(0x82D00000UL)) { link2_irq_en = v; return; }
+	if (addr == mock_va(0x82D00014UL)) { link2_intr_en = v; return; }
+	if (addr == mock_va(0x82B00000UL)) { link4_irq_en = v; return; }
+	if (addr == mock_va(0x82B00014UL)) { link4_intr_en = v; return; }
+	fprintf(stderr, "unexpected writel at %p\n", addr);
+	exit(EXIT_FAILURE);
+}
+static void dw_pcie_dbi_ro_wr_en(struct dw_pcie *pci) { ro_wr_en_count++; (void)pci; }
+static u32 readl_relaxed(const void *addr)
+{
+	if (addr == mock_va(0x82D00000UL)) return link2_irq_en;
+	if (addr == mock_va(0x82B00000UL)) return link4_irq_en;
+	return 0;
+}
+static void dw_pcie_dbi_ro_wr_dis(struct dw_pcie *pci) { (void)pci; }
+#define GENMASK(h, l) (((1UL << ((h) - (l) + 1)) - 1) << (l))
+static inline u32 u32_replace_bits(u32 reg, u32 val, u32 mask)
+{
+	u32 shift = __builtin_ctz(mask);
+	return (reg & ~mask) | ((val << shift) & mask);
+}
+static void writel(u32 v, void *addr)
+{
+	if (addr == mock_va(0x808008E8UL)) { dbi2_coh3 = v; return; }
+	if (addr == mock_va(0x810008E8UL)) { dbi4_coh3 = v; return; }
+	fprintf(stderr, "unexpected writel at %p\n", addr);
+	exit(EXIT_FAILURE);
+}
+/* (DBI COH3 reads go through the extended readl above) */
 static int mock_version_calls;
 static void dw_pcie_version_detect(struct dw_pcie *pci)
 {

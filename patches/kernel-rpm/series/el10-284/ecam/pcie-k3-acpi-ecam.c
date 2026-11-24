@@ -59,6 +59,24 @@ struct k3_ecam_seg {
 #define K3_ECAM_LINK_RDLH_UP		BIT(12)
 
 /*
+ * MSI routing from downstream devices: the PHY AHB block gates
+ * message TLPs and the DBI coherency control sets the AWCACHE
+ * attribute for the IMSIC write region. The DT driver
+ * (pcie-spacemit-k1.c) programs these in k1_pcie_start_link() and
+ * k3_pcie_msi_host_init(); without them, MSI MemWr TLPs from
+ * endpoints on this segment are dropped and every device IRQ
+ * stays silent (observed: seg 2 + seg 4 devices with zero
+ * interrupt counts, NVMe on seg 0 unaffected).
+ */
+#define K3_ECAM_PHY_AHB_IRQ_EN		0x0000
+#define K3_ECAM_PCIE_INTR_EN		BIT(0)
+#define K3_ECAM_INTR_ENABLE		0x0014
+#define K3_ECAM_MSI_CTRL_INT		BIT(11)
+#define K3_ECAM_COHERENCY_CTRL3_OFF	0x8E8
+#define K3_ECAM_CACHE_MSTR_AWCACHE_MODE	GENMASK(14, 11)
+#define K3_ECAM_CACHE_MSTR_AWCACHE_VAL	0xf
+
+/*
  * Root-bus access: the root port's own config space at DBI.
  * (dw_pcie_own_conf_map_bus behavior.)
  */
@@ -83,6 +101,38 @@ static bool k3_ecam_link_up(struct k3_ecam_seg *seg)
 	val = readl(seg->link_base + K3_ECAM_PHY_AHB_LINK_STS);
 	return (val & K3_ECAM_LINK_SMLH_UP) &&
 	       (val & K3_ECAM_LINK_RDLH_UP);
+}
+
+/*
+ * Enable MSI forwarding for this segment (the DT driver's
+ * k1_pcie_start_link + k3_pcie_msi_host_init, ported). Safe to
+ * re-run: read-modify-writes on bit fields.
+ */
+static void k3_ecam_enable_msi(struct k3_ecam_seg *seg)
+{
+	u32 val;
+
+	/* MSI interrupt enable in the PHY AHB INTR_ENABLE */
+	writel_relaxed(K3_ECAM_MSI_CTRL_INT,
+		       seg->link_base + K3_ECAM_INTR_ENABLE);
+
+	/* Top-level interrupt enable */
+	val = readl_relaxed(seg->link_base + K3_ECAM_PHY_AHB_IRQ_EN);
+	val |= K3_ECAM_PCIE_INTR_EN;
+	writel_relaxed(val, seg->link_base + K3_ECAM_PHY_AHB_IRQ_EN);
+
+	/*
+	 * DBI COHERENCY_CONTROL_3: the msi write AWCACHE mode for
+	 * the IMSIC region (K3_CACHE_MSTR_AWCACHE_BEHAVIOR 0xf).
+	 * Write-enable the RO registers around it, as the DT driver
+	 * does (dw_pcie_dbi_ro_wr_en/dis).
+	 */
+	dw_pcie_dbi_ro_wr_en(&seg->pci);
+	val = readl(seg->dbi_base + K3_ECAM_COHERENCY_CTRL3_OFF);
+	val = u32_replace_bits(val, K3_ECAM_CACHE_MSTR_AWCACHE_VAL,
+			       K3_ECAM_CACHE_MSTR_AWCACHE_MODE);
+	writel(val, seg->dbi_base + K3_ECAM_COHERENCY_CTRL3_OFF);
+	dw_pcie_dbi_ro_wr_dis(&seg->pci);
 }
 
 /*
@@ -235,6 +285,9 @@ static int k3_ecam_init(struct pci_config_window *cfg)
 	 * it must be non-zero.
 	 */
 	seg->pci.num_ob_windows = 1;
+
+	/* MSI routing (see k3_ecam_enable_msi) */
+	k3_ecam_enable_msi(seg);
 
 	cfg->priv = seg;
 
