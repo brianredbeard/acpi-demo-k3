@@ -618,3 +618,59 @@ rebind path works).
   unit were removed (the unit had vanished in the XFS
   incident; the blacklist file removed manually). No leftover
   boot-time state.
+
+## The MSI-routing root cause: BOTH downstream segments' IRQs dead (2026-11-24, night 2)
+
+**The symptom chain decoded**: the wifi scan failure (-ETIMEDOUT on
+the pkt-offload C2H wait — captured via kprobe on
+rtw89_fw_h2c_add_pkt_offload, retval -110) was NOT a chip/fw
+issue. /proc/interrupts showed the rtw89 MSI at ZERO counts —
+and the r8169's MSIX on seg 2 ALSO zero (the "working" 10G had
+UP carrier but ZERO rx/tx packets ever — never actually
+qualified for traffic!). Seg 0 (NVMe, root-bus) works.
+
+**The root cause**: the DT driver (pcie-spacemit-k1.c) programs
+three things in k1_pcie_start_link() + k3_pcie_msi_host_init()
+that the ACPI ECAM quirk never does:
+1. `writel(MSI_CTRL_INT, link + INTR_ENABLE)` — the PHY AHB
+   block's MSI interrupt gate (PHY AHB +0x14, BIT(11))
+2. `K1_PHY_AHB_IRQ_EN |= PCIE_INTERRUPT_EN` — the top-level
+   interrupt enable (PHY AHB +0x0, BIT(0))
+3. DBI COHERENCY_CONTROL_3 (0x8E8) AWCACHE mode [14:11] = 0xf
+   for the IMSIC msi write region
+
+Without these, MemWr TLPs carrying MSIs from seg 2/4 endpoints
+are dropped at the bridge. Every downstream-segment device IRQ
+stays silent: wifi C2H acks time out, the 10G never moves a
+packet.
+
+**The runtime proof** (a test module programming the registers
+on the live system): after the writes, the wifi MSI fired
+(689 counts), the scan WORKED — six networks visible. The 10G's
+MSIX also started counting. The pin-35 (wifi enable) + MSI
+fixes together = the full wifi bring-up.
+
+**The hazard found**: writing COHERENCY_CONTROL_3 on a LIVE
+device wedged the kernel (the r8169 unbind after the runtime
+COH3 flip hung — hard power cycle needed). The attribute
+transition with live descriptors in flight. THE FIX MUST BE AT
+PROBE TIME (before any device enumerates) — implemented in the
+ecam quirk driver's probe path (k3_ecam_enable_msi, called
+after the segment setup, before cfg->priv).
+
+**The ecam MSI patch**: k3_ecam_enable_msi() in
+pcie-k3-acpi-ecam.c — the three writes ported from the DT
+driver, called at probe. Diff verified round-trip (applies to
+the qualified 1b1dabcc base → the fixed 16f04bc5). The rig's
+kernel rebuild (with the restored config + Makefile rule —
+the tree had lost both in a partial reset) carries it.
+
+**The tsensor should_bind** (the fan governor): the 6.12 core
+binds cdevs ONLY via tz->ops.should_bind (the OF zones get
+thermal_of_should_bind; the ACPI zones had NONE — the pwm-fan
+cdev registered but never bound, the fan stuck at probe-time
+max). Added k3_tz_should_bind to k3_of_thermal_ops: matches
+cdev->type "pwm-fan" (the type the ACPI pwm-fan patch
+registers), binds all trips with THERMAL_NO_LIMIT upper. The
+rig module built clean; the full boot test rides the rebuilt
+kernel.
