@@ -341,3 +341,19 @@ the X100 root complexes on 0002:). Two bounded items remain:
 
 Seg 0 remains perfect (one NVMe, ghost filter holding). Console,
 network, thermal zones, UFS all working on this boot.
+
+## 3l boot (2026-11-24 05:3x): the full-stack boot
+
+The ec_dev->dev fix (a4be038) delivered the acceptance sequence:
+
+- Chrome EC device registered at 2.09s (the 3k panic site)
+- RTL8127 10GbE at 0002:01:00.0, r8169 BOUND, enP2p1s0 UP
+- RTL8852BE 802.11ax at 0004:01:00.0, wlP4p1s0 present (DOWN —
+  association is the qualification step)
+- GMAC up with the IP on this kernel
+- Console (XScale), NVMe, UFS, thermal zones all working
+
+Remaining: pwm-fan deferred (probe order — the PWM provider probed
+before the EC registered; the rebind path), the radio link tests
+(wifi association, 10G traffic), and the rhct14 variable-write
+test on this kernel.
