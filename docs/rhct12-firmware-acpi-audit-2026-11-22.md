@@ -825,3 +825,43 @@ queryable). The rhct15→rhct16 delta was edk2.bin only
 → the MSI bridge fix (the scan) → the GPIO35 ReadyToBoot hold
 (the durable enable). The radio, the scan, the association,
 and the data path all work under pure ACPI.
+
+## The 10G RX: the hypothesis space collapsed (2026-11-24, late night)
+
+**The swiotlb=force test — the DMA-placement theory ELIMINATED**:
+with ALL DMA bounced through the 16MB low-memory window
+(<4GB, unquestionably bridge-reachable), the 10G still TXes
+(11 packets) and receives NOTHING. The descriptors/buffers
+were in low memory; the CPU still never saw the NIC's writes.
+(The forced bouncing also starved the NVMe — 8043/8192 slots
+used — a secondary finding: this platform's I/O pressure
+under universal bouncing.)
+
+**The RX MAC configuration — verified CORRECT**: RxConfig =
+0x40c20f4e, accept bits = 0x0e = AcceptBroadcast |
+AcceptMulticast | AcceptMyPhys (the driver's normal rtl_set_rx_mode
+output). Descriptors armed (own=1, valid buffers). IRQ fires,
+rtl_rx poll runs (23 kprobe hits in one ping window).
+
+**The remaining hypothesis — the NIC-internal RX datapath**:
+the ethtool counters show ZERO of everything (rx_packets,
+broadcast, multicast — not even background ARP/broadcast ever
+counts). The MAC-level accept config is right but no frames
+enter the descriptor path: the failure sits BEFORE the MAC
+filter — in the PHY/SerDes→MAC ingress. The link reads UP
+(the PHY's link state) but the 10GBASE-R ingress may be dead
+(e.g. the SDS RX equalization never locked in the ACPI boot
+path — the DT driver's phy_init with firmware vs the ACPI
+path's phylink).
+
+**Probes attempted, blocked**: the phy loopback (ethtool
+--set-phy-loopback unsupported; the BMCR write via PHYAR
+didn't stick — the RTL8127's PHY access sequence differs).
+The r8169 has no MAC-loopback register exposed by the driver.
+
+**NEXT (needs setup beyond tonight)**: the com260 comparison
+(the DT-mode 10G WORKS there) — read its RxConfig + the
+driver's phy state for the differential; or an external
+loopback plug for the RJ45/SPF to inject known frames. The
+RTL8127's SerDes calibration registers (r8127_sds_* in the
+driver) are the prime suspect region.
