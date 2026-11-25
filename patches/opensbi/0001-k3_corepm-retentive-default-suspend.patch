@@ -1,52 +1,102 @@
 From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH] opensbi: K3 suspend P0/P1-activation changes (manifest)
+Subject: [PATCH] opensbi: vendored K3 suspend-tree manifest (baseline b4152e0 + quiet-deny pin 51a9d0f9)
 
-This file previously carried a hand-written summary that was not a
-valid git patch (audit finding 1, 2026-11-20). The qualified OpenSBI
-source is now pinned as a COMPONENT in sources.lock.json:
+NOT AN APPLIED PATCH. sources.lock.json pins the opensbi component
+by revision with an EMPTY patch list; this file is that component's
+manifest and the evidence anchor cited by
+docs/audit-2026-11-20/standards.csv. It replaces the hand-written
+pseudocode patch that was not git-applicable (audit finding 1,
+2026-11-20).
 
-  component: opensbi
-  revision:  b4152e0761ac1986dfd313876eaff8d7f63cd703
+  component:  opensbi
+  revision:   51a9d0f99d23aa00ad9d14c84874c4673d9559ac  (lock pin)
   repository: workdir/k3-maintained-efi/opensbi-controller-trace-diagnostic (local)
-  artifact:  fw_dynamic sha256 2f14c5c85bf91e1c... (v21g/v21h hardware-qualified)
 
-The commit contains, relative to the original spacemit K3 opensbi
-tree (no surviving clean upstream identity; see the component note):
+The component is a vendored local snapshot — no clean upstream
+identity survives (the tree predates the repo-qualification
+discipline), and the repository field is a local absolute path:
+reproduction requires this workstation until the tree is published.
 
-  P0 batches  explicit suspend-type dispatch; genuine type-0 WFI
-              before any vote/mask/IMSIC/cache change; backend error
-              propagation with the hart/type/error diagnostic
-  v15 fix     dispatch hoist: type validation precedes every
-              hardware change (zero CSR/PMU writes on rejection)
-  v16 fix     ENOTSUPP-fallback translation: the wrapper fails
-              NON_RET_DEFAULT outright so sbi_hsm cannot consume
-              ENOTSUPP as a generic-fallback request (the v14/v15
-              hart wedges)
-  v21         K3_HSM_SUSP_CLUSTER_RET (0x11000000) routed through
-              RPMI_HSM_SRV_HART_SUSPEND (k3_rpmi_hsm_route_suspend):
-              deny pre-hardware; grant = plain WFI (v21f corruption
-              panic fixed: a grant licenses no per-hart vote)
+History of the pinned tree (two commits):
+
+  b4152e07  BASELINE IMPORT — the spacemit K3 OpenSBI tree as staged
+            during this project, squashed at the v21g state
+            (fw_dynamic sha256 2f14c5c85bf91e1c..., the
+            hardware-qualified v21g/v21h cycles). Contains, relative
+            to the vendor tree:
+              P0 batches  explicit suspend-type dispatch; genuine
+                          type-0 WFI before any vote/mask/IMSIC/
+                          cache change; backend error propagation
+                          with the hart/type/error diagnostic
+              v15 fix     dispatch hoist: type validation precedes
+                          every hardware change (zero CSR/PMU
+                          writes on rejection)
+              v16 fix     ENOTSUPP-fallback translation: the
+                          wrapper fails NON_RET_DEFAULT outright so
+                          sbi_hsm cannot consume ENOTSUPP as a
+                          generic-fallback request (the v14/v15
+                          hart wedges)
+              v21         K3_HSM_SUSP_CLUSTER_RET (0x11000000)
+                          routed through RPMI_HSM_SRV_HART_SUSPEND
+                          (k3_rpmi_hsm_route_suspend): deny
+                          pre-hardware; grant = plain WFI (the v21f
+                          corruption panic fixed — a grant licenses
+                          no per-hart vote)
+
+  51a9d0f9  QUIET-DENY FIX — the current pin. The rpmi-hsm deny
+            print fired from the idle path at cpuidle retry
+            frequency; five harts printing every denial saturated
+            the 115200-baud console and took the network down (the
+            first LPI-2 flash, 2026-11-20). Rate-limited to ONCE
+            PER HART: the error code returned to the caller is the
+            durable signal; the console line is a boot-time aid
+            (the transition-path serial rule applied to the print
+            that predated it). Shipped in the lpi2q image
+            (pico-acpi-lpi2q-20261121): sealed opensbi partition
+            sha256 a8e5b7a3b189b246..., fw_dynamic embedded in it
+            sha256 32947c880b6b5a1a... (quiet-deny string verified
+            present in the sealed payload by FIT walk).
+
+The diff below is the verbatim b4152e0..51a9d0f9 delta,
+git-apply-able onto the baseline import, so the pinned change is
+reviewable without the local vendored tree.
 
 Future OpenSBI changes diff against the pinned commit and ship as
 numbered patches in this directory; the component revision advances
 with each qualified cycle.
 
-QUIET-DIAGNOSTIC FIX (the LPI-2 lesson, pin 51a9d0f9):
-
-The rpmi-hsm deny print fired from the idle path at cpuidle
-retry frequency; five harts printing every denial saturated the
-115200-baud console and took the network down (the first LPI-2
-flash, 2026-11-21). Rate-limited to ONCE PER HART: the error
-code returned to the caller is the durable signal; the console
-line is a boot-time aid. This is the transition-path serial
-rule applied to the print that predated it.
-
---- a/lib/utils/hsm/fdt_hsm_rpmi.c  (addition)
-@@ rpmi_hsm_suspend
+diff --git a/lib/utils/hsm/fdt_hsm_rpmi.c b/lib/utils/hsm/fdt_hsm_rpmi.c
+index cdbdef1..7ac90bf 100644
+--- a/lib/utils/hsm/fdt_hsm_rpmi.c
++++ b/lib/utils/hsm/fdt_hsm_rpmi.c
+@@ -128,9 +128,27 @@ static int rpmi_hsm_suspend(u32 type, ulong resume_addr)
+ 	 * failed suspends were reported to the SBI caller as success.
+ 	 */
  	rc = __rpmi_hsm_suspend(type);
-+	/* once per hart; further denials are silent */
-+	{ static unsigned long reported;
-+	  if (!(reported & (1UL << (current_hartid() % 64))) {
-+	      reported |= ...;
-+	      sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d (once; ...)",
-+			 current_hartid(), type, rc); } }
+-	if (rc)
+-		sbi_printf("rpmi-hsm: hart %u suspend type %#x failed: %d\n",
+-			   current_hartid(), type, rc);
++	/*
++	 * TRANSITION-PATH SERIAL RULE (the LPI-2 lesson): this print
++	 * fires from the idle path — a cpuidle state backed by a
++	 * denied suspend retries at IDLE FREQUENCY. An unbounded print
++	 * here floods the console and starves the system (the first
++	 * LPI-2 flash lost the network to exactly this). Print ONCE
++	 * per hart per type: the error code returned to the caller is
++	 * the durable signal; the console line is a boot-time aid.
++	 */
++	{
++		static unsigned long reported;
++		unsigned long bit = 1UL << (current_hartid() % 64);
++
++		if (!(reported & bit)) {
++			reported |= bit;
++			sbi_printf("rpmi-hsm: hart %u suspend type %#x "
++				   "failed: %d (once; further denials are "
++				   "silent)\n",
++				   current_hartid(), type, rc);
++		}
++	}
+ 
+ 	/*
+ 	 * HARDWARE-VALIDATED FIX (v15 phase-A): sbi_hsm_hart_suspend()
