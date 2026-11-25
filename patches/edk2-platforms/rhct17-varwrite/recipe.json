@@ -1,0 +1,13 @@
+{
+  "sdk": {
+    "package": "edk2-spacemit_0.0.9.tar.xz",
+    "url": "https://ppa.launchpadcontent.net/spacemit/k3-preview/ubuntu/pool/main/e/edk2-spacemit/edk2-spacemit_0.0.9.tar.xz",
+    "sha256": "9b14187818a2938578298ca24fd9e0038adbaada839988d1daf2b50f49c1f01a",
+    "subdirectory": "edk2-spacemit/edk2"
+  },
+  "platforms": {
+    "repository": "https://github.com/brianredbeard/edk2-platforms.git",
+    "revision": "8275b460aba1a29520c783e767f569382aaaf41e",
+    "patches": []
+  }
+}
