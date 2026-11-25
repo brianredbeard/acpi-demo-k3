@@ -1,7 +1,5 @@
 # acpi-demo-k3
 
-Canonical project URL: https://github.com/riseproject-dev/acpi-demo-k3
-
 A distribution-neutral integration project for K3 ACPI firmware. It keeps
 upstream projects independently replaceable, pins inputs, and carries local
 changes as reviewable patch series. This directory is the future repository
