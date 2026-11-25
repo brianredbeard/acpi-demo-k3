@@ -989,3 +989,25 @@ memory-map change deferred as out of scope.
 
 The I2C8 DSDT device + the runtime-flash in-tree promotion
 ride the same rhct17b build unchanged.
+
+## rhct17b qualified (2026-11-25)
+
+**The panic fixed**: the 45s kworker/SetVariable touchpoint
+passed clean (the old crash point — only the FAT dirty flag
+from the panic's hard-off remained). The variable write
+returns EPERM deterministically (the deliberate refusal), the
+reads serve 23 Boot variables from the cache. No crash, no
+wedge, the full boot to login.
+
+**The regression checklist green**: EC registered (2.21s),
+both ECAM segments, NVMe + UFS, both radios enumerated, wifi
+unblocked from boot (the GPIO35 hold) + scanning, fan
+governor autonomous (pwm 77 at 64C), 15 PRP0001 devices
+(the RQTS family intact).
+
+**The I2C8 DSDT device: ENUMERATED** (PRP0001:0d — the new
+bus appeared) but the i2c-k1 probe fails -ENOENT at the func
+clock on THIS kernel — the optional-clocks fix (900012) rides
+the integration build still compiling on the sleeper. The
+firmware side is verified; the driver side completes with the
+new kernel.
