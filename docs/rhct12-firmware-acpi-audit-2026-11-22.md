@@ -963,3 +963,29 @@ the idle band.
   constant is ~2min); only 70s+ settles are equilibrium
 - the thermal core owns cdev0/cur_state under a governor —
   sysfs state writes are ignored
+
+## The rhct17 panic + the rhct17b correction (2026-11-25)
+
+**The incident**: the rhct17 flash panicked at 45s — a kworker
+calling SetVariable entered the firmware runtime code, which
+page-faulted reading QSPI MMIO 0xd420c15c (cause 0xd, epc in
+the runtime region, the OS's EFI runtime page tables mapping
+only runtime code/data). Root cause: my no-conversion fix let
+the register access REACH the unmapped address; the
+rhct14-16 code had failed EARLIER (the conversion failed →
+RegisterBase nulled → clean EPERM) — the old accident was the
+safety.
+
+**The rhct17b design**: deliberately zero RegisterBase in the
+VA notify event (documented as design, not accident). Every
+flash write/erase then fails through the existing NULL guards
+as EFI_DEVICE_ERROR → the OS's EPERM. Runtime variable
+semantics on this platform, now explicit: reads served from
+the driver's RAM cache (work), writes refused cleanly.
+Writability before ExitBootServices (grubenv, BootOrder,
+installers) is unaffected. TRUE runtime writes would need the
+QSPI MMIO added to the EFI runtime memory map — a larger
+memory-map change deferred as out of scope.
+
+The I2C8 DSDT device + the runtime-flash in-tree promotion
+ride the same rhct17b build unchanged.

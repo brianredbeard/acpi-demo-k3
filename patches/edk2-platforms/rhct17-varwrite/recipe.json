@@ -7,7 +7,7 @@
   },
   "platforms": {
     "repository": "https://github.com/brianredbeard/edk2-platforms.git",
-    "revision": "8275b460aba1a29520c783e767f569382aaaf41e",
+    "revision": "64ba91f04452f17e8e4defd011a580e1311102aa",
     "patches": []
   }
 }
