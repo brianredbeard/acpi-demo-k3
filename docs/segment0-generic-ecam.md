@@ -59,7 +59,7 @@ Record the read exit status and compare counts for the endpoint's allocated MSI/
 
 ## Kernel cycle 3d — segments 2 and 4
 
-The EL10 spec applies `k3-ecam-segs24.patch` as Patch900007 after the GPIO patch. Its SHA-256 is `5eeeffdb3da337d10de2091ddfeb48ab6b859d8afc0582a2bbbf82d4a7f73f0a`. The host test checks the packaged driver against the standalone C source. [Active patch](../patches/kernel-rpm/series/el10-284/k3-ecam-segs24.patch) · [284 input configuration](../patches/kernel-rpm/series/el10-284/config-acpidebug)
+The EL10 spec applies `k3-ecam-segs24.patch` as Patch900007 after the GPIO patch. Its SHA-256 is `5eeeffdb3da337d10de2091ddfeb48ab6b859d8afc0582a2bbbf82d4a7f73f0a`. The host test checks the packaged driver against the standalone C source. [Active patch](../patches/kernel/el10-284/k3-ecam-segs24.patch) · [284 input configuration](../patches/kernel/el10-284/config-acpidebug)
 
 | Gate | Finding in this patch and 284 source |
 | --- | --- |

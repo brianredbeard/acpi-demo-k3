@@ -9,14 +9,14 @@ Pick one spec. Each SRPM contains that driver's sources, private headers and EL1
 | `kmod-rfkill-gpio` | PRP0001 radio control | Same acpidebug kernel |
 | `kmod-gpio-spacemit-k1` | GPIO ACPI v3, including its earlier fixes | `6.12.0-284.rv.0.el10.riscv64` |
 
-The effective acpidebug devel configuration has GPIO built in and rfkill GPIO modular. Stock 284 has modular GPIO. Each spec checks its own symbol for `=m`. The eSPI controller has a boolean Kconfig option, and the MCFG quirk changes PCI enumeration inside ACPI core. Use an object compile for iteration on those two and a kernel image for runtime tests. Historical GPIO/UFS patch revisions and the BSP carrier feed the corresponding driver job.
+Each spec checks its driver's symbol for `=m` in the target kernel-devel configuration. The full build 6 config builds both GPIO and rfkill GPIO into the kernel. The GPIO module job targets stock 284, which has modular GPIO. The eSPI controller has a boolean Kconfig option, and the MCFG quirk changes PCI enumeration inside ACPI core. Use an object compile for iteration on those two and a kernel image for runtime tests. The staging helper uses the selected EL10 patches and the drivers from the stock SRPM.
 
 ## Stage sources once
 
 From the repository root, use the stock RISC-V `kernel-6.12.0-284.rv.0.el10.src.rpm`. This example uses a separate RPM topdir to keep the kernel-build workspace intact.
 
 ```bash
-jobs=$PWD/patches/kernel-rpm/kmods
+jobs=$PWD/patches/kernel/kmods
 top=$HOME/rpmbuild-k3-modules
 stock=$(mktemp -d)
 rpm2cpio /path/to/kernel-6.12.0-284.rv.0.el10.src.rpm |
@@ -24,7 +24,7 @@ rpm2cpio /path/to/kernel-6.12.0-284.rv.0.el10.src.rpm |
 "$jobs/prepare-sources" "$stock" "$top/SOURCES"
 ```
 
-The helper checks the stock tarball and BSP patch hashes, extracts just the required files, and stages the maintained patches. After editing a driver patch in `series/el10-284/`, copy the updated patch into `$top/SOURCES/` before rebuilding its job. Bump the spec's Release counter when distributing a new build for the same ABI.
+The helper checks the stock tarball and BSP patch hashes, extracts just the required files, and stages the maintained patches. After editing a driver patch in [el10-284](../el10-284/), copy the updated patch into `$top/SOURCES/` before rebuilding its job. Bump the spec's Release counter when distributing a new build for the same ABI.
 
 ## Native rpmbuild
 

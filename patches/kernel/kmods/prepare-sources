@@ -6,7 +6,7 @@ if [[ $# != 2 ]]; then
     exit 2
 fi
 stock=$(realpath "$1")
-series=$(cd "$(dirname "$0")/../series/el10-284" && pwd)
+series=$(cd "$(dirname "$0")/../el10-284" && pwd)
 mkdir -p "$2"
 dest=$(realpath "$2")
 tmp=$(mktemp -d)

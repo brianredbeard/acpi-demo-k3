@@ -302,7 +302,7 @@ The EC GpioInt arc (P2 item 3 diagnostic -> the fix):
 - Root cause: built-in EC consumer vs modular GPIO provider
   — the defer window cannot bridge initramfs->udev
 - Fix: CONFIG_GPIO_SPACEMIT_K1=y + the immutable-irqchip +
-  quiesce patch (patches/kernel-gpio/, downstream-acpi
+  quiesce patch (docs/history/kernel/gpio/, downstream-acpi
   series, upstream-audited: nothing functionally missing,
   two treewide commits deliberately not backported)
 - Boot side-effects fixed along the way: the initrd network

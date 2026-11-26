@@ -2,7 +2,7 @@
 """Host-side contract tests for the K3 ACPI ECAM driver (segments 2/4).
 
 The C half compiles the *actual* map/init functions out of
-patches/kernel-rpm/series/el10-284/ecam/pcie-k3-acpi-ecam.c (not a
+patches/kernel/el10-284/ecam/pcie-k3-acpi-ecam.c (not a
 hand-copied "shape-verbatim" twin) against EL10-shaped mocks:
 
   - pci_lock is held by the PCI core across map_bus + access, so
@@ -28,9 +28,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ECAM_SRC = ROOT / "patches/kernel-rpm/series/el10-284/ecam/pcie-k3-acpi-ecam.c"
-ACTIVE_PATCH = ROOT / "patches/kernel-rpm/series/el10-284/k3-ecam-segs24.patch"
-CONFIG = ROOT / "patches/kernel-rpm/series/el10-284/config-acpidebug"
+ECAM_SRC = ROOT / "patches/kernel/el10-284/ecam/pcie-k3-acpi-ecam.c"
+ACTIVE_PATCH = ROOT / "patches/kernel/el10-284/k3-ecam-segs24.patch"
+CONFIG = ROOT / "patches/kernel/el10-284/config-acpidebug"
 FW = ROOT.parent / "edk2-platforms/Platform/Spacemit/K3"
 FW_HEADER = FW / "Include/K3PlatformAcpi.h"
 FW_MCFG = FW / "AcpiTables/Mcfg.aslc"

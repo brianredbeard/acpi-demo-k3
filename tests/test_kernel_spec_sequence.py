@@ -12,20 +12,23 @@ import re
 import unittest
 from pathlib import Path
 
-SPEC = Path(__file__).resolve().parents[1] / "patches/kernel-rpm/series/el10-284/kernel.spec"
+SPEC = Path(__file__).resolve().parents[1] / "patches/kernel/el10-284/kernel.spec"
 
 # The complete K3 patch set, in declaration order.
 EXPECTED_PATCHES = [
     ("Patch900002", "k3-ufs-acpi-build5.patch"),
     ("Patch900003", "k3-gpio-acpi-v3.patch"),
+    ("Patch900007", "k3-ecam-segs24.patch"),
     ("Patch900004", "k3-espi-acpi-fix.patch"),
     ("Patch900005", "k3-rfkill-gpio-prp0001.patch"),
     ("Patch900006", "k3-8250-xscale-quirk.patch"),
-    ("Patch900007", "k3-ecam-segs24.patch"),
     ("Patch900008", "k3-cros-ec-riscv.patch"),
     ("Patch900009", "k3-cros-ec-sizes.patch"),
     ("Patch900010", "k3-tsensor-acpi-zones.patch"),
     ("Patch900011", "k3-pwmfan-acpi-cooling.patch"),
+    ("Patch900012", "k3-i2c-k1-optional-clocks.patch"),
+    ("Patch900013", "k3-cros-ec-pwm-defer.patch"),
+    ("Patch900014", "k3-dwmac-acpi-probe.patch"),
 ]
 
 
@@ -35,14 +38,12 @@ class KernelSpecSequenceTests(unittest.TestCase):
         cls.spec = SPEC.read_text()
 
     def test_all_patches_declared(self):
-        for tag, name in EXPECTED_PATCHES:
-            self.assertIn(f"{tag}: {name}", self.spec,
-                          f"{tag} ({name}) missing from the spec declarations")
+        declared = re.findall(r"^(Patch900\d{3}):\s+(\S+)$", self.spec, re.MULTILINE)
+        self.assertEqual(declared, EXPECTED_PATCHES)
 
     def test_all_patches_applied(self):
-        for _, name in EXPECTED_PATCHES:
-            self.assertIn(f"ApplyPatch {name}", self.spec,
-                          f"ApplyPatch {name} missing from the spec")
+        applied = re.findall(r"^ApplyPatch (k3-\S+)$", self.spec, re.MULTILINE)
+        self.assertEqual(applied, [name for _, name in EXPECTED_PATCHES])
 
     def test_no_stale_patch_names(self):
         """Old/replaced patch names must not linger."""

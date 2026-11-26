@@ -20,7 +20,7 @@ The firmware DSDT/MCFG describe only segment 0 (PCI0). Segments 2 (10G NIC) and 
 - GPIO: `\_SB.GPIO` (PRP0001 `spacemit,k3-gpio`, 0xD4019000) already in DSDT. DT rfkill nodes: `rfkill-pcie-wlan` = shutdown-gpios bank1 line3 = **flat pin 35**; `rfkill-usb-bt` = bank0 line30 = **flat pin 30**; both flags 0 (active-high), regulator `regulator-aux-vcc3v3` always-on.
 
 **Kernel (6.12.0-284 pristine sources, extracted read-only from the frozen acpidebug SRPM in ~/bundles to /tmp/k3srpm; both mock BUILD trees were scrubbed mid-investigation by the live builds — untouched per constraints):**
-- **MCFG quirk**: `drivers/acpi/pci_mcfg.c` in 284 has **NO RISC-V/Spacemit quirk** — but the live dbg1 kernel logs `MCFG quirk: ... with k3_dw_ecam_ops`, i.e. the running kernel carries a **local, untracked patch** (the v4 experiment ghost filter, `{"SPMT  ","K3      ",1,0,...}`; design documented in `edk2-platforms/docs/k3-maintained-efi/acpi-status-2026-11-18.md` §4). **The frozen acpidebug SRPM does NOT carry it** — so the next kernel cycle MUST add `k3_dw_ecam_ops` (segment-0 ghost filter; bus-0 root-port-only filtering) plus entries for segments 2/4, tracked under `patches/kernel-rpm/`. This closes audit item PCI-01.
+- **MCFG quirk**: `drivers/acpi/pci_mcfg.c` in 284 has **NO RISC-V/Spacemit quirk** — but the live dbg1 kernel logs `MCFG quirk: ... with k3_dw_ecam_ops`, i.e. the running kernel carries a **local, untracked patch** (the v4 experiment ghost filter, `{"SPMT  ","K3      ",1,0,...}`; design documented in `edk2-platforms/docs/k3-maintained-efi/acpi-status-2026-11-18.md` §4). **The frozen acpidebug SRPM does NOT carry it** — so the next kernel cycle MUST add `k3_dw_ecam_ops` (segment-0 ghost filter; bus-0 root-port-only filtering) plus entries for segments 2/4, tracked under `docs/history/kernel/rpm/`. This closes audit item PCI-01.
 - **rfkill-gpio** (`net/rfkill/rfkill-gpio.c`): `CONFIG_RFKILL_GPIO` is **not set** in the acpidebug config. Driver binds platform devices via `of_match_table` ("rfkill-gpio" compatible) — and `acpi_driver_match_device`/`__acpi_match_device` resolves **PRP0001 + `compatible` in _DSD against `of_match_table`** (verified in `drivers/acpi/bus.c:964`). GPIO lookup via `devm_gpiod_get_optional("shutdown")` → `acpi_gpio_property_lookup` resolves **`_DSD "shutdown-gpios" Package(){^DEV, 0, 0, 0}`** against a `GpioIo` in `_CRS` referencing `\_SB.GPIO` with pin 35/30 (verified `gpiolib-acpi.c` + `gpio-properties.rst`). Note: under ACPI (no of_node), the driver reads `name`/`type` properties, NOT `label`/`radio-type` — the _DSD must use `"name"` and `"type"` ("wlan"/"bluetooth"). `rfkill_gpio_set_power` drives shutdown-gpio `!blocked`. **The kernel-bindable rfkill route works with zero new binding glue — only `CONFIG_RFKILL_GPIO=y` + the MCFG quirk patches are needed.**
 - **10G NIC driver**: **r8169 owns 10ec:8127 in-tree** — `r8169_main.c` line 250 `PCI_VDEVICE(REALTEK, 0x8127)`, mac ver RTL8127A (`rtl_chip_info` 0x7cf/0x6c9, `FIRMWARE_8127A_1 "rtl_nic/rtl8127a-1.fw"`). `CONFIG_R8169=m` already set. Firmware file **present on board rootfs**: `/lib/firmware/rtl_nic/rtl8127a-1.fw.xz`. **No kernel patch needed for the NIC.**
 - **DT-boot evidence (board `/root/k3-dtb-investigation/test3-firmware-dmesg.txt`)**: domain 2 trains — `spacemit-k1-pcie 80800000.pcie: PCIe Gen.3 x2 link up`, root port 0002:00:00.0 [201f:0002], **RTL8127A at 0002:01:00.0 [10ec:8127]**, `r8169 ... eth0: RTL8127A, IRQ 37` (MSI via msi-parent IMSIC), `enP2p1s0` renamed — **driver, firmware, link all proven working under DT**. Domain 4: Gen.1 x1 link up, 0004:01:00.0 [10ec:b852], rtw89_8852be loaded `rtw89/rtw8852b_fw-2.bin` (file present on rootfs as .xz), then "rfkill hardware state changed to disable" (the unclaimed GPIO line).
@@ -32,7 +32,7 @@ The firmware DSDT/MCFG describe only segment 0 (PCI0). Segments 2 (10G NIC) and 
 3. **MUSE-Pico.dsc** DEFAULT SKU: `PcdPcieHostEnableMask|0x15`.
 4. **Tests**: new `tests/test_acpi_pcie_segments.py` parsing the built `Mcfg.acpi`/`Dsdt.aml` artifacts (MCFG entry count/segments/bases; AML contains PCI2/PCI4/_SEG; iasl is available at /usr/bin/iasl for decompile-based assertions).
 5. **Build + bundle**: `python3 build_edk2.py --destination <fresh>` on the rhct10 content base (edk2-platforms fa761952 + this change, exported as patch 0013 in `patches/edk2-platforms/` + sources.lock.json hash + series update), stage `~/bundles/pico-acpi-rhct11-wifi` copying rhct10's payloads (only edk2.bin differs) + new provenance + manifest, gate with `./k3-firmware inspect --bundle ~/bundles/pico-acpi-rhct11-wifi`. **Do NOT flash.**
-6. **Kernel next-cycle patches** under `patches/kernel-rpm/` (payload + adapters + series per the el10-284 recipe): (a) `k3_dw_ecam_ops` MCFG quirk for segs 0/2/4 in `drivers/acpi/pci_mcfg.c` (closes PCI-01 — the frozen SRPM lacks it entirely), (b) `CONFIG_RFKILL_GPIO=y` in config-acpidebug. **No r8169 patch needed** (ID in-tree). No pcie-spacemit-k1 ACPI glue needed (firmware trains; kernel consumes via MCFG).
+6. **Kernel next-cycle patches** under `docs/history/kernel/rpm/` (payload + adapters + series per the el10-284 recipe): (a) `k3_dw_ecam_ops` MCFG quirk for segs 0/2/4 in `drivers/acpi/pci_mcfg.c` (closes PCI-01 — the frozen SRPM lacks it entirely), (b) `CONFIG_RFKILL_GPIO=y` in config-acpidebug. **No r8169 patch needed** (ID in-tree). No pcie-spacemit-k1 ACPI glue needed (firmware trains; kernel consumes via MCFG).
 7. **Design doc**: `docs/wifi-pcie-acpi-2026-11-22.md` with the evidence above; rfkill tradeoff = kernel rfkill-gpio preferred (OS-visible state, PRP0001+compatible binds via existing of_match machinery, only a config flip needed) vs firmware-driven always-on (rejected: hides rfkill state, needs ESOS/EDK2 GPIO code, no soft-block).
 
 ### Blockers encountered
@@ -76,7 +76,7 @@ validate` clean).
    marked NOT FLASHED, machine-readable `content-deltas.json` listing
    rhct10's inherited fixes + this cycle's). `k3-firmware inspect`
    PASSES. NOT FLASHED.
-6. **Kernel next-cycle** (patches/kernel-rpm/): `payload/
+6. **Kernel next-cycle** (docs/history/kernel/rpm/): `payload/
    k3-ecam-mcfg-quirk.txt` (semantic design) + `series/el10-284/
    k3-ecam-mcfg-quirk.patch` (generated diff against pristine
    /tmp/k3srpm 6.12.0-284, `patch -p1 --dry-run` clean) —
@@ -84,7 +84,7 @@ validate` clean).
    rejected, mirroring the DT pci_dw_valid_device shape) +
    `k3_dw_ecam_ops` + `{"SPMT  ","K3      ",1,seg,...}` entries for
    segs 0/2/4 gated on CONFIG_RISCV && CONFIG_PCI_SPACEMIT_K1.
-   `CONFIG_RFKILL_GPIO=y` in series/el10-284/config-acpidebug. No
+   `CONFIG_RFKILL_GPIO=y` in patches/kernel/el10-284/config-acpidebug. No
    r8169 or pcie-spacemit-k1 ACPI glue patches (per design). These
    are NOT yet in a built SRPM — they ride the next kernel cycle.
 

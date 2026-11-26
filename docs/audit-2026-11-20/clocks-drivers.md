@@ -61,13 +61,13 @@ Consequence: firmware must continue to hold their clocks, resets, PHY configurat
 
 `EDK:.../Dsdt.asl:117-165` goes from ETH0 directly to USB2; there is no UFS0. `MAINT:Platform/Spacemit/K3/AcpiTables/Dsdt/Dsdt.asl:165-202` adds UFS0 in committed clean HEAD `a2a647a5`, including compatible `spacemit,k3-ufshc`, lanes-per-direction=2 and the APMU register property. This confirms maintained implementation; it does not update the locked twelve-patch export. Both views are intentionally distinguished.
 
-`patches/kernel/0001-ufs-spacemit-ACPI-platform-data-path.patch:45-53` only adds `axi -> ufs_aclk`, intentionally omitting `ufs_refclk`. At lines 76-87, **any** failed lookup is logged then ignored; there is no deferred-probe return. At lines 91-96 the alias is global. Probe ordering can therefore leave the device on the documented 409.6 MHz fallback even if the provider appears later; the source comment identifies real qualified rate as 491.52 MHz. The patch's "20% off" wording is relative to the lower baseline; 409.6 is 16.67% below 491.52. Successful UFS I/O alone does not validate timing clock ownership.
+`docs/history/kernel/ufs/0001-ufs-spacemit-ACPI-platform-data-path.patch:45-53` only adds `axi -> ufs_aclk`, intentionally omitting `ufs_refclk`. At lines 76-87, **any** failed lookup is logged then ignored; there is no deferred-probe return. At lines 91-96 the alias is global. Probe ordering can therefore leave the device on the documented 409.6 MHz fallback even if the provider appears later; the source comment identifies real qualified rate as 491.52 MHz. The patch's "20% off" wording is relative to the lower baseline; 409.6 is 16.67% below 491.52. Successful UFS I/O alone does not validate timing clock ownership.
 
 The alias has no matching unregister path in this patch. The per-entry `devm_kstrdup` result is also not checked before adding the entry (lines 103-107). Those are secondary lifetime/allocation concerns; they are not reported as observed crashes.
 
 ### CLK-03 — confirmed: reset and clock register ownership overlaps without a cross-agent transaction
 
-The UFS patch maps an absolute APMU register and updates reset bit 0 through Linux regmap (`patches/kernel/...:130-148`). ESOS gate/mux/divider updates operate on the same APMU + 0x268 register (`ESOS:.../ccu-spacemit-k3.c:876-880`). Firmware ClockDxe's UFS group also controls bits 0/1 (`EDK:Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c:118-121`). Linux regmap locking and ESOS local clock locking do not, by themselves, serialize read-modify-write between processors. Concurrent operations could lose a bit update; actual collision is **unverified**. This is presently latent for the pinned DSDT, which lacks UFS, and relevant to the maintained UFS configuration.
+The UFS patch maps an absolute APMU register and updates reset bit 0 through Linux regmap (`docs/history/kernel/ufs/0001-ufs-spacemit-ACPI-platform-data-path.patch:130-148`). ESOS gate/mux/divider updates operate on the same APMU + 0x268 register (`ESOS:.../ccu-spacemit-k3.c:876-880`). Firmware ClockDxe's UFS group also controls bits 0/1 (`EDK:Silicon/Spacemit/K3/Drivers/ClockDxe/ClockDxe.c:118-121`). Linux regmap locking and ESOS local clock locking do not, by themselves, serialize read-modify-write between processors. Concurrent operations could lose a bit update; actual collision is **unverified**. This is presently latent for the pinned DSDT, which lacks UFS, and relevant to the maintained UFS configuration.
 
 Ethernet similarly exposes raw APMU control/delay addresses (`EDK:.../Dsdt.asl:151-152`; `CARRY:dwmac-spacemit-acpi.c:286`), while ESOS exports EMAC0 gates from the same control register. A single documented owner or serialized management command is needed before runtime gating/rate changes are declared safe.
 
@@ -132,7 +132,7 @@ These source copies were inspected directly; a SHA-256 identifies the exact loca
 | MPXY | SBI MPXY mailbox via RSCV0005 and firmware transport | Exact target mailbox source not recovered here |
 | RCLK | CARRY:experiments/rpmi-clocks/clk-rpmi-clkdev.c | Actual enumeration/alias/failure/lifetime code inspected |
 | TSEN | CARRY:experiments/task4-espi-ec/k3_tsensor-policy.c | Actual optional clocks/reset and ACPI policy branch inspected |
-| UFS0 (maintained) | patches/kernel/0001-ufs-spacemit-ACPI-platform-data-path.patch | Actual added code inspected; complete target base driver not recovered |
+| UFS0 (maintained) | docs/history/kernel/ufs/0001-ufs-spacemit-ACPI-platform-data-path.patch | Actual added code inspected; complete target base driver not recovered |
 | CPU / IC00 / PCI RES0 / DBI0 | Processor/interrupt-controller/reservation/host namespace | Not additional peripheral clocks; namespace does not imply a clock consumer |
 
 | Local CARRY source | SHA-256 |

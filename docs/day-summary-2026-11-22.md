@@ -16,7 +16,7 @@
     ufs_spacemit_init; APMU define before first use). 171
     lines. Roundtrip-verified.
 - Board MOCK cycle: 20 attempts -> 4 distinct failure classes,
-  all closed (ledger in patches/kernel-rpm/adapters/el10-284.md).
+  all closed (ledger in docs/history/kernel/rpm/adapters/el10-284.md).
 - Board chroot: ccache 4.11.3 enabled via EPEL riscv mirror
   (http://192.168.137.45/repos/epel-riscv64/), persistent
   /var/tmp/k3-ccache. Future kernel cycles warm-cache.

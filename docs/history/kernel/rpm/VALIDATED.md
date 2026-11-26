@@ -71,7 +71,7 @@ UPF_FIXED_TYPE. Registration sets UPF_BOOT_AUTOCONF, and without
 the fixed-type flag uart_configure_port requests type detection.
 The known-good gpioy Image carries the flag. The mock build-5 RPM
 applied only GPIO and UFS patches and panicked in eSPI on its recorded
-ACPI boot. See the [November 19 qualification](../../docs/rpmi-clock-qualification-2026-11-20.md)
-and the [archived probe source](../../../patches/acpi-kernel/experiments/kernel-cleanup/8250_platform-xscale-quirk.c).
+ACPI boot. See the [November 19 qualification](../../../rpmi-clock-qualification-2026-11-20.md)
+and the [archived probe source](../../../../../patches/acpi-kernel/experiments/kernel-cleanup/8250_platform-xscale-quirk.c).
 
 3f: PORT_XSCALE + UPF_FIXED_TYPE (one flag; IRQ 11 unchanged).
