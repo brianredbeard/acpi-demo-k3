@@ -40,7 +40,7 @@ must be fresh.
 
 ```sh
 python3 build_edk2.py --destination build/f2-platform-config-release \
-  --recipe patches/edk2-platforms/f2-platform-config/recipe.json \
+  --recipe recipes/edk2/f2-platform-config/recipe.json \
   --expect-platform-revision 8b17165463eff040bb8f486be0b08416daff9f2b
 python3 verify_platform_config.py build/f2-platform-config-release/MUSE-Pico.itb
 ```

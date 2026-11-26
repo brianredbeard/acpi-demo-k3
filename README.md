@@ -2,9 +2,8 @@
 
 A distribution-neutral integration project for K3 ACPI firmware. It keeps
 upstream projects independently replaceable, pins inputs, and carries local
-changes as reviewable patch series. This directory is the future repository
-root; a local Git repository is initialized with that origin. The GitHub repository
-has not been created or published by this bootstrap.
+changes as reviewable patch series. To find the build inputs for ESOS,
+Pico-ITX firmware, or the EL10 kernel, start with the [patch guide](patches/README.md).
 
 ## Current commands
 
@@ -37,8 +36,8 @@ installed into the source trees until a build adapter defines that operation.
 | Component | Integration status / intended responsibility |
 | --- | --- |
 | ESOS + ESOS-lite | Pinned source preparation and native SCons adapter; fresh local cross-build passed. The ESOS patch series carries the reset-handoff fix and the RPMI CLOCK service + CCU application-core clocks: **hardware-qualified on pico-acpi-v11 (2026-11-20)** — all 13 RPMI clocks enumerable from Linux with real rates (ufs_aclk = 491.52 MHz), plus host regression for the service callbacks |
-| OpenSBI | Pending extraction of qualified source pin, local patches and build configuration |
-| edk2-platforms | Pinned source with the maintained ACPI patch series exported under `patches/edk2-platforms/` (12 patches: tables incl. SPCR, complete DSDT v12 with all qualified peripherals + MPXY/RCLK, clock bring-up, GMAC/PCIe/reset fixes, ACPI 6.6 conformance, `_LPI`); applied by `meta.py prepare` via `git apply` |
+| OpenSBI | The source lock pins a workstation-local snapshot. The file under `patches/opensbi/` records its provenance. |
+| edk2-platforms | `meta.py prepare` applies the 13 numbered ACPI patches under `patches/edk2-platforms/`. For specific EDK2 builds, use the [Pico-ITX build recipes](recipes/edk2/README.md). |
 | Linux | Separate optional driver-validation build; experimental patches are not firmware release inputs |
 | FSBL / DDR initialization | External input until source, license and exact binary provenance are established |
 | FIT / flash packaging | Pico-ITX EDK2-only candidate, guarded single-region installer transaction and hardware evidence workflow |

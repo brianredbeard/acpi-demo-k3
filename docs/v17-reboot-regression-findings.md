@@ -32,7 +32,7 @@ Roll the ESOS region back to the byte-identical v12 image
 (sha256 37533b27df727921...) for the v18 (_LPI restoration) cycle.
 The _LPI change is EDK2-only; pairing it with a qualified ESOS
 restores one-variable discipline. The P1 model stays tracked
-(patches/esos/p1/) with its host test suite; re-flashing it is
+([archived source snapshot](history/esos-p1/)) with its host test suite; re-flashing it is
 deferred until the v12 ESOS build tree is reconstructed (find or
 recreate commit deab75ceda21) so the delta is genuinely just P1.
 

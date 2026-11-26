@@ -5,13 +5,14 @@ byte-identically (FD 55a8a5ca, FIT 31c003f3 — verified
 2026-11-25) from a fresh checkout:
 
 ```sh
-git clone <this repo> && cd acpi-demo-k3
+# Run from the repository root.
 python3 build_edk2.py \
   --destination build/rhct17 \
-  --recipe patches/edk2-platforms/rhct17-varwrite/recipe.json \
-  --sdk-archive build/edk2-spacemit_0.0.9.tar.xz \
-  --platform-repository /home/bharring/Projects/software/edk2-platforms
+  --recipe recipes/edk2/rhct17-varwrite/recipe.json
 ```
+
+For an offline build, add `--sdk-archive <local-archive>` and
+`--platform-repository <local-clone>` containing the inputs below.
 
 Inputs:
 - platform revision 64ba91f04452f17e8e4defd011a580e1311102aa
@@ -24,8 +25,6 @@ Inputs:
   as the new `k3-acpi` (intermediate state: the
   `k3-acpi-validation` branch). The recipe pins the exact
   hash — the branch names are context, not resolution.
-  The local mirror /home/bharring/Projects/software/edk2-platforms
-  also carries the revision (the worktree's origin).
 - SDK archive edk2-spacemit_0.0.9.tar.xz, sha256
   9b14187818a2938578298ca24fd9e0038adbaada839988d1daf2b50f49c1f01a
   (downloadable from the recipe's URL; the local copy lives in

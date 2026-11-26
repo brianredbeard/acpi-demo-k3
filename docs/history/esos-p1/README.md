@@ -1,5 +1,11 @@
-From: Brian 'redbeard' Harrington <redbeard@dead-city.org>
-Subject: [PATCH] k3: shared-domain ownership model and retained wake (P1)
+# ESOS shared-domain ownership and retained wake (P1)
+
+This directory preserves Brian 'redbeard' Harrington's original design notes
+and a snapshot of the model's C source and header. The ESOS build takes
+the implementation from the numbered patches, starting with
+[0007](../../../patches/esos/0007-k3-domain-ownership-p1.patch).
+
+## Original implementation notes
 
 ESOS-side P1 implementation per the suspend-ownership plan (OpenSBI
 owns the hart's architectural suspend/resume; ESOS owns shared-

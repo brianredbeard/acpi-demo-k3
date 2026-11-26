@@ -59,7 +59,7 @@ remains a regression check. [FVB bisect](fvb-va-bisect-2026-11-22.md) · [Runtim
 
 ### EDK2 runtime flash candidate
 
-The candidate applies one [pinned platform patch](../patches/edk2-platforms/runtime-flash/recipe.json)
+The candidate applies one [pinned platform patch](../recipes/edk2/runtime-flash/recipe.json)
 to rhct13. FVB records the mapped FV address for the SDK variable writer and
 keeps the physical addresses used to calculate NOR offsets. It converts
 the SPI call targets before converting the interface pointer. The NOR driver
@@ -72,7 +72,7 @@ Reproduce the candidate from this repository with a fresh destination:
 
 ```sh
 python3 build_edk2.py --destination build/runtime-flash-release \
-  --recipe patches/edk2-platforms/runtime-flash/recipe.json \
+  --recipe recipes/edk2/runtime-flash/recipe.json \
   --expect-platform-revision 8b17165463eff040bb8f486be0b08416daff9f2b \
   --sdk-archive build/edk2-spacemit_0.0.9.tar.xz \
   --platform-repository ../edk2-platforms --keep-workspace
