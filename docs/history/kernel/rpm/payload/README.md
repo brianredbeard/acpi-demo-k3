@@ -1,16 +1,10 @@
-# Kernel payload (semantic content, baseline-free)
+# Early UFS and PCIe porting notes
 
-The acpidebug kernel's custom content, separated from any
-specific kernel version's context:
+The two files here record changes considered for the first EL10-284 kernel RPMs.
 
-- ufs-acpi-adds.txt — the ACPI platform-data path for the
-  spacemit UFS driver: the APMU reset define, the
-  ufs_acpi_clocks table (axi->ufs_aclk, ref->ufs_refclk),
-  ufs_spacemit_acpi_init (lanes + RPMI clocks into hba's
-  clk_list_head), ufs_spacemit_acpi_reset (the
-  spacemit,apmu-ufs-reg regmap sequence), the probe_acpi
-  function + the of_node dispatcher.
+| File | Contents |
+| --- | --- |
+| [UFS ACPI additions](ufs-acpi-adds.txt) | C fragments for the probe branch, the `spacemit,apmu-ufs-reg` reset sequence and lane count. The code maps `axi` to `ufs_aclk` and `ref` to `ufs_refclk`, then adds resolved clocks to the UFS host's clock list. The reset guard and probe branch each belong inside their target function. |
+| [PCIe enumeration proposal](k3-ecam-mcfg-quirk.txt) | A design note proposing a root-bus device/function filter for segments 0, 2 and 4. Later EL10 work kept ECAM for segment 0 and used a 64 KiB configuration viewport on segments 2 and 4. |
 
-Each payload ships as splice-ready text (find anchors, not
-line numbers). The series/ dirs hold the GENERATED diffs
-per kernel version (build artifacts, regeneratable).
+The [EL10 adapter notes](../adapters/el10-284.md) explain how driver layout affected patch placement. The [archived diffs](../series/el10-284/README.md) show earlier attempts. The [maintained RPM inputs](../../../../../patches/kernel/el10-284/README.md) identify the versions selected for builds.

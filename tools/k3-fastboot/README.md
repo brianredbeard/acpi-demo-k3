@@ -1,32 +1,44 @@
-# k3-enter-fastboot: no-button fastboot entry
+# Enter K3 BootROM USB download mode from Linux
 
-The vendor's intended path: the ESOS RPMI sysreset handler
-(k3-os0_sysreset.c) polls a flag byte at 0xc087c000
-(LISTEN_ADDR, the DTB_TABLE shared region) on every reboot.
-FLAG_FASTBOOT (0x1) -> the handler writes the nonvolatile
-fastboot flag to the PMIC (P1) before resetting -> the next
-power-on lands in BootROM USB download mode. No FDL button.
+`k3-enter-fastboot` reboots a running K3 into BootROM USB download mode
+without holding the FDL button. It requires a working ESOS RPMI sysreset
+handler. If the RPMI transport is down, reboot can hang and the board may
+need a manual power cycle with FDL held. [Board operating rules](../../AGENTS.md)
 
-Usage from Linux: /usr/local/bin/k3-enter-fastboot
-(write via the k3fb.ko kernel module — /dev/mem is
-STRICT_DEVMEM-blocked — then reboot).
+## Build and install
 
-Contents:
-- k3fb.c + Makefile: the one-shot flag-writer module, built
-  against the dbg1 tree (adjust KDIR)
-- k3-enter-fastboot: the wrapper script installed on the
-  board at /usr/local/bin (module at /usr/local/lib/k3fb.ko)
+On the builder, run `make` from `tools/k3-fastboot/`. The Makefile uses
+`/srv/runner/build/linux-6.12.0-284.el10` by default. If the target runs a
+different kernel, point `KDIR` at its configured build tree, for example
+`make KDIR=/path/to/kernel-build`.
 
-Verified: module loads + writes the byte on rhct4 firmware
-(ESOS patches 0001-0010, reboot functional). The full
-power-cycle path (PMIC flag -> BootROM USB -> k3-firmware
-flash handshake) is exercised on the next flash cycle.
+Place these two files on the **target board**. The wrapper uses the module
+path shown below.
 
-## QUALIFIED (2026-11-21, end-to-end)
+| File | Target path |
+| --- | --- |
+| Built module `k3fb.ko` | `/usr/local/lib/k3fb.ko` |
+| Executable script `k3-enter-fastboot` | `/usr/local/bin/k3-enter-fastboot` |
 
-Full cycle proven on hardware: k3-enter-fastboot ->
-k3fb.ko writes FLAG_FASTBOOT to LISTEN_ADDR (0xc087c000) ->
-reboot -> ESOS sysreset reads the flag, writes the PMIC
-nonvolatile fastboot flag -> next power-on lands in BootROM
-USB download mode -> the flash tool's version-brom handshake
-connects. No FDL button.
+## Reboot the target
+
+When ready to reboot the board, run this command on its Linux console.
+
+```sh
+/usr/local/bin/k3-enter-fastboot
+```
+
+The wrapper uses `sudo` when needed and loads `k3fb.ko`. The module writes
+`FLAG_FASTBOOT` (`0x01`) to `LISTEN_ADDR` (`0xc087c000`) in the `DTB_TABLE`
+shared region. The board's kernel restricts `/dev/mem` access to this region.
+The wrapper waits three seconds and calls `reboot`. During reset, ESOS reads
+the byte and sets the nonvolatile fastboot flag on the P1 PMIC. BootROM then
+enters USB download mode on the next power-on.
+
+## Hardware qualification
+
+The initial rhct4 test verified the flag write with ESOS patches 0001–0010.
+On 2026-11-21 the full test reached the flash tool's `version-brom` handshake
+without the FDL button. A later test observed that a successful
+`fastboot reboot` clears the PMIC flag, so another entry requires the wrapper
+or a power-on with FDL held. [Initial test](../../docs/efi-brs-check-design-2026-11-21.md) · [Flag consumption](../../docs/fvb-va-bisect-2026-11-22.md#operational-notes)

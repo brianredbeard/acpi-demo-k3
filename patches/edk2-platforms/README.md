@@ -1,69 +1,33 @@
-# edk2-platforms K3 ACPI patch series
+# K3 Pico-ITX ACPI bring-up patches
 
-Hardware-validated ACPI bring-up series for the Spacemit K3 MUSE-Pico (13
-patches). Qualified on flash through `pico-acpi-v12-20261120` (firmware DSDT
-complete, GRUB override retired); the `_LPI` cycle (0012) is in bring-up with
-its gate ledger in docs/v13-boot-checklist.md.
+These 13 patches reconstruct the early Pico-ITX ACPI bring-up on the edk2-platforms baseline `8e686e13d9f76e9acc478fa03bf1ba74f06517a2`. For the qualified rhct17b firmware, use the separate build recipe pinned to `64ba91f0`. [rhct17b reproduction](../../recipes/edk2/rhct17-varwrite/README.md)
 
-## Source identity
+## Applying the series
 
-- edk2-platforms at `8e686e13d9f76e9acc478fa03bf1ba74f06517a2` (branch
-  `k3-maintained-efi`, the 6-patch DT-handoff series tip, upstream of the
-  spacemit `k3-release-opensource` merge).
-- `sources.lock.json` records the ordered patch hashes; `meta.py validate`
-  verifies them; `meta.py prepare` applies them to the pinned revision.
-- `series` is the authoritative order. Apply with `git apply --check` then
-  `git apply`, in order, to a clean checkout of the pinned revision.
+`meta.py prepare` reads the order and SHA-256 values from the edk2-platforms component in the [source lock](../../sources.lock.json). The [series file](series) lists the same filenames for manual application. On a clean checkout of the exact baseline, run `git apply --check` and then `git apply` for each patch before checking the next. Preserve the CRLF context in the vendor files.
 
 ## Patch ledger
 
-| Patch | Purpose | Validation |
-|---|---|---|
-| `0001` ACPI tables for Pico-ITX bring-up | Monolithic DSDT v8 (IC00/COM0/ETH0/USB2/PCI0/RES0/DBI0), MADT/RHCT (8×RINTC, IMSIC, APLIC-MSI), K3AcpiTables.inf wiring | Live boot: full RHEL via ACPI enumeration |
-| `0002` ClockDxe TSEN/ESPI entries | TSEN (APBC+0x6C) and ESPI gate+reset rows in the EDK2 clock driver | v9c/v9e on flash: thermal channels read, ESPI clock handoff |
-| `0003` AcpiClockInitDxe | Deterministic OS-visible device-block clock state at ReadyToBoot (TSEN+ESPI rows only; GMAC/PCIe/USB deliberately excluded — their UEFI drivers already enable them during BDS connect; the v9b reset loop was the ClockDxe ConfigNum corruption fixed in 0002) | v9c on flash: no reset loop, TSEN up, no GMAC/NVMe regression; v9e: ESPI handoff |
-| `0004` MUSE-Pico ACPI build config | DSC/FDF/Spacemit.dsc.inc wiring: ACPI table set, AcpiClockInitDxe, PcdInstallAcpiSdtProtocol, status-code mask 0x02, DEBUG-print level | Builds RELEASE; quiet console verified on flash |
-| `0005` DwEqosDxe EMAC clocks | Stop gating EMAC bus clock at ExitBootServices (APMU EMAC0 CLK_RES_CTRL) | Live: GMAC MMIO does not wedge kernel; full DHCP/SSH |
-| `0006` PCIe bus-0 config window | 2 MB DW iATU OB window for bus 0 at 0x11_00000000 | Live: ATU OB0 dump base 0x11:00000000; removes kernel ECAM hack |
-| `0007` ResetSystemLib resets | Reset path hardening (see patch body) | EFI runtime cold/warm/shutdown cycles (COM260 evidence) |
-| `0008` SPCR re-add + UART XScale binding | SPCR v4 (16550-with-GAS, namespace `\_SB.COM0`) back in the INF; COM0 `_DSD` declares `"spacemit,k3-uart", "intel,xscale-uart"` (gates the kernel's PORT_XSCALE fixed-type quirk); BaudRate fixed to 115200 (6.12 spcr.c treats 0 as "already configured"); UART clock 14745600 | iasl-clean DSDT matching the proven v10 COM0 AML; full RELEASE build; SPCR decoded from DXEFV (GAS mmio32 0xd4017000, GSI 42). **Hardware-qualified** on pico-acpi-v11 (2026-11-20): serial console through full RHEL boot, no autoconfig hang |
-| `0009` ACPI 6.6 conformance fixes | A1 processor devices (`Cpu.asl` re-included: 8×ACPI0007 + 2×ACPI0010 matching PPTT), A2 APLIC NumSources 511→512, A3 MADT revision 6.5→6.6 (0x07), A4 APLIC HardwareId `SPMT0001`, A5 device `_CRS` ResourceConsumer, A7 dead split-ASL removal, A8 RINTC/RHCT count static asserts. A6 (`RSCV0006` SYSMSI) deliberately excluded — firmware-side unvalidated-MSI-target hole | Full RELEASE build; decoded from DXEFV: rev 7, HwId=SPMT0001, 512 sources, 8 RINTC, 8×ACPI0007/2×ACPI0010, consumer flags verified by AML decompile. **Hardware-qualified** on pico-acpi-v11 (2026-11-20): 8 CPUs enumerated and processor objects bound (Task 9 prerequisite), no regressions in thermal/fan/EC/EEPROM/GMAC |
-| `0010` DSDT v12 promotion | Full qualified peripheral set (GPIO/I2C2+EEPROM/eSPI+EC+PWM+fan/tsensor) + MPXY (`RSCV0005`) + RCLK (`riscv,rpmi-clock`) promoted from the experiment AML; ResourceConsumer on all device MMIO | **Hardware-qualified** on pico-acpi-v12 (2026-11-20): first boot with NO GRUB DSDT override — all peripherals bound from the firmware DSDT, MPXY mailbox 5 channels, clk-rpmi with real rates |
-| `0011` Audit fixes | RHCT ISA completion (full X100 HWCAP set), PCI `_OSC` support/control bitfield separation (MSI vs PCIeCapability), hart contract (8 X100 only), borrowed-ID docs (808622B7/AMZN0001), GMAC1/2 ClockDxe register retargeting, EnableClock zero-address failure semantics, comment corrections | **Hardware-qualified** on pico-acpi-v12: RHCT HWCAP full set live in `/proc/cpuinfo`; `_OSC` truthful mask live (`platform does not support [PCIeHotplug PME AER LTR DPC]`) |
-| `0012` platform `_OSC`; `_LPI` removed | `\_SB` `_OSC` PCLPI-only (2-DWORD contract, revision/UUID error paths). `_LPI` REMOVED: the deployed OpenSBI has no genuinely retentive path (type 0 = cluster power-down; CPU_NR hangs without the kernel timer-stop override). Restoration prerequisites tracked in the checklist + patches/opensbi/ | `_OSC` handshake **proven live** (`OS control mask [00000080]`); built DSDT verifies zero `_LPI` |
+| Patch | Change in this series |
+| --- | --- |
+| 0001 | Add the Pico DSDT and ACPI table wiring, including the AIA interrupt topology and RHCT. |
+| 0002 | Add thermal sensor (TSEN) and eSPI clocks to ClockDxe. Correct table counts that led to writes to address zero. |
+| 0003 | Enable TSEN and eSPI clocks at ReadyToBoot for Linux. UEFI device drivers manage GMAC, PCIe, and USB during boot. |
+| 0004 | Wire the clock driver into the Pico ACPI build, install the ACPI SDT protocol, and reduce boot-console output. |
+| 0005 | Leave the GMAC bus clocks enabled at ExitBootServices so the OS can access the controller. |
+| 0006 | Map buses 0 and 1 through a 2 MiB DesignWare configuration window. The kernel quirk filters ghost devices on the root bus. |
+| 0007 | Route resets through SBI system reset. The recorded cold, warm, and shutdown checks for this change used COM260. |
+| 0008 | Restore SPCR v4 for the serial console at 115200 baud and publish the XScale-compatible UART binding on COM0. |
+| 0009 | Add the processor objects matching the eight X100 harts, correct MADT/APLIC fields, and fix device resource flags. |
+| 0010 | Promote the tested GPIO, I2C2/EEPROM, eSPI/EC, fan, thermal, MPXY mailbox, and RPMI clock descriptions into the firmware DSDT. |
+| 0011 | Complete the RHCT ISA string, correct PCI `_OSC` masks, and fix GMAC clock register selection and error handling. |
+| 0012 | Confirm platform-coordinated low-power idle through `_OSC` and omit `_LPI` states pending a retentive OpenSBI path. The filename reflects an earlier draft. |
+| 0013 | Add PCI root bridges on segments 2 and 4, MCFG entries for both, GPIO-backed WLAN/Bluetooth controls, and port mask `0x15`. |
 
-| `0013` PCIe segments 2/4 + rfkill-gpio | PCI2/PCI4 root bridges (DTB windows, RES/DBI reservations), MCFG segs 0/2/4, WLEN/BTEN rfkill-gpio (GpioIo pins 35/30), DEFAULT SKU port mask 0x15 | iasl-clean (decompiled AML verified); tests/test_acpi_pcie_segments.py 12/12; RELEASE build; staged as pico-acpi-rhct11-wifi (inspect-gated, NOT FLASHED) — see docs/wifi-pcie-acpi-2026-11-22.md |
+## What was verified on hardware
 
-## Deliberately not in this series
+- **v11/v12 serial and clock bring-up.** With the corresponding kernel and ESOS, Linux booted on the SPCR console, bound the eight processor objects, and reported 13 RPMI clocks with real rates, including `ufs_aclk` at 491.52 MHz. The v12 firmware DSDT boot removed the GRUB table override. [Clock and v12 boot evidence](../../docs/rpmi-clock-qualification-2026-11-20.md)
+- **v13 idle negotiation.** The platform `_OSC` handshake was observed with mask `0x80`. Patch 0012 omits idle states because of the suspend behavior of the OpenSBI image used in that cycle. [v13 verification record](../../docs/v13-boot-checklist.md)
+- **PCIe and radio bring-up.** Patch 0013's MCFG contains segments 0, 2, and 4. The initial staged image and subsequent boot investigation are recorded separately. Later firmware advertises only segment 0 in MCFG and uses compact windows for 2 and 4. [Initial implementation](../../docs/wifi-pcie-acpi-2026-11-22.md) · [Later PCIe investigation](../../docs/rhct12-firmware-acpi-audit-2026-11-22.md)
 
-- `Uart.asl` worktree edits: superseded (the exported DSDT v8 carries its
-  own COM0 device; SPCR is now re-added via 0008 with the kernel-side
-  autoconfig hazard closed).
-- `AcpiNvsDxe`, `Pcct.aslc`, `K3.dec` PcdK3PccEndpointPresent,
-  `Soc/Power/Platform.asl`: the PCC power-model design remains unwired draft
-  (no DSC/FDF reference); it must not ship until the ESOS PCC endpoint passes
-  the acceptance requirements in
-  `docs/k3-maintained-efi/acpi-platform-management-architecture.md`.
-- CLUSTER_NR `_LPI` state: deferred pending cluster wake-mechanism
-  qualification (was part of the DSDT v10 experiment AML; the v12 promotion
-  carries the qualified subset).
-
-The edk2-platforms worktree also carries uncommitted design/validation docs
-(`docs/k3-maintained-efi/acpi-*.md`) and further validated-but-unexported
-peripheral state; exporting those is follow-on work.
-
-## v12 hardware validation (2026-11-20)
-
-`pico-acpi-v12` flashed and verified: full RHEL boot with the
-firmware-baked DSDT (no GRUB override), all peripherals enumerated
-(serial/NVMe/GMAC/GPIO/I2C+EEPROM/eSPI+EC+PWM+fan/tsensor), MPXY+RCLK
-transport live with all 13 RPMI clocks at real hardware rates
-(ufs_aclk 491.52 MHz), RHCT ISA complete (HWCAP correct), _OSC real
-mask, processor objects bound (8x acpi_processor).
-
-## Provenance
-
-The ACPI integration work is user-authored, derived from DT research and
-hardware testing (see repo `docs/provenance.md`). No upstream submission is
-claimed. Upstream file licenses are preserved; three upstream files carry CRLF
-line endings and the patches preserve them.
+The export leaves the PCC power-model draft unwired, omits the unvalidated SYSMSI device, and defers cluster non-retentive idle. The export record describes the first twelve patches and their scope. The ACPI work derives from device-tree research and board testing. Preserve upstream notices and the original authorship when reusing it. [Export record](../../docs/edk2-platforms-export.md) · [Provenance](../../docs/provenance.md)

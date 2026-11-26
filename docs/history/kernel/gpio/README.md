@@ -1,51 +1,24 @@
-# gpio-spacemit-k1 patch sets (kernel 6.12.0-284 dbg1 build)
+# SpacemiT GPIO bring-up on the dbg1 kernel
 
-## downstream-acpi/ (our series, not upstream)
+The early ACPI patch exposes one GPIO chip for the K3's four 32-pin banks. Firmware pin 43 therefore selects bank 1, line 11 for the Chrome EC interrupt. The patch uses the K3 register layout for a `PRP0001` ACPI companion and dispatches child interrupts from the shared threaded parent handler with `handle_nested_irq()`. [Archived downstream patch](downstream-acpi/0001-gpio-spacemit-k1-ACPI-mode-flat-pin-space-nested-IRQ.patch)
 
-0001: the ACPI mode on top of the upstream driver —
-PRP0001 companionship, flat 128-pin chip spanning 4 banks,
-nested threaded IRQ dispatch off the shared parent GSI,
-immutable-irqchip reqres/relres hooks (matching upstream's
-IMMUTABLE treatment of the DT chip), remove-time quiesce
-(all banks masked + status cleared), K3 register data.
+The archived diff masks bank interrupts and clears edge enables **at probe**. Its ACPI irqchip flags contain only `IRQCHIP_MASK_ON_SUSPEND`, and it adds no removal callback. The build-5 revision adds `IRQCHIP_IMMUTABLE` to the ACPI irqchip. [Build-5 GPIO patch](../rpm/series/el10-284/k3-gpio-acpi-build5-authoritative.patch)
 
-## upstream-backports-considered/ (rejected, documented)
+## Upstream review on November 21, 2026
 
-Audited against upstream master (torvalds/linux) on
-2026-11-21. Upstream history for the file:
+The review compared the dbg1 tree with these Linux GPIO commits. It recorded matching K3 register offsets and bank offsets (`0x0`, `0x40`, `0x80`, `0x100`), plus dry runs identifying the direction and configuration changes as already present. Three patch files are preserved under [upstream backports considered](upstream-backports-considered/).
 
-  d005532 2025-04 original K1 driver
-  e6382fc 2025-06 MODULE_DEVICE_TABLE
-  0634111 2025-09 gpio-generic chip API + IRQCHIP_IMMUTABLE
-  64f89f6 2025-09 BGPIOF_ -> GPIO_GENERIC_ rename (TREEWIDE)
-  da64eb5 2026-01 K3 SoC support
-  aa7e37f 2026-01 PDR direction fix
-  47a9050 2026-03 set_config callback
-  4dd10fb 2026-11 devm_kmalloc_obj treewide
+| Commit date | Upstream commit | Change | Disposition for dbg1 |
+| --- | --- | --- | --- |
+| 2025-04 | `d00553240ef8` | Original K1 driver | Baseline |
+| 2025-06 | `e6382fcf9890` | Module device table | Upstream driver history |
+| 2025-09 | `063411108de6` | Generic GPIO chip API | Already present |
+| 2025-09 | `64f89f6e1f2b` | Treewide `BGPIOF_` to `GPIO_GENERIC_` flag rename | Omitted from dbg1. It renamed flags in 22 files. |
+| 2026-01 | `da64eb51595b` | K3 SoC register data | Already present |
+| 2026-01 | `aa7e37fd770b` | Use PDR for pin direction in the generic bank driver | Already present |
+| 2026-03 | `47a9050e678c` | Add `set_config` via `gpiochip_generic_config` | Already present |
+| 2026-11 | `4dd10fbbeb9c` | Treewide managed-allocation API conversion | Omitted from dbg1 |
 
-The dbg1 tree's snapshot ALREADY CONTAINS: the gpio-generic
-rework, K3 register data (identical to upstream's converged
-values: offsets 0x0/0x4/0x8... banks 0x0/0x40/0x80/0x100),
-the PDR direction fix semantics, and set_config (via
-gpiochip_generic_config). Verified by content-diff and
-patch-application dry-runs (aa7e37f/47a9050 detect as
-already-applied; the k3_gpio_data blocks are identical).
+## Why GPIO was built in
 
-NOT backported:
-  - 64f89f6 flag rename: treewide (22 files incl.
-    include/linux/gpio/driver.h); zero functional change;
-    churning the shared 6.12 tree for a rename isn't worth it
-  - 4dd10fb devm treewide: global API churn, no functional
-    gain
-
-## Packaging (not a patch)
-
-CONFIG_GPIO_SPACEMIT_K1=y in the dbg1 build: the GPIO
-controller is core ACPI platform infrastructure on the K3 —
-its consumers (cros_ec_espi, the EC PWM fan path) probe
-during kernel init; a modular GPIO controller cannot serve
-built-in consumers before userspace exists (the -517
-deadlock, root-caused 2026-11-21: EC probe 1.9s, defer wait
-blocks init 25s, module loads only at initrd userspace,
-retry window long gone). The distro multi-board kernel keeps
-=m; the dbg1 bring-up kernel builds it in.
+The EC probed early and deferred with `-EPROBE_DEFER` while the GPIO controller was modular. On the November 21 `gpioy` boot with `CONFIG_GPIO_SPACEMIT_K1=y`, the 128-pin controller appeared at 0.14 s and the Chrome EC registered at 2.02 s. The record reports zero `-517` deferrals. [Boot observations](../../../boot-and-ec-2026-11-21.md#ec-verification-complete-2026-11-21-final) · [Maintained EL10-284 build](../../../../patches/kernel/el10-284/README.md)
