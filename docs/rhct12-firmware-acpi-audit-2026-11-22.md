@@ -1011,3 +1011,131 @@ clock on THIS kernel — the optional-clocks fix (900012) rides
 the integration build still compiling on the sleeper. The
 firmware side is verified; the driver side completes with the
 new kernel.
+
+## Session state summary (2026-11-25, the running session)
+
+**Firmware**: rhct17b flashed + qualified (the variable-write
+clean refusal, I2C8 DSDT, runtime-flash in-tree). The
+GPIO35 wifi hold + the full regression green.
+
+**Kernel**: the integration build running on the sleeper
+(SRPM cac08589 — the 12-patch set + the dw_pcie export fix
+from the modpost failure). The board's installed kernel =
+the rig Image (hand-copied); the RPM install needs
+--replacepkgs (same NVR). The I2C8 bus bind (patch 900012)
+rides this build.
+
+**Remotes**: both repos fully pushed (brb/main on github for
+acpi-demo-k3; k3-acpi-raw on github for edk2-platforms —
+the raw line renamed, the consolidated k3-acpi being built
+by the user; k3-acpi-validation = the intermediate).
+
+**The 10G**: open — the physical layer (the SFP adapter swap
+test was VOID: no compatible fiber). Awaiting either the
+right fiber mode, a direct known-good peer, or the switch's
+MAC table check for 50:0a:52:0b:86:4a.
+
+**The stale /tmp/k3-ecam-plan worktree**: fix/ecam-audit
+fully merged into main — safe to prune (git worktree remove)
+anytime; left in place per the no-disturb instruction.
+
+## The integration build post-mortem (2026-11-25, the module ABI + config lessons)
+
+**The first integration build (EXIT=0) had TWO latent defects:**
+
+1. **The modversions ABI contamination**: the packaged
+   dwmac_spacemit + k3_tsensor .kos were REJECTED by the RPM's
+   own vmlinuz ("disagrees about version of symbol
+   module_layout"). Root cause: the sleeper's 5G ccache —
+   seeded by the 284.rv.0-era builds of the SAME kernel
+   version — served cross-config object cache hits, so the
+   patched files' CRC tables came from the rv.0 ABI. The
+   kernel-devel tree (same RPM!) is ABI-CORRECT (a hello
+   module built against it loads clean — verified on the
+   board). Fix: CCACHE_DISABLE=1 rebuild (running).
+
+2. **The config staging drift**: the sleeper's
+   kernel-riscv64-rhel.config was the OLD 3m-era file —
+   PCIE_SPACEMIT_K1=m (modular!) instead of the repo's =y
+   (built-in). With the ecam as a module, the boot-time ACPI
+   PCI enumeration runs BEFORE any module can load: "ECAM
+   region not found", no seg 2/4, no radios, no ecam
+   devices. THE QUIRK MUST BE BUILT-IN — a config lesson for
+   the spec staging (the config file on the builder is part
+   of the build's reproducibility; it drifted silently).
+   Fix: the repo's config-acpidebug restaged + verified =y,
+   the rebuild relaunched.
+
+**The board state during the rebuild**: the packaged kernel
+boots (uname = the RPM's #1 build) but has no ethernet
+(dwmac ABI-rejected), no thermal zones (k3_tsensor same), no
+PCIe segments (the config defect), no network — serial
+console only. The rhct17b firmware side is unaffected. The
+next RPM install (the correct-config + no-ccache build)
+replaces all of it.
+
+**The kernel-devel finding (the user's suggestion)**: the
+out-of-tree module build against the installed kernel's
+devel tree IS ABI-correct — the fast-fix path for future
+module-level issues without full rebuilds (verified with a
+hello module + the k3_tsensor rebuild completed on the
+sleeper against the devel symvers).
+
+## The stale-module shadowing + the spec-staging miss (2026-11-25, late)
+
+**THE SHADOWING BUG**: the "persistent ABI mismatch" across
+builds 4 and 5 was NOT the builds — it was my own bootstrap
+artifacts. The board-built uncompressed .ko files (dwmac-
+spacemit.ko, k3_tsensor.ko, i2c-k1.ko from the serial-boot-
+strap era) sat in /lib/modules alongside the RPM's .ko.xz —
+and modprobe resolves the UNCOMPRESSED form first. Every boot
+loaded the stale build-4-ABI modules and rejected them,
+while the RPM's own (correct!) modules never got a chance.
+
+Proof: after deleting the stale .ko/.bak files + depmod, the
+RPM's own k3_tsensor loaded CLEAN (7 zones immediately). The
+RPM's dwmac loaded without ABI rejection too — but hit -ENXIO
+because...
+
+**THE SPEC-STAGING MISS**: build 5's SRPM did not carry patch
+900014 — I staged the k3-dwmac-acpi-probe.patch FILE to the
+sleeper but not the updated kernel.spec (the 900014 decl +
+ApplyPatch lines). The build ran with the 13-patch spec; the
+RPM's dwmac = the pristine form (hence -ENXIO macirq, the
+known ACPI gap). The repo was correct; the staging was
+incomplete. LESSON (again): the builder's SPECS+SOURCES both
+need staging on every series change — the same class as the
+config drift.
+
+**Build 6** (21:18, SRPM f670b0d2): the spec verified carrying
+900014 (2 dwmac-acpi refs) + the patch staged. The stale
+modules are already cleaned from the board — this build's
+install should give the first fully-self-sufficient boot.
+
+## BUILD 6 QUALIFIED: the fully self-sufficient packaged kernel (2026-11-25, night)
+
+The final integration state — everything from the RPM, nothing
+hand-installed:
+
+| Check | Result |
+|---|---|
+| Kernel | 6.12.0-284.acpidebug.1.el10.riscv64 (the RPM's own build) |
+| GMAC | **Link Up 1Gbps from the RPM's dwmac** (patch 900014's ACPI probe) + DHCP .146 |
+| ECAM | 2 segments at boot (the built-in quirk) |
+| Wifi | unblocked from boot (the GPIO35 firmware hold), scanning |
+| Thermal | 7 zones, governor enabled, pwm 77 @ 69C |
+| I2C | 2 buses (I2C2 + the new I2C8 — patch 900012) |
+| EC | Chrome EC registered |
+| rpm -V | zero issues across core + modules |
+
+The complete arc: 6 kernel builds (1: ccache ABI, 2: killed,
+3: BTF, 4: clean-but-shadowed, 5: unstaged spec, 6: THE ONE),
+a serial-console bootstrap that recovered a network-less
+board, and two lesson-learned staging disciplines (SPECS and
+SOURCES both stage; uncompressed .ko files shadow .ko.xz in
+modprobe resolution).
+
+The K3 ACPI platform is now fully reproducible end to end:
+the rhct17b firmware (byte-identical rebuild verified) + the
+13-patch kernel RPM (SRPM f670b0d2) + the documented
+qualification state.

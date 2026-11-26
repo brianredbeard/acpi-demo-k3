@@ -15,11 +15,17 @@ python3 build_edk2.py \
 
 Inputs:
 - platform revision 64ba91f04452f17e8e4defd011a580e1311102aa
-  (patchless — the runtime-flash content is in-tree). The
-  canonical mirror: /home/bharring/Projects/software/edk2-platforms
-  (the local origin). The recipe's github URL
-  (brianredbeard/edk2-platforms) lacks this revision — push
-  before relying on it from other machines.
+  (patchless — the runtime-flash content is in-tree), carried
+  on github branch `k3-acpi-raw`. Branch topology (2026-11-25):
+  the raw 66-commit development line was renamed `k3-acpi` ->
+  `k3-acpi-raw`; the consolidated patch set (one commit per
+  topic: ACPI tables, AcpiClockInitDxe, AcpiPowerInitDxe,
+  runtime-safe flash, PCIe segments, ...) is being assembled
+  as the new `k3-acpi` (intermediate state: the
+  `k3-acpi-validation` branch). The recipe pins the exact
+  hash — the branch names are context, not resolution.
+  The local mirror /home/bharring/Projects/software/edk2-platforms
+  also carries the revision (the worktree's origin).
 - SDK archive edk2-spacemit_0.0.9.tar.xz, sha256
   9b14187818a2938578298ca24fd9e0038adbaada839988d1daf2b50f49c1f01a
   (downloadable from the recipe's URL; the local copy lives in

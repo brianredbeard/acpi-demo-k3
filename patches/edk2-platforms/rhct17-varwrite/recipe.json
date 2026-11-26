@@ -8,6 +8,8 @@
   "platforms": {
     "repository": "https://github.com/brianredbeard/edk2-platforms.git",
     "revision": "64ba91f04452f17e8e4defd011a580e1311102aa",
-    "patches": []
+    "patches": [],
+    "branch": "k3-acpi-raw",
+    "branch_note": "The qualified rhct17b revision 64ba91f0 lives on k3-acpi-raw (the raw 66-commit development line, renamed from k3-acpi 2026-11-25). The consolidated patch set is being built on k3-acpi (one commit per topic, squashed from k3-acpi-raw; see k3-acpi-validation for the intermediate state). The recipe pins the exact hash \u2014 the branch name is context, not the resolution mechanism."
   }
 }

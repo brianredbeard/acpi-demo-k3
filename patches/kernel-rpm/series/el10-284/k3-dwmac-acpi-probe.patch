@@ -1,0 +1,403 @@
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac-spacemit.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac-spacemit.c
+@@ -5,7 +5,9 @@
+  * Copyright (C) 2026 Inochi Amaoto <inochiama@gmail.com>
+  */
+ 
++#include <linux/acpi.h>
+ #include <linux/clk.h>
++#include <linux/io.h>
+ #include <linux/math.h>
+ #include <linux/mod_devicetable.h>
+ #include <linux/module.h>
+@@ -24,6 +26,9 @@
+ #define CTRL_PHY_INTF_MII		FIELD_PREP(CTRL_PHY_INTF_MODE, 3)
+ #define CTRL_LPI_IRQ_EN			BIT(9)
+ #define CTRL_WAKE_IRQ_EN		BIT(12)
++/* EMAC bus/function + APB clock gates in the same ctrl register */
++#define CTRL_EMAC_CLK_FN		BIT(0)
++#define CTRL_EMAC_CLK_APB		BIT(1)
+ 
+ /* dline register bits */
+ #define RGMII_RX_DLINE_EN		BIT(0)
+@@ -44,11 +49,20 @@
+ 	unsigned int dline_offset;
+ };
+ 
++static const struct regmap_config spacemit_dwmac_apmu_regmap_cfg = {
++	.reg_bits = 32,
++	.val_bits = 32,
++	.reg_stride = 4,
++};
++
+ static int spacemit_dwmac_set_delay(struct spacmit_dwmac *dwmac,
+ 				    unsigned int tx_code, unsigned int rx_code)
+ {
+ 	unsigned int mask, val;
+ 
++	if (!dwmac->apmu)
++		return 0;
++
+ 	mask = RGMII_TX_DLINE_STEP | RGMII_TX_DLINE_CODE | RGMII_TX_DLINE_EN |
+ 	       RGMII_RX_DLINE_STEP | RGMII_RX_DLINE_CODE | RGMII_RX_DLINE_EN;
+ 
+@@ -106,6 +120,9 @@
+ 	unsigned int val = stmmac_res->wol_irq >= 0 ? CTRL_WAKE_IRQ_EN : 0;
+ 	unsigned int mask = CTRL_WAKE_IRQ_EN;
+ 
++	if (!dwmac->apmu)
++		return 0;
++
+ 	return regmap_update_bits(dwmac->apmu, dwmac->ctrl_offset,
+ 				  mask, val);
+ }
+@@ -141,10 +158,212 @@
+ 		return -EINVAL;
+ 	}
+ 
++	if (!dwmac->apmu)
++		/* Firmware already configured the interface mode. */
++		return 0;
++
+ 	return regmap_update_bits(dwmac->apmu, dwmac->ctrl_offset,
+ 				  mask, val);
+ }
+ 
++/*
++ * Build the stmmac platform data from the _DSD properties of a PRP0001
++ * ACPI device. This mirrors the defaults and the property parsing of
++ * stmmac_probe_config_dt(), but uses the firmware-agnostic device
++ * property API, which transparently reads either DT properties or ACPI
++ * _DSD properties.
++ *
++ * Clocks are not acquired under ACPI: firmware (e.g. EDK2) is expected
++ * to have enabled the GMAC clocks before boot, so the driver only needs
++ * to tolerate their absence.
++ */
++static struct plat_stmmacenet_data *
++spacemit_dwmac_probe_config_acpi(struct platform_device *pdev,
++				 struct stmmac_resources *stmmac_res)
++{
++	struct plat_stmmacenet_data *plat;
++	struct stmmac_dma_cfg *dma_cfg;
++	struct device *dev = &pdev->dev;
++	int phy_mode;
++
++	if (device_property_read_u8_array(dev, "mac-address",
++					       stmmac_res->mac, ETH_ALEN))
++		device_property_read_u8_array(dev, "local-mac-address",
++					       stmmac_res->mac, ETH_ALEN);
++
++	phy_mode = device_get_phy_mode(dev);
++
++	plat = devm_kzalloc(dev, sizeof(*plat), GFP_KERNEL);
++	if (!plat)
++		return ERR_PTR(-ENOMEM);
++
++	phy_mode = device_get_phy_mode(dev);
++	if (phy_mode < 0)
++		return ERR_PTR(phy_mode);
++	plat->phy_interface = phy_mode;
++
++	/* phylink uses the firmware node for fixed-link and phy-handle. */
++	plat->port_node = dev_fwnode(dev);
++	plat->bus_id = pdev->id >= 0 ? pdev->id : 0;
++	plat->phy_addr = -1;
++	plat->clk_csr = -1;
++
++	plat->maxmtu = JUMBO_LEN;
++	plat->multicast_filter_bins = HASH_TABLE_SIZE;
++	plat->unicast_filter_entries = 1;
++
++	device_property_read_u32(dev, "max-speed", &plat->max_speed);
++	device_property_read_u32(dev, "max-frame-size", &plat->maxmtu);
++	device_property_read_u32(dev, "tx-fifo-depth", &plat->tx_fifo_size);
++	device_property_read_u32(dev, "rx-fifo-depth", &plat->rx_fifo_size);
++	device_property_read_u32(dev, "snps,clk-csr", &plat->clk_csr);
++	device_property_read_u32(dev, "snps,phy-addr", &plat->phy_addr);
++	device_property_read_u32(dev, "snps,multicast-filter-bins",
++				 &plat->multicast_filter_bins);
++	device_property_read_u32(dev, "snps,perfect-filter-entries",
++				 &plat->unicast_filter_entries);
++
++	/*
++	 * No phy-handle and no fixed-link is described, so use the legacy
++	 * MDIO bus assumption: the bus is scanned and the first PHY found
++	 * is bound to the MAC.
++	 */
++	plat->mdio_bus_data = devm_kzalloc(dev,
++					   sizeof(*plat->mdio_bus_data),
++					   GFP_KERNEL);
++	if (!plat->mdio_bus_data)
++		return ERR_PTR(-ENOMEM);
++	plat->mdio_bus_data->needs_reset = true;
++
++	dma_cfg = devm_kzalloc(dev, sizeof(*dma_cfg), GFP_KERNEL);
++	if (!dma_cfg)
++		return ERR_PTR(-ENOMEM);
++	plat->dma_cfg = dma_cfg;
++
++	device_property_read_u32(dev, "snps,pbl", &dma_cfg->pbl);
++	if (!dma_cfg->pbl)
++		dma_cfg->pbl = DEFAULT_DMA_PBL;
++	device_property_read_u32(dev, "snps,txpbl", &dma_cfg->txpbl);
++	device_property_read_u32(dev, "snps,rxpbl", &dma_cfg->rxpbl);
++	dma_cfg->pblx8 = !device_property_read_bool(dev, "snps,no-pbl-x8");
++	dma_cfg->aal = device_property_read_bool(dev, "snps,aal");
++	dma_cfg->fixed_burst = device_property_read_bool(dev,
++							 "snps,fixed-burst");
++	dma_cfg->mixed_burst = device_property_read_bool(dev,
++							 "snps,mixed-burst");
++
++	/*
++	 * One RX and one TX queue in DCB mode, matching the
++	 * stmmac_mtl_setup() defaults for DT nodes without MTL subnode
++	 * descriptions.
++	 */
++	plat->rx_queues_to_use = 1;
++	plat->tx_queues_to_use = 1;
++	plat->rx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
++	plat->tx_queues_cfg[0].mode_to_use = MTL_QUEUE_DCB;
++
++	/*
++	 * The K3 DWMAC is a Synopsys 5.40a (GMAC4-family) core. Under DT
++	 * this comes from matching the "snps,dwmac-5.40a" compatible in
++	 * stmmac_probe_config_dt(); the default (DWMAC100) would select the
++	 * wrong register map and HW ops.
++	 */
++	plat->core_type = DWMAC_CORE_GMAC4;
++	plat->pmt = 1;
++	if (device_property_read_bool(dev, "snps,tso"))
++		plat->flags |= STMMAC_FLAG_TSO_EN;
++
++	return plat;
++}
++
++/*
++ * Map the APMU control and delay-line registers described by the _DSD
++ * properties "spacemit,apmu-ctrl-reg" and "spacemit,apmu-dline-reg"
++ * (absolute MMIO addresses). Returns a regmap covering both registers,
++ * or NULL when the properties are absent, in which case the settings
++ * programmed by earlier firmware are kept untouched.
++ */
++static struct regmap *
++spacemit_dwmac_acpi_apmu_map(struct device *dev,
++			     unsigned int *ctrl_offset,
++			     unsigned int *dline_offset)
++{
++	u32 ctrl_reg = 0, dline_reg = 0;
++	void __iomem *base;
++	struct regmap *apmu;
++	u32 lo, hi;
++
++	device_property_read_u32(dev, "spacemit,apmu-ctrl-reg", &ctrl_reg);
++	device_property_read_u32(dev, "spacemit,apmu-dline-reg", &dline_reg);
++
++	if (!ctrl_reg || !dline_reg) {
++		dev_info(dev,
++			 "no spacemit,apmu-*-reg properties, keeping firmware settings\n");
++		return NULL;
++	}
++
++	lo = min(ctrl_reg, dline_reg);
++	hi = max(ctrl_reg, dline_reg);
++
++	if (hi - lo > 0x1000) {
++		dev_warn(dev,
++			 "spacemit,apmu-*-reg registers too far apart, ignored\n");
++		return NULL;
++	}
++
++	base = devm_ioremap(dev, lo, hi - lo + 4);
++	if (!base)
++		return ERR_PTR(-ENOMEM);
++
++	apmu = devm_regmap_init_mmio(dev, base,
++				     &spacemit_dwmac_apmu_regmap_cfg);
++	if (IS_ERR(apmu))
++		return apmu;
++
++	*ctrl_offset = ctrl_reg - lo;
++	*dline_offset = dline_reg - lo;
++
++	return apmu;
++}
++
++/*
++ * Under ACPI there are no named platform resources, so the by-name
++ * lookups in stmmac_get_platform_resources() ("macirq" etc.) cannot
++ * succeed. Use the first interrupt from _CRS and treat the optional
++ * ones as absent; stmmac core guards every optional IRQ with a
++ * "> 0" check.
++ */
++static int spacemit_dwmac_get_resources(struct platform_device *pdev,
++					 struct stmmac_resources *stmmac_res)
++{
++	/*
++	 * Gate on the ACPI companion, NOT of_node: the ACPI-OF glue
++	 * synthesizes a non-NULL of_node for PRP0001 devices at boot
++	 * (the espi v2 lesson), sending this through the DT byname
++	 * lookup ("macirq") which cannot succeed under ACPI. The node
++	 * state differs between first probe and rebind, so of_node is
++	 * not a reliable discriminator.
++	 */
++	if (pdev->dev.of_node && !has_acpi_companion(&pdev->dev))
++		return stmmac_get_platform_resources(pdev, stmmac_res);
++
++	memset(stmmac_res, 0, sizeof(*stmmac_res));
++
++	stmmac_res->irq = platform_get_irq(pdev, 0);
++	if (stmmac_res->irq < 0)
++		return stmmac_res->irq;
++
++	stmmac_res->wol_irq = -ENXIO;
++	stmmac_res->lpi_irq = -ENXIO;
++	stmmac_res->sfty_irq = -ENXIO;
++
++	stmmac_res->addr = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(stmmac_res->addr))
++		return PTR_ERR(stmmac_res->addr);
++
++	return 0;
++}
++
+ static int spacemit_dwmac_probe(struct platform_device *pdev)
+ {
+ 	struct plat_stmmacenet_data *plat_dat;
+@@ -158,52 +377,117 @@
+ 	u32 tx_delay = 0;
+ 	int ret;
+ 
+-	ret = stmmac_get_platform_resources(pdev, &stmmac_res);
++	ret = spacemit_dwmac_get_resources(pdev, &stmmac_res);
+ 	if (ret)
+ 		return dev_err_probe(dev, ret,
+ 				     "failed to get platform resources\n");
+ 
++	dev_info(dev, "DBG: resources irq=%d addr=%px\n",
++		 stmmac_res.irq, stmmac_res.addr);
++	if (!dev->of_node) {
++		struct resource *r0;
++
++		r0 = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++		if (r0)
++			dev_info(dev, "DBG: mem res %pR\n", r0);
++		else
++			dev_info(dev, "DBG: NO mem resource!\n");
++	}
++
+ 	dwmac = devm_kzalloc(&pdev->dev, sizeof(*dwmac), GFP_KERNEL);
+ 	if (!dwmac)
+ 		return -ENOMEM;
+ 
+-	plat_dat = devm_stmmac_probe_config_dt(pdev, stmmac_res.mac);
++	if (dev->of_node)
++		plat_dat = devm_stmmac_probe_config_dt(pdev,
++						       stmmac_res.mac);
++	else
++		plat_dat = spacemit_dwmac_probe_config_acpi(pdev,
++							    &stmmac_res);
+ 	if (IS_ERR(plat_dat))
+ 		return dev_err_probe(dev, PTR_ERR(plat_dat),
+-				     "failed to parse DT parameters\n");
++				     "failed to parse platform parameters\n");
+ 
+-	clk_tx = devm_clk_get_enabled(&pdev->dev, "tx");
++	/*
++	 * Under ACPI there is no clock provider; firmware is expected to
++	 * have enabled the clocks, so the "tx" clock is optional.
++	 */
++	clk_tx = devm_clk_get_optional_enabled(&pdev->dev, "tx");
+ 	if (IS_ERR(clk_tx))
+ 		return dev_err_probe(&pdev->dev, PTR_ERR(clk_tx),
+ 				     "failed to get tx clock\n");
+ 
+-	apmu = syscon_regmap_lookup_by_phandle_args(pdev->dev.of_node,
+-						    "spacemit,apmu", 2,
+-						    offset);
+-	if (IS_ERR(apmu))
+-		return dev_err_probe(dev, PTR_ERR(apmu),
+-				     "Failed to get apmu regmap\n");
++	if (dev->of_node) {
++		apmu = syscon_regmap_lookup_by_phandle_args(dev->of_node,
++							    "spacemit,apmu",
++							    2, offset);
++		if (IS_ERR(apmu))
++			return dev_err_probe(dev, PTR_ERR(apmu),
++					     "Failed to get apmu regmap\n");
+ 
++		dwmac->ctrl_offset = offset[0];
++		dwmac->dline_offset = offset[1];
++	} else {
++		apmu = spacemit_dwmac_acpi_apmu_map(dev,
++						    &dwmac->ctrl_offset,
++						    &dwmac->dline_offset);
++		if (IS_ERR(apmu))
++			return dev_err_probe(dev, PTR_ERR(apmu),
++					     "Failed to map apmu registers\n");
++	}
++
+ 	dwmac->apmu = apmu;
+-	dwmac->ctrl_offset = offset[0];
+-	dwmac->dline_offset = offset[1];
+ 
++	/*
++	 * Under ACPI there is no clock provider, and firmware may leave
++	 * the MAC bus clocks gated when it shuts down its network stack
++	 * at ExitBootServices (the K3 firmware implements the EQOS "reset"
++	 * as a bus clock gate). Re-enable them before the MAC registers
++	 * are accessed, otherwise MMIO reads wedge the bus.
++	 */
++	if (!dev->of_node && dwmac->apmu) {
++		unsigned int val;
++
++		regmap_read(dwmac->apmu, dwmac->ctrl_offset, &val);
++		dev_info(dev, "DBG: EMAC ctrl reg before = 0x%08x\n", val);
++		regmap_update_bits(dwmac->apmu, dwmac->ctrl_offset,
++				   CTRL_EMAC_CLK_FN | CTRL_EMAC_CLK_APB,
++				   CTRL_EMAC_CLK_FN | CTRL_EMAC_CLK_APB);
++		regmap_read(dwmac->apmu, dwmac->ctrl_offset, &val);
++		dev_info(dev, "DBG: EMAC ctrl reg after  = 0x%08x\n", val);
++		dev_info(dev, "DBG: reading GMAC4_VERSION...\n");
++		dev_info(dev, "DBG: GMAC4_VERSION = 0x%08x\n",
++			 readl(stmmac_res.addr + 0x110));
++		dev_info(dev, "DBG: GMAC_CONFIG = 0x%08x\n",
++			 readl(stmmac_res.addr));
++	}
++
+ 	ret = spacemit_dwmac_update_irq_config(dwmac, &stmmac_res);
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "Failed to configure irq config\n");
+ 
+-	of_property_read_u32(pdev->dev.of_node, "tx-internal-delay-ps",
+-			     &tx_delay);
+-	of_property_read_u32(pdev->dev.of_node, "rx-internal-delay-ps",
+-			     &rx_delay);
++	device_property_read_u32(dev, "tx-internal-delay-ps", &tx_delay);
++	device_property_read_u32(dev, "rx-internal-delay-ps", &rx_delay);
+ 
+ 	plat_dat->get_interfaces = spacemit_get_interfaces;
+ 	plat_dat->set_phy_intf_sel = spacemit_set_phy_intf_sel;
+ 	plat_dat->bsp_priv = dwmac;
+ 
+-	ret = spacemit_dwmac_fix_delay(dwmac, tx_delay, rx_delay);
+-	if (ret)
+-		return dev_err_probe(dev, ret, "Failed to configure delay\n");
++	/*
++	 * Under DT, absent delay properties historically mean "program a
++	 * zero delay" and the delay lines are always (re)programmed. Under
++	 * ACPI, keep the delay-line values programmed by earlier firmware
++	 * unless at least one delay property is explicitly provided.
++	 */
++	if (dwmac->apmu &&
++	    (dev->of_node ||
++	     device_property_present(dev, "tx-internal-delay-ps") ||
++	     device_property_present(dev, "rx-internal-delay-ps"))) {
++		ret = spacemit_dwmac_fix_delay(dwmac, tx_delay, rx_delay);
++		if (ret)
++			return dev_err_probe(dev, ret,
++					     "Failed to configure delay\n");
++	}
+ 
+ 	return stmmac_dvr_probe(dev, plat_dat, &stmmac_res);
+ }
