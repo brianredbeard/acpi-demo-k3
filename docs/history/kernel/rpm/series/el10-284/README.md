@@ -1,6 +1,6 @@
-# Archived EL10-284 kernel patch revisions
+# Archived EL10 kernel patch revisions
 
-This directory preserves earlier attempts to port UFS, GPIO and PCIe to the Pico ACPI kernel. The package spec, config and selected patches now live with the [maintained EL10-284 build instructions](../../../../../../patches/kernel/el10-284/README.md).
+This directory preserves earlier attempts to port UFS, GPIO and PCIe to the Pico ACPI kernel. The package spec, config and selected patches now live with the [maintained EL10 build instructions](../../../../../../patches/kernel/el10-284/README.md).
 
 | Archived revision | What it establishes |
 | --- | --- |

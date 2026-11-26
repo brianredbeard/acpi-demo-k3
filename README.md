@@ -1,6 +1,6 @@
 # acpi-demo-k3
 
-This repository builds and checks ACPI firmware for the SpacemiT K3 MUSE-Pico (Pico-ITX) and carries the Linux patches used with it. The **rhct17b** EDK2 recipe reproduces the firmware tested on the board. The **EL10-284 build 6** record covers the packaged kernel boot, including GMAC, Wi-Fi, I2C, and the thermal governor. COM260 has a separate hardware profile. [Pico qualification log](docs/rhct12-firmware-acpi-audit-2026-11-22.md) · [COM260 notes](docs/com260-contribution-plan-2026-11-24.md)
+This repository builds and checks ACPI firmware for the SpacemiT K3 MUSE-Pico (Pico-ITX) and carries the Linux patches used with it. The **rhct17b** EDK2 recipe reproduces the firmware tested on the board. The **Pico EL10 kernel build 6** record covers the packaged kernel boot, including GMAC, Wi-Fi, I2C, and the thermal governor. COM260 has a separate hardware profile. [Pico qualification log](docs/rhct12-firmware-acpi-audit-2026-11-22.md) · [COM260 notes](docs/com260-contribution-plan-2026-11-24.md)
 
 | What do you want to do? | Start here |
 | --- | --- |

@@ -1,6 +1,6 @@
 # Early UFS and PCIe porting notes
 
-The two files here record changes considered for the first EL10-284 kernel RPMs.
+The two files here record changes considered for the first EL10 kernel RPMs.
 
 | File | Contents |
 | --- | --- |

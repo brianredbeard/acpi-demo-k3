@@ -1,6 +1,6 @@
 # Kernel bring-up history
 
-The following records trace the Pico-ITX kernel changes from the first driver patches through EL10-284 packaging. For a new build, use the [kernel and module RPM guide](../../../patches/kernel/README.md).
+The following records trace the Pico-ITX kernel changes from the first driver patches through EL10 packaging. For a new build, use the [kernel and module RPM guide](../../../patches/kernel/README.md).
 
 | Record | What it preserves |
 | --- | --- |

@@ -1,15 +1,15 @@
 # Build one patched K3 kernel module
 
-Pick the spec for the driver you want to change. Each source RPM contains the driver source, any required private headers, and its EL10-284 patch. A binary build uses the target's RISC-V `kernel-devel` package and checks the kernel release at the start of the module's vermagic. The build host can boot a different kernel.
+Pick the spec for the driver you want to change. Each source RPM contains the driver source, any required private headers, and its EL10 patch. A binary build uses the target's RISC-V `kernel-devel` package and checks the kernel release at the start of the module's vermagic. The build host can boot a different kernel.
 
 | Driver change and RPM spec | Required setting in target kernel | Default target |
 | --- | --- | --- |
 | UFS ACPI platform support, corrected build-5 patch ([kmod-ufs-spacemit](kmod-ufs-spacemit.spec)) | `CONFIG_SCSI_UFS_SPACEMIT=m` | acpidebug |
 | ACPI thermal zones ([kmod-k3_tsensor](kmod-k3_tsensor.spec)) | `CONFIG_SPACEMIT_K3_TSENSOR=m` | acpidebug |
 | PRP0001 radio control ([kmod-rfkill-gpio](kmod-rfkill-gpio.spec)) | `CONFIG_RFKILL_GPIO=m` | acpidebug |
-| GPIO ACPI v3 ([kmod-gpio-spacemit-k1](kmod-gpio-spacemit-k1.spec)) | `CONFIG_GPIO_SPACEMIT_K1=m` | stock 284 |
+| GPIO ACPI v3 ([kmod-gpio-spacemit-k1](kmod-gpio-spacemit-k1.spec)) | `CONFIG_GPIO_SPACEMIT_K1=m` | stock SRPM baseline |
 
-The default releases are `6.12.0-284.acpidebug.1.el10.riscv64` and `6.12.0-284.rv.0.el10.riscv64`. Each spec checks its required setting in the target's `.config`. Stock 284 supports the GPIO module job. Build 6 uses modules for UFS and thermal support and builds GPIO and rfkill GPIO into the kernel. The rfkill job therefore needs a 284 build configured with `CONFIG_RFKILL_GPIO=m`, even when the release string matches. [Build 6 config](../el10-284/config-acpidebug)
+The specs default to `6.12.0-284.acpidebug.1.el10.riscv64` for the custom kernel and `6.12.0-284.rv.0.el10.riscv64` for the stock SRPM baseline. Each spec checks its required setting in the target's `.config`. The stock baseline supports the GPIO module job. Build 6 uses modules for UFS and thermal support and builds GPIO and rfkill GPIO into the kernel. The rfkill job therefore needs a compatible build of that baseline configured with `CONFIG_RFKILL_GPIO=m`, even when the release string matches. [Build 6 config](../el10-284/config-acpidebug)
 
 Use the full kernel RPM to test changes to a built-in driver, the eSPI controller, or the ACPI MCFG quirk on hardware. The board's `~/kernel-dev` workspace supports object compiles before packaging. [Full kernel build](../el10-284/README.md) · [Native rig](../../../docs/kernel-dev-rig.md)
 
@@ -58,7 +58,7 @@ mock "${opts[@]}" --init
 mock "${opts[@]}" --no-clean --no-cleanup-after --resultdir "$results" --rebuild "$srpm"
 ```
 
-Reuse the initialized root for subsequent builds against the same kernel. To target another compatible 284 build, pass `--define 'kernel_release FULL_UNAME_R'` both when producing the SRPM and when rebuilding it with rpmbuild or Mock. When two builds share a release string, select the devel RPM from the build you intend to boot so its symbol versions match.
+Reuse the initialized root for subsequent builds against the same kernel. To target another compatible build of the same source baseline, pass `--define 'kernel_release FULL_UNAME_R'` both when producing the SRPM and when rebuilding it with rpmbuild or Mock. When two builds share a release string, select the devel RPM from the build you intend to boot so its symbol versions match.
 
 ## Inspect the result
 

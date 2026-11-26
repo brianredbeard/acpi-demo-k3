@@ -1,6 +1,6 @@
-# Build the Pico-ITX EL10-284 kernel RPM
+# Build the Pico-ITX EL10 kernel RPM
 
-Use an EL10 RPM packaging environment and the stock RISC-V `kernel-6.12.0-284.rv.0.el10.src.rpm`. Its `linux-kernel-test.patch` supplies BSP drivers used by the K3 series. The maintained spec applies the distro patches first, then the K3 patches in `ApplyPatch` order. [Kernel spec](kernel.spec)
+To reproduce the Pico build, use an EL10 RPM packaging environment and the recorded RISC-V source package, `kernel-6.12.0-284.rv.0.el10.src.rpm`. The `el10-284` directory identifies that source baseline. The SRPM supplies BSP drivers through `linux-kernel-test.patch`. The maintained spec applies the distro patches first, then the K3 patches in `ApplyPatch` order. [Kernel spec](kernel.spec)
 
 ## Stage the source RPM
 

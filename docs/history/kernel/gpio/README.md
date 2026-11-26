@@ -21,4 +21,4 @@ The review compared the dbg1 tree with these Linux GPIO commits. It recorded mat
 
 ## Why GPIO was built in
 
-The EC probed early and deferred with `-EPROBE_DEFER` while the GPIO controller was modular. On the November 21 `gpioy` boot with `CONFIG_GPIO_SPACEMIT_K1=y`, the 128-pin controller appeared at 0.14 s and the Chrome EC registered at 2.02 s. The record reports zero `-517` deferrals. [Boot observations](../../../boot-and-ec-2026-11-21.md#ec-verification-complete-2026-11-21-final) · [Maintained EL10-284 build](../../../../patches/kernel/el10-284/README.md)
+The EC probed early and deferred with `-EPROBE_DEFER` while the GPIO controller was modular. On the November 21 `gpioy` boot with `CONFIG_GPIO_SPACEMIT_K1=y`, the 128-pin controller appeared at 0.14 s and the Chrome EC registered at 2.02 s. The record reports zero `-517` deferrals. [Boot observations](../../../boot-and-ec-2026-11-21.md#ec-verification-complete-2026-11-21-final) · [Maintained EL10 build](../../../../patches/kernel/el10-284/README.md)
